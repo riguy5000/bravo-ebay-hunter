@@ -37,7 +37,8 @@ export const useEbayAspects = (categoryId?: string) => {
         // Transform the data to match our EbayAspect interface
         const transformedData = (data || []).map(item => ({
           aspect_name: item.aspect_name,
-          values_json: Array.isArray(item.values_json) ? item.values_json as EbayAspectValue[] : [],
+          values_json: Array.isArray(item.values_json) ? 
+            (item.values_json as unknown as EbayAspectValue[]) : [],
           refreshed_at: item.refreshed_at
         }));
 
@@ -74,7 +75,8 @@ export const useEbayAspects = (categoryId?: string) => {
         // Transform the data to match our EbayAspect interface
         const transformedData = (data || []).map(item => ({
           aspect_name: item.aspect_name,
-          values_json: Array.isArray(item.values_json) ? item.values_json as EbayAspectValue[] : [],
+          values_json: Array.isArray(item.values_json) ? 
+            (item.values_json as unknown as EbayAspectValue[]) : [],
           refreshed_at: item.refreshed_at
         }));
         
