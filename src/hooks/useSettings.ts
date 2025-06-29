@@ -3,32 +3,40 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
+interface PreciousMetalApiSettings {
+  provider: string;
+  api_key: string;
+  poll_interval: number;
+}
+
+interface EbayKeysSettings {
+  keys: Array<{
+    label: string;
+    key: string;
+    request_interval: number;
+  }>;
+  rotation_strategy: string;
+}
+
+interface LlmConfigSettings {
+  provider: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  api_key?: string;
+  endpoint_url?: string;
+}
+
+interface TaskTemplatesSettings {
+  enabled: boolean;
+  templates: string[];
+}
+
 interface Settings {
-  precious_metal_api?: {
-    provider: string;
-    api_key: string;
-    poll_interval: number;
-  };
-  ebay_keys?: {
-    keys: Array<{
-      label: string;
-      key: string;
-      request_interval: number;
-    }>;
-    rotation_strategy: string;
-  };
-  llm_config?: {
-    provider: string;
-    model: string;
-    temperature: number;
-    max_tokens: number;
-    api_key?: string;
-    endpoint_url?: string;
-  };
-  task_templates?: {
-    enabled: boolean;
-    templates: string[];
-  };
+  precious_metal_api?: PreciousMetalApiSettings;
+  ebay_keys?: EbayKeysSettings;
+  llm_config?: LlmConfigSettings;
+  task_templates?: TaskTemplatesSettings;
 }
 
 export const useSettings = () => {
@@ -57,7 +65,8 @@ export const useSettings = () => {
 
       const settingsObj: Settings = {};
       data?.forEach(item => {
-        settingsObj[item.key as keyof Settings] = item.value_json;
+        // Type assertion to handle the Json type from Supabase
+        settingsObj[item.key as keyof Settings] = item.value_json as any;
       });
 
       setSettings(settingsObj);
