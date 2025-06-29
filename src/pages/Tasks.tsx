@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { TaskForm } from '@/components/tasks/TaskForm';
 import { TaskList } from '@/components/tasks/TaskList';
+import { TaskSchedulerTest } from '@/components/TaskSchedulerTest';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const Tasks = () => {
@@ -33,7 +34,14 @@ const Tasks = () => {
         </Button>
       </div>
 
-      <TaskList onEditTask={handleEditTask} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <TaskList onEditTask={handleEditTask} />
+        </div>
+        <div>
+          <TaskSchedulerTest />
+        </div>
+      </div>
 
       <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
