@@ -1,7 +1,9 @@
 
 import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ApiConfiguration } from '@/components/settings/ApiConfiguration';
+import { UserPreferences } from '@/components/settings/UserPreferences';
+import { DataImport } from '@/components/settings/DataImport';
 
 const Settings = () => {
   return (
@@ -19,39 +21,15 @@ const Settings = () => {
         </TabsList>
         
         <TabsContent value="api">
-          <Card>
-            <CardHeader>
-              <CardTitle>API Configuration</CardTitle>
-              <CardDescription>Configure your API keys and versions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-gray-500">API configuration interface coming soon</div>
-            </CardContent>
-          </Card>
+          <ApiConfiguration />
         </TabsContent>
         
         <TabsContent value="preferences">
-          <Card>
-            <CardHeader>
-              <CardTitle>Preferences</CardTitle>
-              <CardDescription>Customize your CRM experience</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-gray-500">Preferences interface coming soon</div>
-            </CardContent>
-          </Card>
+          <UserPreferences />
         </TabsContent>
         
         <TabsContent value="import">
-          <Card>
-            <CardHeader>
-              <CardTitle>Import Data</CardTitle>
-              <CardDescription>Import existing data into your CRM</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-gray-500">Data import interface coming soon</div>
-            </CardContent>
-          </Card>
+          <DataImport />
         </TabsContent>
       </Tabs>
     </div>
