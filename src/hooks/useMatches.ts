@@ -3,30 +3,75 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
-export interface Match {
+export interface BaseMatch {
   id: string;
   task_id: string;
   user_id: string;
-  ebay_item_id: string;
-  title: string;
-  price: number;
-  seller_name?: string;
+  ebay_listing_id: string;
+  ebay_title: string;
+  ebay_url?: string;
+  listed_price: number;
+  currency?: string;
+  buy_format?: string;
   seller_feedback?: number;
-  listing_url?: string;
-  image_url?: string;
-  end_time?: string;
+  found_at: string;
   status: 'new' | 'reviewed' | 'offered' | 'purchased' | 'passed';
-  offer_amount?: number;
-  notes?: string;
+  offer1?: number;
+  offer2?: number;
+  offer3?: number;
+  offer4?: number;
+  offer5?: number;
+  purchased_toggle?: boolean;
+  arrived_toggle?: boolean;
+  return_toggle?: boolean;
+  shipped_back_toggle?: boolean;
+  refunded_toggle?: boolean;
   ai_score?: number;
   ai_reasoning?: string;
   created_at: string;
   updated_at: string;
 }
 
+export interface WatchMatch extends BaseMatch {
+  case_material?: string;
+  band_material?: string;
+  movement?: string;
+  dial_colour?: string;
+  case_size_mm?: number;
+  chrono24_avg?: number;
+  chrono24_low?: number;
+  price_diff_percent?: number;
+}
+
+export interface JewelryMatch extends BaseMatch {
+  weight_g?: number;
+  karat?: number;
+  metal_type?: string;
+  spot_price_oz?: number;
+  melt_value?: number;
+  refiner_fee_pct?: number;
+  profit_scrap?: number;
+}
+
+export interface GemstoneMatch extends BaseMatch {
+  shape?: string;
+  carat?: number;
+  colour?: string;
+  clarity?: string;
+  cut_grade?: string;
+  cert_lab?: string;
+  rapnet_avg?: number;
+  rapaport_list?: number;
+  price_diff_percent?: number;
+}
+
+export type Match = WatchMatch | JewelryMatch | GemstoneMatch;
+
 export const useMatches = () => {
   const { user } = useAuth();
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [watchMatches, setWatchMatches] = useState<WatchMatch[]>([]);
+  const [jewelryMatches, setJewelryMatches] = useState<JewelryMatch[]>([]);
+  const [gemstoneMatches, setGemstoneMatches] = useState<GemstoneMatch[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,18 +84,22 @@ export const useMatches = () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('matches')
-        .select('*, tasks!inner(user_id)')
-        .eq('tasks.user_id', user.id)
-        .order('created_at', { ascending: false });
+      setLoading(true);
+      
+      // Fetch all match types in parallel
+      const [watchData, jewelryData, gemstoneData] = await Promise.all([
+        supabase.from('matches_watch').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('matches_jewelry').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('matches_gemstone').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+      ]);
 
-      if (error) {
-        console.error('Error fetching matches:', error);
-        return;
-      }
+      if (watchData.error) console.error('Error fetching watch matches:', watchData.error);
+      if (jewelryData.error) console.error('Error fetching jewelry matches:', jewelryData.error);
+      if (gemstoneData.error) console.error('Error fetching gemstone matches:', gemstoneData.error);
 
-      setMatches(data || []);
+      setWatchMatches(watchData.data || []);
+      setJewelryMatches(jewelryData.data || []);
+      setGemstoneMatches(gemstoneData.data || []);
     } catch (error) {
       console.error('Error in fetchMatches:', error);
     } finally {
@@ -58,29 +107,71 @@ export const useMatches = () => {
     }
   };
 
-  const updateMatchStatus = async (id: string, updates: Partial<Match>) => {
+  const updateWatchMatch = async (id: string, updates: Partial<WatchMatch>) => {
     if (!user) return;
 
     const { data, error } = await supabase
-      .from('matches')
+      .from('matches_watch')
       .update(updates)
       .eq('id', id)
       .select()
       .single();
 
     if (error) {
-      console.error('Error updating match:', error);
+      console.error('Error updating watch match:', error);
       throw error;
     }
 
-    setMatches(prev => prev.map(match => match.id === id ? data : match));
+    setWatchMatches(prev => prev.map(match => match.id === id ? data : match));
+    return data;
+  };
+
+  const updateJewelryMatch = async (id: string, updates: Partial<JewelryMatch>) => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('matches_jewelry')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating jewelry match:', error);
+      throw error;
+    }
+
+    setJewelryMatches(prev => prev.map(match => match.id === id ? data : match));
+    return data;
+  };
+
+  const updateGemstoneMatch = async (id: string, updates: Partial<GemstoneMatch>) => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('matches_gemstone')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating gemstone match:', error);
+      throw error;
+    }
+
+    setGemstoneMatches(prev => prev.map(match => match.id === id ? data : match));
     return data;
   };
 
   return {
-    matches,
+    watchMatches,
+    jewelryMatches,
+    gemstoneMatches,
     loading,
-    updateMatchStatus,
+    updateWatchMatch,
+    updateJewelryMatch,
+    updateGemstoneMatch,
     refetch: fetchMatches,
   };
 };

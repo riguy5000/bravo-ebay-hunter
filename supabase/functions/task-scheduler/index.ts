@@ -20,9 +20,16 @@ interface Task {
   status: 'active' | 'paused' | 'stopped';
   max_price?: number;
   price_percentage?: number;
+  price_delta_type?: string;
+  price_delta_value?: number;
   listing_format?: string[];
   min_seller_feedback?: number;
   poll_interval?: number;
+  exclude_keywords?: string[];
+  auction_alert?: boolean;
+  date_from?: string;
+  date_to?: string;
+  item_location?: string;
   watch_filters?: any;
   jewelry_filters?: any;
   gemstone_filters?: any;
@@ -44,11 +51,11 @@ const buildSearchKeywords = (task: Task): string => {
       }
       break;
     case 'jewelry':
-      keywords = task.jewelry_filters?.material 
-        ? `${task.jewelry_filters.material} jewelry`
+      keywords = task.jewelry_filters?.metal 
+        ? `${task.jewelry_filters.metal.join(' OR ')} jewelry`
         : 'jewelry';
-      if (task.jewelry_filters?.type) {
-        keywords += ` ${task.jewelry_filters.type}`;
+      if (task.jewelry_filters?.categories) {
+        keywords += ` ${task.jewelry_filters.categories.join(' OR ')}`;
       }
       break;
     case 'gemstone':
@@ -69,7 +76,7 @@ const mapListingFormats = (formats?: string[]): string[] => {
   
   const formatMap: { [key: string]: string } = {
     'auction': 'Auction',
-    'buy_it_now': 'FixedPrice',
+    'buy_it_now': 'FixedPrice',  
     'best_offer': 'AuctionWithBIN',
     'classified': 'Classified'
   };
@@ -77,15 +84,76 @@ const mapListingFormats = (formats?: string[]): string[] => {
   return formats.map(f => formatMap[f] || f).filter(Boolean);
 };
 
+const getMatchTableName = (itemType: string): string => {
+  return `matches_${itemType}`;
+};
+
+const createMatchRecord = (task: Task, item: any) => {
+  const baseMatch = {
+    task_id: task.id,
+    user_id: task.user_id,
+    ebay_listing_id: item.itemId,
+    ebay_title: item.title,
+    ebay_url: item.listingUrl,
+    listed_price: item.price,
+    currency: item.currency || 'USD',
+    buy_format: item.listingType,
+    seller_feedback: item.sellerInfo?.feedbackScore,
+    found_at: new Date().toISOString(),
+    status: 'new' as const
+  };
+
+  // Add type-specific fields based on item type
+  switch (task.item_type) {
+    case 'watch':
+      return {
+        ...baseMatch,
+        case_material: item.caseMaterial,
+        band_material: item.bandMaterial,
+        movement: item.movement,
+        dial_colour: item.dialColour,
+        case_size_mm: item.caseSizeMm,
+      };
+    
+    case 'jewelry':
+      return {
+        ...baseMatch,
+        weight_g: item.weightG,
+        karat: item.karat,
+        metal_type: item.metalType,
+        spot_price_oz: item.spotPriceOz,
+        melt_value: item.meltValue,
+        profit_scrap: item.profitScrap,
+      };
+    
+    case 'gemstone':
+      return {
+        ...baseMatch,
+        shape: item.shape,
+        carat: item.carat,
+        colour: item.colour,
+        clarity: item.clarity,
+        cut_grade: item.cutGrade,
+        cert_lab: item.certLab,
+      };
+    
+    default:
+      return baseMatch;
+  }
+};
+
 const processTask = async (task: Task) => {
-  console.log(`Processing task: ${task.name} (${task.id})`);
+  console.log(`Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}`);
   
   try {
     const searchParams = {
       keywords: buildSearchKeywords(task),
       maxPrice: task.max_price,
       listingType: mapListingFormats(task.listing_format),
-      minFeedback: task.min_seller_feedback || 0
+      minFeedback: task.min_seller_feedback || 0,
+      itemLocation: task.item_location,
+      dateFrom: task.date_from,
+      dateTo: task.date_to
     };
 
     console.log('Search params:', searchParams);
@@ -107,6 +175,8 @@ const processTask = async (task: Task) => {
       return;
     }
 
+    const tableName = getMatchTableName(task.item_type);
+    
     // Process each item and create matches
     for (const item of items) {
       // Skip if price is too high
@@ -119,11 +189,23 @@ const processTask = async (task: Task) => {
         continue;
       }
 
+      // Skip if contains excluded keywords
+      if (task.exclude_keywords && task.exclude_keywords.length > 0) {
+        const titleLower = item.title.toLowerCase();
+        const hasExcludedKeyword = task.exclude_keywords.some(keyword => 
+          titleLower.includes(keyword.toLowerCase())
+        );
+        if (hasExcludedKeyword) {
+          console.log(`Skipping item due to excluded keyword: ${item.title}`);
+          continue;
+        }
+      }
+
       // Check if we already have this item
       const { data: existingMatch } = await supabase
-        .from('matches')
+        .from(tableName)
         .select('id')
-        .eq('ebay_item_id', item.itemId)
+        .eq('ebay_listing_id', item.itemId)
         .eq('task_id', task.id)
         .single();
 
@@ -132,29 +214,17 @@ const processTask = async (task: Task) => {
         continue;
       }
 
-      // Create new match
-      const matchData = {
-        task_id: task.id,
-        user_id: task.user_id,
-        ebay_item_id: item.itemId,
-        title: item.title,
-        price: item.price,
-        seller_name: item.sellerInfo?.name,
-        seller_feedback: item.sellerInfo?.feedbackScore,
-        listing_url: item.listingUrl,
-        image_url: item.imageUrl,
-        end_time: item.endTime ? new Date(item.endTime).toISOString() : null,
-        status: 'new' as const
-      };
+      // Create new match record
+      const matchData = createMatchRecord(task, item);
 
       const { error: insertError } = await supabase
-        .from('matches')
+        .from(tableName)
         .insert(matchData);
 
       if (insertError) {
         console.error('Error inserting match:', insertError);
       } else {
-        console.log(`Created match for item: ${item.title}`);
+        console.log(`Created ${task.item_type} match for item: ${item.title}`);
       }
     }
 
@@ -205,7 +275,7 @@ const handler = async (req: Request): Promise<Response> => {
       const lastRun = new Date(task.updated_at);
       const now = new Date();
       const timeDiff = (now.getTime() - lastRun.getTime()) / 1000;
-      const pollInterval = task.poll_interval || 300;
+      const pollInterval = task.poll_interval || 30;
 
       if (timeDiff >= pollInterval) {
         await processTask(task);
@@ -224,7 +294,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     return new Response(JSON.stringify({ 
       success: true,
-      message: `Task scheduler completed`,
+      message: `Task scheduler completed successfully`,
       tasksProcessed: processedCount,
       totalTasks: tasks.length
     }), {

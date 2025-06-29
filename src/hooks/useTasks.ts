@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 export interface Task {
   id: string;
   user_id: string;
-  name: string; // Using 'name' to match current schema
+  name: string;
   item_type: 'watch' | 'jewelry' | 'gemstone';
   status: 'active' | 'paused' | 'stopped';
   max_price?: number;
@@ -17,6 +17,14 @@ export interface Task {
   watch_filters?: any;
   jewelry_filters?: any;
   gemstone_filters?: any;
+  // New V2 fields
+  exclude_keywords?: string[];
+  price_delta_type?: string;
+  price_delta_value?: number;
+  auction_alert?: boolean;
+  date_from?: string;
+  date_to?: string;
+  item_location?: string;
   created_at: string;
   updated_at: string;
 }
@@ -61,7 +69,8 @@ export const useTasks = () => {
     const mappedData = {
       ...taskData,
       user_id: user.id,
-      poll_interval: taskData.poll_interval || 300,
+      poll_interval: taskData.poll_interval || 30,
+      price_delta_type: taskData.price_delta_type || 'absolute',
     };
 
     const { data, error } = await supabase
