@@ -34,7 +34,14 @@ export const useEbayAspects = (categoryId?: string) => {
 
         if (error) throw error;
 
-        setAspects(data || []);
+        // Transform the data to match our EbayAspect interface
+        const transformedData = (data || []).map(item => ({
+          aspect_name: item.aspect_name,
+          values_json: Array.isArray(item.values_json) ? item.values_json as EbayAspectValue[] : [],
+          refreshed_at: item.refreshed_at
+        }));
+
+        setAspects(transformedData);
       } catch (err: any) {
         console.error('Error fetching eBay aspects:', err);
         setError(err.message);
@@ -64,7 +71,14 @@ export const useEbayAspects = (categoryId?: string) => {
           .eq('category_id', categoryId)
           .order('aspect_name');
         
-        setAspects(data || []);
+        // Transform the data to match our EbayAspect interface
+        const transformedData = (data || []).map(item => ({
+          aspect_name: item.aspect_name,
+          values_json: Array.isArray(item.values_json) ? item.values_json as EbayAspectValue[] : [],
+          refreshed_at: item.refreshed_at
+        }));
+        
+        setAspects(transformedData);
       }
     } catch (err: any) {
       console.error('Error refreshing cache:', err);
