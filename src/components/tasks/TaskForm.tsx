@@ -6,10 +6,8 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Textarea } from '@/components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { WatchFilters } from './WatchFilters';
 import { JewelryFilters } from './JewelryFilters';
@@ -18,24 +16,14 @@ import { useTasks } from '@/hooks/useTasks';
 import { toast } from 'sonner';
 
 const taskSchema = z.object({
-  title: z.string().min(1, 'Task title is required'),
+  name: z.string().min(1, 'Task name is required'),
   item_type: z.enum(['watch', 'jewelry', 'gemstone']),
   status: z.enum(['active', 'paused', 'stopped']).default('active'),
-  brand: z.string().optional(),
-  model: z.string().optional(),
-  reference_number: z.string().optional(),
-  price_min: z.number().min(0).optional(),
   max_price: z.number().min(0).optional(),
-  price_delta_type: z.enum(['absolute', 'percent']).optional(),
-  price_delta_value: z.number().min(0).optional(),
   price_percentage: z.number().min(0).max(100).optional(),
-  exclude_keywords: z.array(z.string()).optional(),
-  include_formats: z.array(z.string()).optional(),
   listing_format: z.array(z.string()).optional(),
   min_seller_feedback: z.number().min(0).optional(),
   poll_interval: z.number().min(5).default(30),
-  auction_alert: z.boolean().default(false),
-  active: z.boolean().default(true),
 });
 
 type TaskFormData = z.infer<typeof taskSchema>;
@@ -57,11 +45,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
     defaultValues: {
       status: 'active',
       poll_interval: 30,
-      include_formats: [],
-      exclude_keywords: [],
+      listing_format: [],
       min_seller_feedback: 0,
-      auction_alert: false,
-      active: true,
     },
   });
 
@@ -70,30 +55,15 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
   const handleSubmit = async (data: TaskFormData) => {
     setLoading(true);
     try {
-      // Ensure required fields are present
-      if (!data.title || !data.item_type) {
-        throw new Error('Title and item type are required');
-      }
-
       const taskData = {
-        title: data.title,
+        name: data.name,
         item_type: data.item_type,
         status: data.status || 'active',
-        brand: data.brand,
-        model: data.model,
-        reference_number: data.reference_number,
-        price_min: data.price_min,
         max_price: data.max_price,
-        price_delta_type: data.price_delta_type,
-        price_delta_value: data.price_delta_value,
         price_percentage: data.price_percentage,
-        exclude_keywords: data.exclude_keywords,
-        include_formats: data.include_formats,
         listing_format: data.listing_format,
         min_seller_feedback: data.min_seller_feedback,
         poll_interval: data.poll_interval || 30,
-        auction_alert: data.auction_alert || false,
-        active: data.active !== undefined ? data.active : true,
         watch_filters: itemType === 'watch' ? watchFilters : null,
         jewelry_filters: itemType === 'jewelry' ? jewelryFilters : null,
         gemstone_filters: itemType === 'gemstone' ? gemstoneFilters : null,
@@ -133,10 +103,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="title"
+                name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Task Title</FormLabel>
+                    <FormLabel>Task Name</FormLabel>
                     <FormControl>
                       <Input placeholder="e.g., Vintage Rolex Watches" {...field} />
                     </FormControl>
@@ -169,63 +139,18 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
               />
             </div>
 
-            {/* Brand, Model, Reference for enhanced filtering */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name="brand"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Brand (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Rolex, Cartier" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="model"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Model (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Submariner, Love Bracelet" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="reference_number"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reference Number (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., 116610LN" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
             {/* Price Criteria */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FormField
                 control={form.control}
-                name="price_min"
+                name="max_price"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Minimum Price ($)</FormLabel>
+                    <FormLabel>Maximum Price ($)</FormLabel>
                     <FormControl>
                       <Input 
                         type="number" 
-                        placeholder="e.g., 100"
+                        placeholder="e.g., 1000"
                         {...field}
                         onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
                       />
@@ -237,14 +162,14 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
 
               <FormField
                 control={form.control}
-                name="max_price"
+                name="price_percentage"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Maximum Price ($)</FormLabel>
+                    <FormLabel>Price Percentage (%)</FormLabel>
                     <FormControl>
                       <Input 
                         type="number" 
-                        placeholder="e.g., 1000"
+                        placeholder="e.g., 80"
                         {...field}
                         onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
                       />
@@ -277,7 +202,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
             {/* Listing Format */}
             <FormField
               control={form.control}
-              name="include_formats"
+              name="listing_format"
               render={() => (
                 <FormItem>
                   <FormLabel>Listing Formats</FormLabel>
@@ -286,7 +211,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
                       <FormField
                         key={format.id}
                         control={form.control}
-                        name="include_formats"
+                        name="listing_format"
                         render={({ field }) => (
                           <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                             <FormControl>
@@ -312,50 +237,25 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
               )}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="poll_interval"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Poll Interval (seconds)</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="number" 
-                        placeholder="30"
-                        min="5"
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="auction_alert"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">
-                        Auction Alerts
-                      </FormLabel>
-                      <div className="text-sm text-muted-foreground">
-                        Get notified before auctions end
-                      </div>
-                    </div>
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </div>
+            <FormField
+              control={form.control}
+              name="poll_interval"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Poll Interval (seconds)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      placeholder="30"
+                      min="5"
+                      {...field}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {/* Item-specific filters */}
             {itemType === 'watch' && (
