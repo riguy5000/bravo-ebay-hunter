@@ -29,7 +29,7 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: 'Automatically find undervalued gold jewelry with no stones for scrap value arbitrage',
     icon: <Gem className="h-5 w-5" />,
     category: 'jewelry',
-    badges: ['Fast 5s polls', 'Best Offer only', 'Melt value calc'],
+    badges: ['Fast 5s polls', 'Best Offer only', 'Melt value calc', 'No stones filter'],
     config: {
       item_type: 'jewelry',
       name: 'Gold Scrap Scanner',
@@ -37,11 +37,14 @@ const TASK_TEMPLATES: TaskTemplate[] = [
       listing_format: ['best_offer'],
       price_delta_type: 'percent',
       price_delta_value: 5, // 5% below melt
-      exclude_keywords: ['plated', 'filled', 'tone', 'hollow', 'gold-field', 'goldfield', 'GF', 'cartier', 'van cleef', 'tiffany', 'bulgari', 'hermes'],
+      exclude_keywords: ['plated', 'filled', 'tone', 'hollow', 'gold-field', 'goldfield', 'GF', 'cartier', 'van cleef', 'tiffany', 'bulgari', 'hermes', 'diamond', 'ruby', 'sapphire', 'emerald'],
       jewelry_filters: {
-        metal: ['10k', '14k', '18k', '22k', '24k'],
-        main_stone_type: 'None',
-        categories: ['Fine Jewelry', 'Vintage Jewelry', 'Mens Jewelry', 'Engagement & Wedding']
+        metal: 'Yellow Gold',
+        main_stone: 'None',
+        jewelry_type: ['Ring', 'Necklace', 'Bracelet', 'Chain'],
+        condition: 'Pre-owned',
+        weight_min: 2.0, // Minimum 2g for decent scrap value
+        setting_style: '', // Allow any setting since we want scrap
       }
     }
   },
@@ -51,7 +54,7 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: 'Find luxury watches below market value using Chrono24 price references',
     icon: <Watch className="h-5 w-5" />,
     category: 'watch',
-    badges: ['Chrono24 pricing', 'Pre-owned focus', 'Auction alerts'],
+    badges: ['Chrono24 pricing', 'Pre-owned focus', 'Auction alerts', 'Luxury brands'],
     config: {
       item_type: 'watch',
       name: 'Quick Watch Hunt',
@@ -60,9 +63,39 @@ const TASK_TEMPLATES: TaskTemplate[] = [
       price_delta_type: 'percent',
       price_delta_value: 15, // 15% below Chrono24 low
       auction_alert: true,
+      exclude_keywords: ['replica', 'homage', 'parts', 'repair', 'broken'],
       watch_filters: {
         condition: 'Pre-owned',
-        categories: ['Luxury Watches', 'Wristwatches']
+        brand: 'Rolex', // Start with Rolex as default
+        chrono24_reference: 'low',
+        reference_margin: 15,
+        case_size_min: 36,
+        case_size_max: 44,
+        movement: 'Automatic'
+      }
+    }
+  },
+  {
+    id: 'vintage_jewelry',
+    name: 'Vintage Jewelry Hunter',
+    description: 'Search for undervalued vintage and antique jewelry pieces',
+    icon: <Gem className="h-5 w-5" />,
+    category: 'jewelry',
+    badges: ['Estate pieces', 'Vintage focus', 'Designer brands'],
+    config: {
+      item_type: 'jewelry',
+      name: 'Vintage Jewelry Hunter',
+      poll_interval: 60,
+      listing_format: ['buy_it_now', 'best_offer', 'auction'],
+      price_delta_type: 'absolute',
+      price_delta_value: 500,
+      auction_alert: true,
+      jewelry_filters: {
+        style: 'Vintage-Inspired',
+        condition: 'Pre-owned',
+        metal: 'Yellow Gold',
+        metal_purity: '14k',
+        jewelry_type: ['Ring', 'Brooch', 'Necklace']
       }
     }
   }

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -18,6 +17,8 @@ import { useTasks } from '@/hooks/useTasks';
 import { toast } from 'sonner';
 import { TaskTemplate } from './TaskTemplates';
 import { ArrowLeft, Calendar, MapPin, AlertTriangle } from 'lucide-react';
+import { EnhancedJewelryFilters } from './EnhancedJewelryFilters';
+import { EnhancedWatchFilters } from './EnhancedWatchFilters';
 
 const taskSchema = z.object({
   name: z.string().min(1, 'Task name is required'),
@@ -299,7 +300,6 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                 <CardTitle className="text-lg">Advanced Filters</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Listing Format */}
                 <FormField
                   control={form.control}
                   name="listing_format"
@@ -459,16 +459,16 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               </CardContent>
             </Card>
 
-            {/* Item-specific filters */}
+            {/* Enhanced Item-specific filters */}
             {itemType === 'watch' && (
-              <WatchFilters 
+              <EnhancedWatchFilters 
                 filters={watchFilters} 
                 onChange={setWatchFilters} 
               />
             )}
 
             {itemType === 'jewelry' && (
-              <JewelryFilters 
+              <EnhancedJewelryFilters 
                 filters={jewelryFilters} 
                 onChange={setJewelryFilters} 
               />
