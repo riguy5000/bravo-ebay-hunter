@@ -57,8 +57,20 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onSuccess, onCancel }) => {
   const handleSubmit = async (data: TaskFormData) => {
     setLoading(true);
     try {
+      // Ensure required fields are present
+      if (!data.name || !data.item_type) {
+        throw new Error('Name and item type are required');
+      }
+
       const taskData = {
-        ...data,
+        name: data.name,
+        item_type: data.item_type,
+        status: data.status || 'active',
+        max_price: data.max_price,
+        price_percentage: data.price_percentage,
+        listing_format: data.listing_format,
+        min_seller_feedback: data.min_seller_feedback,
+        poll_interval: data.poll_interval || 300,
         watch_filters: itemType === 'watch' ? watchFilters : null,
         jewelry_filters: itemType === 'jewelry' ? jewelryFilters : null,
         gemstone_filters: itemType === 'gemstone' ? gemstoneFilters : null,
