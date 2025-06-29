@@ -6,14 +6,25 @@ import { supabase } from '@/integrations/supabase/client';
 export interface Task {
   id: string;
   user_id: string;
-  name: string;
+  title: string;
   item_type: 'watch' | 'jewelry' | 'gemstone';
   status: 'active' | 'paused' | 'stopped';
+  brand?: string;
+  model?: string;
+  reference_number?: string;
+  filters_json?: any;
+  price_min?: number;
   max_price?: number;
+  price_delta_type?: 'absolute' | 'percent';
+  price_delta_value?: number;
   price_percentage?: number;
+  exclude_keywords?: string[];
+  include_formats?: string[];
   listing_format?: string[];
   min_seller_feedback?: number;
   poll_interval?: number;
+  auction_alert?: boolean;
+  active?: boolean;
   watch_filters?: any;
   jewelry_filters?: any;
   gemstone_filters?: any;
@@ -37,7 +48,7 @@ export const useTasks = () => {
 
     try {
       const { data, error } = await supabase
-        .from('tasks')
+        .from('search_tasks')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -58,9 +69,21 @@ export const useTasks = () => {
   const createTask = async (taskData: Omit<Task, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => {
     if (!user) return;
 
+    // Map old field names to new schema
+    const mappedData = {
+      ...taskData,
+      title: taskData.title || taskData.name, // Support both old and new field names
+      user_id: user.id,
+      active: taskData.active !== undefined ? taskData.active : true,
+      poll_interval: taskData.poll_interval || 300,
+    };
+
+    // Remove old field name if present
+    delete (mappedData as any).name;
+
     const { data, error } = await supabase
-      .from('tasks')
-      .insert({ ...taskData, user_id: user.id })
+      .from('search_tasks')
+      .insert(mappedData)
       .select()
       .single();
 
@@ -77,7 +100,7 @@ export const useTasks = () => {
     if (!user) return;
 
     const { data, error } = await supabase
-      .from('tasks')
+      .from('search_tasks')
       .update(updates)
       .eq('id', id)
       .eq('user_id', user.id)
@@ -97,7 +120,7 @@ export const useTasks = () => {
     if (!user) return;
 
     const { error } = await supabase
-      .from('tasks')
+      .from('search_tasks')
       .delete()
       .eq('id', id)
       .eq('user_id', user.id);
