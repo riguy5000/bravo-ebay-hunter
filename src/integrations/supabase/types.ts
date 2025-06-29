@@ -9,7 +9,347 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      matches: {
+        Row: {
+          ai_reasoning: string | null
+          ai_score: number | null
+          created_at: string
+          ebay_item_id: string
+          end_time: string | null
+          id: string
+          image_url: string | null
+          listing_url: string | null
+          notes: string | null
+          offer_amount: number | null
+          price: number
+          seller_feedback: number | null
+          seller_name: string | null
+          status: Database["public"]["Enums"]["match_status"]
+          task_id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_reasoning?: string | null
+          ai_score?: number | null
+          created_at?: string
+          ebay_item_id: string
+          end_time?: string | null
+          id?: string
+          image_url?: string | null
+          listing_url?: string | null
+          notes?: string | null
+          offer_amount?: number | null
+          price: number
+          seller_feedback?: number | null
+          seller_name?: string | null
+          status?: Database["public"]["Enums"]["match_status"]
+          task_id: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_reasoning?: string | null
+          ai_score?: number | null
+          created_at?: string
+          ebay_item_id?: string
+          end_time?: string | null
+          id?: string
+          image_url?: string | null
+          listing_url?: string | null
+          notes?: string | null
+          offer_amount?: number | null
+          price?: number
+          seller_feedback?: number | null
+          seller_name?: string | null
+          status?: Database["public"]["Enums"]["match_status"]
+          task_id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matches_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchases: {
+        Row: {
+          created_at: string
+          fees: number | null
+          id: string
+          match_id: string
+          notes: string | null
+          purchase_date: string | null
+          purchase_price: number
+          shipping_cost: number | null
+          status: Database["public"]["Enums"]["purchase_status"]
+          total_cost: number
+          tracking_number: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          fees?: number | null
+          id?: string
+          match_id: string
+          notes?: string | null
+          purchase_date?: string | null
+          purchase_price: number
+          shipping_cost?: number | null
+          status?: Database["public"]["Enums"]["purchase_status"]
+          total_cost: number
+          tracking_number?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          fees?: number | null
+          id?: string
+          match_id?: string
+          notes?: string | null
+          purchase_date?: string | null
+          purchase_price?: number
+          shipping_cost?: number | null
+          status?: Database["public"]["Enums"]["purchase_status"]
+          total_cost?: number
+          tracking_number?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchases_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      resales: {
+        Row: {
+          created_at: string
+          id: string
+          listed_date: string | null
+          listing_price: number
+          listing_title: string | null
+          notes: string | null
+          platform: string
+          profit: number | null
+          purchase_id: string
+          roi_percentage: number | null
+          sale_price: number | null
+          sold_date: string | null
+          status: Database["public"]["Enums"]["resale_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          listed_date?: string | null
+          listing_price: number
+          listing_title?: string | null
+          notes?: string | null
+          platform: string
+          profit?: number | null
+          purchase_id: string
+          roi_percentage?: number | null
+          sale_price?: number | null
+          sold_date?: string | null
+          status?: Database["public"]["Enums"]["resale_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          listed_date?: string | null
+          listing_price?: number
+          listing_title?: string | null
+          notes?: string | null
+          platform?: string
+          profit?: number | null
+          purchase_id?: string
+          roi_percentage?: number | null
+          sale_price?: number | null
+          sold_date?: string | null
+          status?: Database["public"]["Enums"]["resale_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resales_purchase_id_fkey"
+            columns: ["purchase_id"]
+            isOneToOne: false
+            referencedRelation: "purchases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      returns: {
+        Row: {
+          completed_date: string | null
+          created_at: string
+          id: string
+          initiated_date: string | null
+          notes: string | null
+          purchase_id: string
+          reason: string
+          refund_amount: number | null
+          return_cost: number | null
+          status: Database["public"]["Enums"]["return_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_date?: string | null
+          created_at?: string
+          id?: string
+          initiated_date?: string | null
+          notes?: string | null
+          purchase_id: string
+          reason: string
+          refund_amount?: number | null
+          return_cost?: number | null
+          status?: Database["public"]["Enums"]["return_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_date?: string | null
+          created_at?: string
+          id?: string
+          initiated_date?: string | null
+          notes?: string | null
+          purchase_id?: string
+          reason?: string
+          refund_amount?: number | null
+          return_cost?: number | null
+          status?: Database["public"]["Enums"]["return_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "returns_purchase_id_fkey"
+            columns: ["purchase_id"]
+            isOneToOne: false
+            referencedRelation: "purchases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          created_at: string
+          gemstone_filters: Json | null
+          id: string
+          item_type: Database["public"]["Enums"]["item_type"]
+          jewelry_filters: Json | null
+          listing_format: string[] | null
+          max_price: number | null
+          min_seller_feedback: number | null
+          name: string
+          poll_interval: number | null
+          price_percentage: number | null
+          status: Database["public"]["Enums"]["task_status"]
+          updated_at: string
+          user_id: string
+          watch_filters: Json | null
+        }
+        Insert: {
+          created_at?: string
+          gemstone_filters?: Json | null
+          id?: string
+          item_type: Database["public"]["Enums"]["item_type"]
+          jewelry_filters?: Json | null
+          listing_format?: string[] | null
+          max_price?: number | null
+          min_seller_feedback?: number | null
+          name: string
+          poll_interval?: number | null
+          price_percentage?: number | null
+          status?: Database["public"]["Enums"]["task_status"]
+          updated_at?: string
+          user_id: string
+          watch_filters?: Json | null
+        }
+        Update: {
+          created_at?: string
+          gemstone_filters?: Json | null
+          id?: string
+          item_type?: Database["public"]["Enums"]["item_type"]
+          jewelry_filters?: Json | null
+          listing_format?: string[] | null
+          max_price?: number | null
+          min_seller_feedback?: number | null
+          name?: string
+          poll_interval?: number | null
+          price_percentage?: number | null
+          status?: Database["public"]["Enums"]["task_status"]
+          updated_at?: string
+          user_id?: string
+          watch_filters?: Json | null
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          created_at: string
+          default_max_price: number | null
+          default_poll_interval: number | null
+          ebay_api_version: string | null
+          email_notifications: boolean | null
+          gold_api_version: string | null
+          id: string
+          match_notifications: boolean | null
+          openai_model: string | null
+          theme: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          default_max_price?: number | null
+          default_poll_interval?: number | null
+          ebay_api_version?: string | null
+          email_notifications?: boolean | null
+          gold_api_version?: string | null
+          id?: string
+          match_notifications?: boolean | null
+          openai_model?: string | null
+          theme?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          default_max_price?: number | null
+          default_poll_interval?: number | null
+          ebay_api_version?: string | null
+          email_notifications?: boolean | null
+          gold_api_version?: string | null
+          id?: string
+          match_notifications?: boolean | null
+          openai_model?: string | null
+          theme?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -18,7 +358,17 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      item_type: "watch" | "jewelry" | "gemstone"
+      match_status: "new" | "reviewed" | "offered" | "purchased" | "passed"
+      purchase_status: "pending" | "completed" | "cancelled" | "returned"
+      resale_status: "pending" | "listed" | "sold" | "cancelled"
+      return_status:
+        | "initiated"
+        | "shipped"
+        | "received"
+        | "refunded"
+        | "denied"
+      task_status: "active" | "paused" | "stopped"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -133,6 +483,13 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      item_type: ["watch", "jewelry", "gemstone"],
+      match_status: ["new", "reviewed", "offered", "purchased", "passed"],
+      purchase_status: ["pending", "completed", "cancelled", "returned"],
+      resale_status: ["pending", "listed", "sold", "cancelled"],
+      return_status: ["initiated", "shipped", "received", "refunded", "denied"],
+      task_status: ["active", "paused", "stopped"],
+    },
   },
 } as const
