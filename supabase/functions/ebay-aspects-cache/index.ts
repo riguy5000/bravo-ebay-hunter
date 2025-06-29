@@ -30,11 +30,12 @@ Deno.serve(async (req) => {
       throw new Error('EBAY_APP_ID not configured');
     }
 
-    // Jewelry & Watches category IDs
+    // Complete jewelry categories with proper IDs
     const categories = [
       { id: '281', name: 'Fine Jewelry' },
-      { id: '164', name: 'Watches' },
-      { id: '10968', name: 'Loose Diamonds & Gemstones' }
+      { id: '31387', name: 'Luxury Watches' }, // Corrected category ID
+      { id: '10207', name: 'Loose Diamonds' },
+      { id: '51089', name: 'Loose Gemstones (Non-Diamond)' }
     ];
 
     console.log('Starting eBay aspects cache refresh...');
@@ -59,6 +60,8 @@ Deno.serve(async (req) => {
         const aspectsData = await ebayResponse.json();
         const aspects = aspectsData.aspects || [];
 
+        console.log(`Processing ${aspects.length} aspects for ${category.name}`);
+
         // Process and cache each aspect
         for (const aspect of aspects) {
           const aspectName = aspect.localizedAspectName;
@@ -81,11 +84,11 @@ Deno.serve(async (req) => {
             });
 
           if (error) {
-            console.error(`Error caching aspect ${aspectName}:`, error);
+            console.error(`Error caching aspect ${aspectName} for category ${category.id}:`, error);
           }
         }
 
-        console.log(`Cached ${aspects.length} aspects for ${category.name}`);
+        console.log(`Successfully cached ${aspects.length} aspects for ${category.name}`);
       } catch (error) {
         console.error(`Error processing category ${category.name}:`, error);
       }
@@ -94,8 +97,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'eBay aspects cache refreshed',
-        timestamp: new Date().toISOString()
+        message: 'eBay aspects cache refreshed for all jewelry categories',
+        timestamp: new Date().toISOString(),
+        categories_processed: categories.length
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

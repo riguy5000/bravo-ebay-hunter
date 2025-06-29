@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,7 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Textarea } from '@/components/ui/textarea';
 import { WatchFilters } from './WatchFilters';
 import { JewelryFilters } from './JewelryFilters';
-import { GemstoneFliters } from './GemstoneFliters';
+import { EnhancedGemstoneFilters } from './EnhancedGemstoneFilters';
 import { useTasks } from '@/hooks/useTasks';
 import { toast } from 'sonner';
 import { TaskTemplate } from './TaskTemplates';
@@ -475,7 +476,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             )}
 
             {itemType === 'gemstone' && (
-              <GemstoneFliters 
+              <EnhancedGemstoneFilters 
                 filters={gemstoneFilters} 
                 onChange={setGemstoneFilters} 
               />
