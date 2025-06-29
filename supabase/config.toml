@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.task-scheduler]
 verify_jwt = false
+
+[functions.ebay-aspects-cache]
+verify_jwt = false

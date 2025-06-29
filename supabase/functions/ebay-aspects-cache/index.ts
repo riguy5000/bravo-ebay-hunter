@@ -14,6 +14,38 @@ interface EbayAspect {
   }>;
 }
 
+// Function to get eBay OAuth token
+async function getEbayOAuthToken(): Promise<string> {
+  const ebayAppId = Deno.env.get('EBAY_APP_ID');
+  const ebayDevId = Deno.env.get('EBAY_DEV_ID');
+  const ebayCertId = Deno.env.get('EBAY_CERT_ID');
+
+  if (!ebayAppId || !ebayDevId || !ebayCertId) {
+    throw new Error('eBay credentials not configured');
+  }
+
+  // Create the OAuth credentials string
+  const credentials = btoa(`${ebayAppId}:${ebayCertId}`);
+  
+  const tokenUrl = 'https://api.ebay.com/identity/v1/oauth2/token';
+  const tokenResponse = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${credentials}`,
+    },
+    body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope',
+  });
+
+  if (!tokenResponse.ok) {
+    console.error('eBay OAuth error:', tokenResponse.status, await tokenResponse.text());
+    throw new Error(`eBay OAuth failed: ${tokenResponse.status}`);
+  }
+
+  const tokenData = await tokenResponse.json();
+  return tokenData.access_token;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -25,15 +57,15 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const ebayAppId = Deno.env.get('EBAY_APP_ID');
-    if (!ebayAppId) {
-      throw new Error('EBAY_APP_ID not configured');
-    }
+    // Get OAuth token for eBay API
+    console.log('Getting eBay OAuth token...');
+    const accessToken = await getEbayOAuthToken();
+    console.log('eBay OAuth token obtained successfully');
 
     // Complete jewelry categories with proper IDs
     const categories = [
       { id: '281', name: 'Fine Jewelry' },
-      { id: '31387', name: 'Luxury Watches' }, // Corrected category ID
+      { id: '31387', name: 'Luxury Watches' },
       { id: '10207', name: 'Loose Diamonds' },
       { id: '51089', name: 'Loose Gemstones (Non-Diamond)' }
     ];
@@ -47,13 +79,15 @@ Deno.serve(async (req) => {
         const ebayUrl = `https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_item_aspects_for_category?category_id=${category.id}`;
         const ebayResponse = await fetch(ebayUrl, {
           headers: {
-            'Authorization': `Bearer ${ebayAppId}`,
+            'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
+            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
           },
         });
 
         if (!ebayResponse.ok) {
-          console.error(`eBay API error for category ${category.id}:`, ebayResponse.status);
+          const errorText = await ebayResponse.text();
+          console.error(`eBay API error for category ${category.id}:`, ebayResponse.status, errorText);
           continue;
         }
 
