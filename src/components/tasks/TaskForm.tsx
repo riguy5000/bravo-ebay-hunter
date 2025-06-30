@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -11,7 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { CalendarIcon } from "lucide-react"
+import { CalendarIcon, Brain, Zap } from "lucide-react"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
@@ -156,7 +155,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
       console.log('Task created successfully:', data);
       toast({
         title: "Success",
-        description: "Task created successfully! The task scheduler will start searching for matches.",
+        description: "Task created successfully! The AI-powered task scheduler will start analyzing eBay listings and finding quality matches.",
       });
       onSuccess();
     } catch (error: any) {
@@ -174,6 +173,24 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* AI Integration Notice */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-blue-600" />
+              <Zap className="h-4 w-4 text-yellow-500" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-blue-800">AI-Powered Analysis Included</p>
+              <p className="text-xs text-blue-600">
+                Your task will automatically use AI to extract metal weights, assess quality, calculate profits, and filter out low-quality listings.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Basic Task Details</CardTitle>
@@ -239,7 +256,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
 
       <Card>
         <CardHeader>
-          <CardTitle>Search Settings</CardTitle>
+          <CardTitle>Smart Filtering & Search Settings</CardTitle>
+          <p className="text-sm text-gray-600">AI will understand context and exclude items intelligently</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -254,7 +272,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
           </div>
 
           <div>
-            <Label>Exclude Keywords</Label>
+            <Label>Exclude Keywords (AI-powered context understanding)</Label>
+            <p className="text-xs text-gray-500 mb-2">
+              AI will understand context - e.g., "plated" will exclude gold-plated but not solid gold items
+            </p>
             <div className="flex space-x-2">
               <Input
                 type="text"
@@ -376,7 +397,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
             Cancel
           </Button>
           <Button type="submit" disabled={loading || !currentUser}>
-            {loading ? 'Creating...' : 'Create Task'}
+            {loading ? 'Creating...' : 'Create AI-Powered Task'}
           </Button>
         </div>
       </div>

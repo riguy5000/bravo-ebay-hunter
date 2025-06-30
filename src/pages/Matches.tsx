@@ -1,11 +1,10 @@
-
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMatches, type WatchMatch, type JewelryMatch, type GemstoneMatch } from '@/hooks/useMatches';
-import { Eye, ShoppingCart, RotateCcw, Package } from 'lucide-react';
+import { Eye, ShoppingCart, RotateCcw, Package, Brain, TrendingUp } from 'lucide-react';
 
 const Matches = () => {
   const { 
@@ -62,6 +61,38 @@ const Matches = () => {
     }
   };
 
+  const renderAIAnalysis = (match: WatchMatch | JewelryMatch | GemstoneMatch) => {
+    if (!match.ai_score && !match.ai_reasoning) return null;
+
+    return (
+      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+        <div className="flex items-center gap-2 mb-2">
+          <Brain className="h-4 w-4 text-blue-600" />
+          <span className="text-sm font-medium text-blue-800">AI Analysis</span>
+          {match.ai_score && (
+            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+              Quality: {match.ai_score}/100
+            </Badge>
+          )}
+        </div>
+        {match.ai_reasoning && (
+          <p className="text-xs text-blue-700">{match.ai_reasoning}</p>
+        )}
+        
+        {/* Show jewelry-specific AI data */}
+        {'profit_scrap' in match && match.profit_scrap && (
+          <div className="flex items-center gap-2 mt-2 text-xs">
+            <TrendingUp className="h-3 w-3 text-green-600" />
+            <span className="text-green-700">
+              Scrap Profit: ${match.profit_scrap.toFixed(2)}
+              {match.melt_value && ` (Melt: $${match.melt_value.toFixed(2)})`}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderMatchCard = (match: WatchMatch | JewelryMatch | GemstoneMatch, onStatusUpdate: (id: string, status: string) => void) => (
     <div key={match.id} className="border rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between">
@@ -81,11 +112,7 @@ const Matches = () => {
         </Badge>
       </div>
 
-      {match.ai_reasoning && (
-        <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
-          <strong>AI Analysis:</strong> {match.ai_reasoning}
-        </div>
-      )}
+      {renderAIAnalysis(match)}
 
       <div className="flex gap-2 pt-2">
         {match.ebay_url && (
@@ -116,8 +143,8 @@ const Matches = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Matches</h1>
-        <p className="text-gray-600">Review your search results and AI-identified opportunities</p>
+        <h1 className="text-3xl font-bold text-gray-900">AI-Analyzed Matches</h1>
+        <p className="text-gray-600">Review your search results with AI quality scoring and profit analysis</p>
       </div>
 
       <Tabs defaultValue="all" className="w-full">
@@ -131,8 +158,8 @@ const Matches = () => {
         <TabsContent value="all">
           <Card>
             <CardHeader>
-              <CardTitle>All Matches</CardTitle>
-              <CardDescription>Found listings matching your criteria ({totalMatches} total)</CardDescription>
+              <CardTitle>All AI-Analyzed Matches</CardTitle>
+              <CardDescription>Found listings matching your criteria with AI quality assessment ({totalMatches} total)</CardDescription>
             </CardHeader>
             <CardContent>
               {totalMatches > 0 ? (
@@ -142,7 +169,7 @@ const Matches = () => {
                   {gemstoneMatches.map((match) => renderMatchCard(match, handleGemstoneStatusUpdate))}
                 </div>
               ) : (
-                <div className="text-sm text-gray-500">No matches found yet</div>
+                <div className="text-sm text-gray-500">No matches found yet. Create a task to start finding opportunities!</div>
               )}
             </CardContent>
           </Card>
@@ -152,7 +179,7 @@ const Matches = () => {
           <Card>
             <CardHeader>
               <CardTitle>Watch Matches</CardTitle>
-              <CardDescription>Luxury watches and timepieces ({watchMatches.length} found)</CardDescription>
+              <CardDescription>Luxury watches and timepieces with AI analysis ({watchMatches.length} found)</CardDescription>
             </CardHeader>
             <CardContent>
               {watchMatches.length > 0 ? (
@@ -170,7 +197,7 @@ const Matches = () => {
           <Card>
             <CardHeader>
               <CardTitle>Jewelry Matches</CardTitle>
-              <CardDescription>Gold jewelry and precious metal items ({jewelryMatches.length} found)</CardDescription>
+              <CardDescription>Gold jewelry and precious metal items with profit analysis ({jewelryMatches.length} found)</CardDescription>
             </CardHeader>
             <CardContent>
               {jewelryMatches.length > 0 ? (
@@ -188,7 +215,7 @@ const Matches = () => {
           <Card>
             <CardHeader>
               <CardTitle>Gemstone Matches</CardTitle>
-              <CardDescription>Loose diamonds and precious stones ({gemstoneMatches.length} found)</CardDescription>
+              <CardDescription>Loose diamonds and precious stones with market analysis ({gemstoneMatches.length} found)</CardDescription>
             </CardHeader>
             <CardContent>
               {gemstoneMatches.length > 0 ? (
