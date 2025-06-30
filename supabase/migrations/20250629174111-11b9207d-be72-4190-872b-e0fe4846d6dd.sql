@@ -152,7 +152,7 @@ ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS date_from TIMESTAMP WITH TIME 
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS date_to TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS item_location TEXT;
 
--- Create eBay aspects cache table
+-- Create eBay aspects cache table with proper constraints
 CREATE TABLE public.ebay_aspects (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   category_id TEXT NOT NULL,
@@ -162,7 +162,8 @@ CREATE TABLE public.ebay_aspects (
   refreshed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   
-  UNIQUE(category_id, brand, aspect_name)
+  -- Use the correct unique constraint that matches the upsert operation
+  UNIQUE(category_id, aspect_name)
 );
 
 -- Create flexible settings table

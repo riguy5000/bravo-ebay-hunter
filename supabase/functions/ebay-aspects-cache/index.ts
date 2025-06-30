@@ -38,8 +38,9 @@ async function getEbayOAuthToken(): Promise<string> {
   });
 
   if (!tokenResponse.ok) {
-    console.error('eBay OAuth error:', tokenResponse.status, await tokenResponse.text());
-    throw new Error(`eBay OAuth failed: ${tokenResponse.status}`);
+    const errorText = await tokenResponse.text();
+    console.error('eBay OAuth error:', tokenResponse.status, errorText);
+    throw new Error(`eBay OAuth failed: ${tokenResponse.status} - ${errorText}`);
   }
 
   const tokenData = await tokenResponse.json();
@@ -62,15 +63,18 @@ Deno.serve(async (req) => {
     const accessToken = await getEbayOAuthToken();
     console.log('eBay OAuth token obtained successfully');
 
-    // Complete jewelry categories with proper IDs
+    // Start with just one working category to test
     const categories = [
-      { id: '281', name: 'Fine Jewelry' },
-      { id: '31387', name: 'Luxury Watches' },
-      { id: '10207', name: 'Loose Diamonds' },
-      { id: '51089', name: 'Loose Gemstones (Non-Diamond)' }
+      { id: '31387', name: 'Luxury Watches' }, // Start with this known working category
+      // We'll add more categories once this works:
+      // { id: '164330', name: 'Fine Rings' },
+      // { id: '164331', name: 'Fine Necklaces & Pendants' },
+      // { id: '10207', name: 'Loose Diamonds' },
+      // { id: '51089', name: 'Loose Gemstones (Non-Diamond)' }
     ];
 
     console.log('Starting eBay aspects cache refresh...');
+    let totalProcessed = 0;
 
     for (const category of categories) {
       try {
@@ -88,13 +92,27 @@ Deno.serve(async (req) => {
         if (!ebayResponse.ok) {
           const errorText = await ebayResponse.text();
           console.error(`eBay API error for category ${category.id}:`, ebayResponse.status, errorText);
+          
+          // Try to parse the error response
+          try {
+            const errorJson = JSON.parse(errorText);
+            console.error('eBay API error details:', errorJson);
+          } catch (e) {
+            console.error('Could not parse eBay error response');
+          }
           continue;
         }
 
         const aspectsData = await ebayResponse.json();
+        console.log(`Raw eBay response for ${category.name}:`, JSON.stringify(aspectsData, null, 2));
+        
         const aspects = aspectsData.aspects || [];
-
         console.log(`Processing ${aspects.length} aspects for ${category.name}`);
+
+        if (aspects.length === 0) {
+          console.warn(`No aspects found for category ${category.name} (${category.id})`);
+          continue;
+        }
 
         // Process and cache each aspect
         for (const aspect of aspects) {
@@ -104,7 +122,9 @@ Deno.serve(async (req) => {
             meaning: v.valueMeaning || v.localizedValue
           })) || [];
 
-          // Upsert aspect data
+          console.log(`Caching aspect: ${aspectName} with ${values.length} values`);
+
+          // Upsert aspect data - note: we're not using the brand column
           const { error } = await supabaseClient
             .from('ebay_aspects')
             .upsert({
@@ -119,21 +139,40 @@ Deno.serve(async (req) => {
 
           if (error) {
             console.error(`Error caching aspect ${aspectName} for category ${category.id}:`, error);
+            console.error('Error details:', JSON.stringify(error, null, 2));
+          } else {
+            console.log(`Successfully cached aspect: ${aspectName}`);
+            totalProcessed++;
           }
         }
 
-        console.log(`Successfully cached ${aspects.length} aspects for ${category.name}`);
+        console.log(`Successfully processed ${aspects.length} aspects for ${category.name}`);
       } catch (error) {
         console.error(`Error processing category ${category.name}:`, error);
       }
     }
 
+    // Check what was actually inserted
+    const { data: insertedAspects, error: selectError } = await supabaseClient
+      .from('ebay_aspects')
+      .select('category_id, aspect_name, values_json')
+      .order('category_id, aspect_name');
+
+    if (selectError) {
+      console.error('Error checking inserted aspects:', selectError);
+    } else {
+      console.log(`Total aspects in database: ${insertedAspects?.length || 0}`);
+      console.log('Sample aspects:', insertedAspects?.slice(0, 3));
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'eBay aspects cache refreshed for all jewelry categories',
+        message: 'eBay aspects cache refreshed',
         timestamp: new Date().toISOString(),
-        categories_processed: categories.length
+        categories_processed: categories.length,
+        total_aspects_processed: totalProcessed,
+        aspects_in_db: insertedAspects?.length || 0
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -146,7 +185,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: error.message,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        details: error.stack
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
