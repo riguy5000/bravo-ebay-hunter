@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useEbayAspects } from '@/hooks/useEbayAspects';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Database } from 'lucide-react';
 
 interface EnhancedGemstoneFiltersProps {
   filters: any;
@@ -46,7 +46,7 @@ export const EnhancedGemstoneFilters: React.FC<EnhancedGemstoneFiltersProps> = (
 
   // Determine which aspects to use based on stone type
   const currentAspects = selectedStoneType === 'Diamond' ? diamondAspects : gemstoneAspects;
-  const { getAspectValues, refreshCache, loading } = currentAspects;
+  const { getAspectValues, refreshCache, populateTestData, loading, error } = currentAspects;
 
   // Get values for specific aspects
   const conditions = getAspectValues('Condition');
@@ -88,17 +88,34 @@ export const EnhancedGemstoneFilters: React.FC<EnhancedGemstoneFiltersProps> = (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Enhanced Gemstone Filters</CardTitle>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={refreshCache}
-          className="flex items-center gap-2"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh eBay Data
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={populateTestData}
+            className="flex items-center gap-2"
+          >
+            <Database className="h-4 w-4" />
+            Add Test Data
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={refreshCache}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh eBay Data
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        {error && (
+          <div className="p-4 text-sm text-red-600 bg-red-50 rounded-md">
+            {error}
+          </div>
+        )}
+
         {/* Basic Properties */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
