@@ -9,3 +9,9 @@ verify_jwt = false
 
 [functions.ebay-aspects-cache]
 verify_jwt = false
+
+[functions.ebay-item-analyzer]
+verify_jwt = false
+
+[functions.get-gold-prices]
+verify_jwt = false

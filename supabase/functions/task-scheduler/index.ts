@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -77,11 +76,74 @@ const buildSearchKeywords = (task: Task): string => {
   return keywords || task.name.toLowerCase();
 };
 
+const analyzeItemWithAI = async (task: Task, item: any) => {
+  try {
+    console.log(`🤖 Analyzing item with AI: ${item.title}`);
+    
+    const analysisData = {
+      title: item.title,
+      description: item.description || '',
+      price: item.price,
+      currency: item.currency || 'USD',
+      sellerInfo: item.sellerInfo,
+      itemType: task.item_type
+    };
+
+    const { data: analysis, error } = await supabase.functions.invoke('ebay-item-analyzer', {
+      body: analysisData
+    });
+
+    if (error) {
+      console.error('AI analysis error:', error);
+      return null;
+    }
+
+    console.log(`✓ AI Analysis - Quality: ${analysis.qualityScore}, Deal: ${analysis.dealScore}`);
+    return analysis;
+  } catch (error) {
+    console.error('Error in AI analysis:', error);
+    return null;
+  }
+};
+
+const shouldExcludeItem = (task: Task, item: any, aiAnalysis: any): { exclude: boolean; reason?: string } => {
+  // Basic keyword exclusion (existing logic)
+  if (task.exclude_keywords && task.exclude_keywords.length > 0) {
+    const titleLower = item.title.toLowerCase();
+    const hasExcludedKeyword = task.exclude_keywords.some(keyword => 
+      titleLower.includes(keyword.toLowerCase())
+    );
+    if (hasExcludedKeyword) {
+      return { exclude: true, reason: 'Contains excluded keyword' };
+    }
+  }
+
+  // AI-based exclusion
+  if (aiAnalysis) {
+    // Exclude low quality items
+    if (aiAnalysis.qualityScore < 30) {
+      return { exclude: true, reason: `Low quality score: ${aiAnalysis.qualityScore}` };
+    }
+
+    // Exclude items with high risk flags
+    if (aiAnalysis.riskFlags && aiAnalysis.riskFlags.length > 2) {
+      return { exclude: true, reason: `Multiple risk flags: ${aiAnalysis.riskFlags.join(', ')}` };
+    }
+
+    // Exclude poor deals (jewelry with negative scrap profit)
+    if (task.item_type === 'jewelry' && aiAnalysis.extractedData?.profit_scrap < -50) {
+      return { exclude: true, reason: 'Negative scrap value profit' };
+    }
+  }
+
+  return { exclude: false };
+};
+
 const getMatchTableName = (itemType: string): string => {
   return `matches_${itemType}`;
 };
 
-const createMatchRecord = (task: Task, item: any) => {
+const createMatchRecord = (task: Task, item: any, aiAnalysis?: any) => {
   const baseMatch = {
     task_id: task.id,
     user_id: task.user_id,
@@ -93,7 +155,9 @@ const createMatchRecord = (task: Task, item: any) => {
     buy_format: item.listingType || 'Unknown',
     seller_feedback: item.sellerInfo?.feedbackScore || 0,
     found_at: new Date().toISOString(),
-    status: 'new' as const
+    status: 'new' as const,
+    ai_score: aiAnalysis?.qualityScore || null,
+    ai_reasoning: aiAnalysis?.reasoning || null
   };
 
   // Add type-specific fields based on item type
@@ -101,33 +165,39 @@ const createMatchRecord = (task: Task, item: any) => {
     case 'watch':
       return {
         ...baseMatch,
-        case_material: item.caseMaterial || 'Unknown',
+        case_material: aiAnalysis?.caseMaterial || item.caseMaterial || 'Unknown',
         band_material: item.bandMaterial || 'Unknown',
-        movement: item.movement || 'Unknown',
+        movement: aiAnalysis?.movement || item.movement || 'Unknown',
         dial_colour: item.dialColour || 'Unknown',
         case_size_mm: item.caseSizeMm || null,
+        chrono24_avg: aiAnalysis?.marketValue || null,
+        price_diff_percent: aiAnalysis?.marketValue ? 
+          ((aiAnalysis.marketValue - item.price) / aiAnalysis.marketValue * 100) : null
       };
     
     case 'jewelry':
       return {
         ...baseMatch,
-        weight_g: item.weightG || null,
-        karat: item.karat || null,
-        metal_type: item.metalType || 'Unknown',
-        spot_price_oz: item.spotPriceOz || null,
-        melt_value: item.meltValue || null,
-        profit_scrap: item.profitScrap || null,
+        weight_g: aiAnalysis?.extractedData?.weight_g || item.weightG || null,
+        karat: aiAnalysis?.karat || item.karat || null,
+        metal_type: aiAnalysis?.metalType || item.metalType || 'Unknown',
+        spot_price_oz: aiAnalysis?.extractedData?.spot_price_oz || item.spotPriceOz || null,
+        melt_value: aiAnalysis?.extractedData?.melt_value || item.meltValue || null,
+        profit_scrap: aiAnalysis?.extractedData?.profit_scrap || item.profitScrap || null,
       };
     
     case 'gemstone':
       return {
         ...baseMatch,
-        shape: item.shape || 'Unknown',
-        carat: item.carat || null,
-        colour: item.colour || 'Unknown',
-        clarity: item.clarity || 'Unknown',
-        cut_grade: item.cutGrade || 'Unknown',
+        shape: aiAnalysis?.cut || item.shape || 'Unknown',
+        carat: aiAnalysis?.carat || item.carat || null,
+        colour: aiAnalysis?.color || item.colour || 'Unknown',
+        clarity: aiAnalysis?.clarity || item.clarity || 'Unknown',
+        cut_grade: aiAnalysis?.cut || item.cutGrade || 'Unknown',
         cert_lab: item.certLab || 'Unknown',
+        rapnet_avg: aiAnalysis?.marketValue || null,
+        price_diff_percent: aiAnalysis?.marketValue ? 
+          ((aiAnalysis.marketValue - item.price) / aiAnalysis.marketValue * 100) : null
       };
     
     default:
@@ -171,31 +241,36 @@ const processTask = async (task: Task) => {
 
     const tableName = getMatchTableName(task.item_type);
     let newMatches = 0;
+    let analyzedItems = 0;
+    let excludedItems = 0;
     
-    // Process each item and create matches
-    for (const item of items.slice(0, 10)) { // Limit to first 10 items for testing
+    // Process each item with AI analysis
+    for (const item of items.slice(0, 10)) { // Limit to first 10 items
+      analyzedItems++;
+      
       // Skip if price is too high
       if (task.max_price && item.price > task.max_price) {
         console.log(`Skipping item ${item.itemId} - price too high: $${item.price}`);
+        excludedItems++;
         continue;
       }
 
       // Skip if seller feedback is too low
       if (task.min_seller_feedback && item.sellerInfo?.feedbackScore < task.min_seller_feedback) {
         console.log(`Skipping item ${item.itemId} - feedback too low: ${item.sellerInfo?.feedbackScore}`);
+        excludedItems++;
         continue;
       }
 
-      // Skip if contains excluded keywords
-      if (task.exclude_keywords && task.exclude_keywords.length > 0) {
-        const titleLower = item.title.toLowerCase();
-        const hasExcludedKeyword = task.exclude_keywords.some(keyword => 
-          titleLower.includes(keyword.toLowerCase())
-        );
-        if (hasExcludedKeyword) {
-          console.log(`Skipping item due to excluded keyword: ${item.title}`);
-          continue;
-        }
+      // AI Analysis
+      const aiAnalysis = await analyzeItemWithAI(task, item);
+      
+      // Smart exclusion logic
+      const exclusionCheck = shouldExcludeItem(task, item, aiAnalysis);
+      if (exclusionCheck.exclude) {
+        console.log(`🚫 Excluding item: ${exclusionCheck.reason} - ${item.title}`);
+        excludedItems++;
+        continue;
       }
 
       // Check if we already have this item
@@ -211,8 +286,8 @@ const processTask = async (task: Task) => {
         continue;
       }
 
-      // Create new match record
-      const matchData = createMatchRecord(task, item);
+      // Create new match record with AI analysis data
+      const matchData = createMatchRecord(task, item, aiAnalysis);
 
       const { error: insertError } = await supabase
         .from(tableName)
@@ -221,12 +296,13 @@ const processTask = async (task: Task) => {
       if (insertError) {
         console.error('Error inserting match:', insertError);
       } else {
-        console.log(`✓ Created ${task.item_type} match: ${item.title} - $${item.price}`);
+        const aiInfo = aiAnalysis ? `(AI: ${aiAnalysis.qualityScore}/100, Deal: ${aiAnalysis.dealScore}/100)` : '';
+        console.log(`✅ Created ${task.item_type} match: ${item.title} - $${item.price} ${aiInfo}`);
         newMatches++;
       }
     }
 
-    console.log(`✓ Task ${task.name} processed: ${newMatches} new matches created`);
+    console.log(`✅ Task ${task.name} processed: ${newMatches} new matches, ${excludedItems} excluded, ${analyzedItems} analyzed`);
 
   } catch (error) {
     console.error(`Error processing task ${task.id}:`, error);
@@ -239,7 +315,7 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    console.log('Task scheduler started');
+    console.log('🚀 Task scheduler with AI analysis started');
 
     // Get all active tasks
     const { data: tasks, error } = await supabase
@@ -285,7 +361,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     return new Response(JSON.stringify({ 
       success: true,
-      message: `Task scheduler completed successfully`,
+      message: `Task scheduler with AI analysis completed`,
       tasksProcessed: processedCount,
       totalTasks: tasks.length
     }), {
