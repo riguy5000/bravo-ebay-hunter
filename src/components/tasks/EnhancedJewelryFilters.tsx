@@ -1,14 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { MultiSelectAspectFilter } from './MultiSelectAspectFilter';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { useEbayAspects } from '@/hooks/useEbayAspects';
-import { Button } from '@/components/ui/button';
-import { RefreshCw, TestTube, AlertCircle } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface EnhancedJewelryFiltersProps {
   filters: any;
@@ -19,423 +14,169 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
   filters, 
   onChange 
 }) => {
-  // Use Fine Rings category (164330) - a verified working leaf category
-  const { aspects, loading, error, getAspectValues, refreshCache, populateTestData } = useEbayAspects('164330');
-  const [selectedMetal, setSelectedMetal] = useState(filters.metal || '');
-  const [isPopulatingTestData, setIsPopulatingTestData] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  
   const handleChange = (key: string, value: any) => {
-    const newFilters = { ...filters, [key]: value };
-    
-    // Handle cascading - reset metal purity when metal changes
-    if (key === 'metal' && value !== selectedMetal) {
-      newFilters.metal_purity = '';
-      setSelectedMetal(value);
-    }
-    
-    onChange(newFilters);
+    onChange({ ...filters, [key]: value });
   };
 
-  const handleMultiSelectChange = (key: string, value: string, checked: boolean) => {
-    const currentValues = filters[key] || [];
-    if (checked) {
-      handleChange(key, [...currentValues, value]);
-    } else {
-      handleChange(key, currentValues.filter((v: string) => v !== value));
-    }
-  };
-
-  const handlePopulateTestData = async () => {
-    setIsPopulatingTestData(true);
-    try {
-      await populateTestData();
-    } finally {
-      setIsPopulatingTestData(false);
-    }
-  };
-
-  const handleRefreshCache = async () => {
-    setIsRefreshing(true);
-    try {
-      await refreshCache();
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  // Get values for specific aspects
-  const conditions = getAspectValues('Condition');
-  const metals = getAspectValues('Metal');
-  const metalPurities = getAspectValues('Metal Purity');
-  const mainStones = getAspectValues('Main Stone');
-  const stoneShapes = getAspectValues('Main Stone Shape');
-  const stoneColors = getAspectValues('Main Stone Colour');
-  const stoneCreations = getAspectValues('Main Stone Creation');
-  const stoneTreatments = getAspectValues('Main Stone Treatment');
-  const jewelryTypes = getAspectValues('Jewelry Type');
-  const settingStyles = getAspectValues('Setting Style');
-  const styles = getAspectValues('Style');
-  const vintageEras = getAspectValues('Vintage');
-
-  // Filter metal purities based on selected metal
-  const getFilteredMetalPurities = () => {
-    if (!selectedMetal) return metalPurities;
-    
-    // Basic filtering logic - in real implementation, this would be more sophisticated
-    if (selectedMetal.toLowerCase().includes('gold')) {
-      return metalPurities.filter(p => 
-        p.value.includes('k') || p.value.includes('K')
-      );
-    } else if (selectedMetal.toLowerCase().includes('silver')) {
-      return metalPurities.filter(p => 
-        p.value.includes('925') || p.value.includes('Sterling') || p.value.includes('Fine')
-      );
-    } else if (selectedMetal.toLowerCase().includes('platinum')) {
-      return metalPurities.filter(p => 
-        p.value.includes('850') || p.value.includes('900') || p.value.includes('950') || p.value.includes('999')
-      );
-    }
-    
-    return metalPurities;
-  };
-
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Loading eBay Aspects...</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center p-8">
-            <RefreshCw className="h-6 w-6 animate-spin" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  // Use multiple jewelry categories to get comprehensive aspect data
+  const jewelryCategoryIds = ['164330', '45077', '164331', '45080']; // Mix of fine and fashion jewelry
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle>Enhanced Jewelry Filters</CardTitle>
-        <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handlePopulateTestData}
-            disabled={isPopulatingTestData}
-            className="flex items-center gap-2"
-          >
-            <TestTube className="h-4 w-4" />
-            {isPopulatingTestData ? 'Adding Test Data...' : 'Add Test Data'}
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRefreshCache}
-            disabled={isRefreshing}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Refreshing...' : 'Refresh eBay Data'}
-          </Button>
-        </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        
-        {/* Show error if there's one */}
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Error loading eBay aspects: {error}
-            </AlertDescription>
-          </Alert>
-        )}
+        {/* Multi-select aspect filters */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <MultiSelectAspectFilter
+            title="Metal Types"
+            categoryId={jewelryCategoryIds[0]}
+            aspectName="Metal"
+            selectedValues={filters.metal || []}
+            onChange={(values) => handleChange('metal', values)}
+            placeholder="Select metals..."
+          />
 
-        {/* Show data status */}
-        <div className="text-sm text-gray-600 mb-4">
-          {aspects.length > 0 ? (
-            <span className="text-green-600">✓ {aspects.length} aspects loaded from eBay</span>
-          ) : (
-            <span className="text-orange-600">⚠ No aspects loaded - try refreshing or adding test data</span>
-          )}
+          <MultiSelectAspectFilter
+            title="Jewelry Types"
+            categoryId={jewelryCategoryIds[1]}
+            aspectName="Type"
+            selectedValues={filters.categories || []}
+            onChange={(values) => handleChange('categories', values)}
+            placeholder="Select jewelry types..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Colors"
+            categoryId={jewelryCategoryIds[0]}
+            aspectName="Color"
+            selectedValues={filters.colors || []}
+            onChange={(values) => handleChange('colors', values)}
+            placeholder="Select colors..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Conditions"
+            categoryId={jewelryCategoryIds[0]}
+            aspectName="Condition"
+            selectedValues={filters.conditions || []}
+            onChange={(values) => handleChange('conditions', values)}
+            placeholder="Select conditions..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Brands"
+            categoryId={jewelryCategoryIds[1]}
+            aspectName="Brand"
+            selectedValues={filters.brands || []}
+            onChange={(values) => handleChange('brands', values)}
+            placeholder="Select brands..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Main Stone"
+            categoryId={jewelryCategoryIds[0]}
+            aspectName="Main Stone"
+            selectedValues={filters.main_stones || []}
+            onChange={(values) => handleChange('main_stones', values)}
+            placeholder="Select stones..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Metal Purity"
+            categoryId={jewelryCategoryIds[0]}
+            aspectName="Metal Purity"
+            selectedValues={filters.metal_purity || []}
+            onChange={(values) => handleChange('metal_purity', values)}
+            placeholder="Select purity..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Style"
+            categoryId={jewelryCategoryIds[1]}
+            aspectName="Style"
+            selectedValues={filters.styles || []}
+            onChange={(values) => handleChange('styles', values)}
+            placeholder="Select styles..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Main Stone Color"
+            categoryId={jewelryCategoryIds[0]}
+            aspectName="Main Stone Color"
+            selectedValues={filters.stone_colors || []}
+            onChange={(values) => handleChange('stone_colors', values)}
+            placeholder="Select stone colors..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Material"
+            categoryId={jewelryCategoryIds[1]}
+            aspectName="Material"
+            selectedValues={filters.materials || []}
+            onChange={(values) => handleChange('materials', values)}
+            placeholder="Select materials..."
+          />
         </div>
 
-        {/* Basic Properties */}
+        {/* Numeric filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="condition">Condition</Label>
-            <Select onValueChange={(value) => handleChange('condition', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select condition" />
-              </SelectTrigger>
-              <SelectContent>
-                {conditions.map((condition, index) => (
-                  <SelectItem key={`${condition.value}-${index}`} value={condition.value}>
-                    {condition.meaning}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="weight_min">Min Weight (grams)</Label>
+            <Input
+              id="weight_min"
+              type="number"
+              step="0.1"
+              placeholder="e.g., 5.0"
+              value={filters.weight_min || ''}
+              onChange={(e) => handleChange('weight_min', Number(e.target.value))}
+            />
           </div>
 
           <div>
-            <Label htmlFor="jewelry_type">Jewelry Type</Label>
-            <Select onValueChange={(value) => handleChange('jewelry_type', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                {jewelryTypes.map((type, index) => (
-                  <SelectItem key={`${type.value}-${index}`} value={type.value}>
-                    {type.meaning}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Metal Properties */}
-        <div className="space-y-4">
-          <h3 className="font-medium text-sm">Metal Properties</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="metal">Metal</Label>
-              <Select 
-                value={selectedMetal}
-                onValueChange={(value) => handleChange('metal', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select metal" />
-                </SelectTrigger>
-                <SelectContent>
-                  {metals.map((metal, index) => (
-                    <SelectItem key={`${metal.value}-${index}`} value={metal.value}>
-                      {metal.meaning}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="metal_purity">Metal Purity</Label>
-              <Select 
-                onValueChange={(value) => handleChange('metal_purity', value)}
-                disabled={!selectedMetal}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select purity" />
-                </SelectTrigger>
-                <SelectContent>
-                  {getFilteredMetalPurities().map((purity, index) => (
-                    <SelectItem key={`${purity.value}-${index}`} value={purity.value}>
-                      {purity.meaning}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-
-        {/* Stone Properties */}
-        <div className="space-y-4">
-          <h3 className="font-medium text-sm">Stone Properties</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="main_stone">Main Stone</Label>
-              <Select onValueChange={(value) => handleChange('main_stone', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select main stone" />
-                </SelectTrigger>
-                <SelectContent>
-                  {mainStones.map((stone, index) => (
-                    <SelectItem key={`${stone.value}-${index}`} value={stone.value}>
-                      {stone.meaning}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="stone_shape">Stone Shape</Label>
-              <Select onValueChange={(value) => handleChange('stone_shape', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select shape" />
-                </SelectTrigger>
-                <SelectContent>
-                  {stoneShapes.map((shape, index) => (
-                    <SelectItem key={`${shape.value}-${index}`} value={shape.value}>
-                      {shape.meaning}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="stone_color">Stone Color</Label>
-              <Select onValueChange={(value) => handleChange('stone_color', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select color" />
-                </SelectTrigger>
-                <SelectContent>
-                  {stoneColors.map((color, index) => (
-                    <SelectItem key={`${color.value}-${index}`} value={color.value}>
-                      {color.meaning}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="stone_creation">Stone Creation</Label>
-              <Select onValueChange={(value) => handleChange('stone_creation', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select creation" />
-                </SelectTrigger>
-                <SelectContent>
-                  {stoneCreations.map((creation, index) => (
-                    <SelectItem key={`${creation.value}-${index}`} value={creation.value}>
-                      {creation.meaning}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-
-        {/* Style & Setting */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="setting_style">Setting Style</Label>
-            <Select onValueChange={(value) => handleChange('setting_style', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select setting" />
-              </SelectTrigger>
-              <SelectContent>
-                {settingStyles.map((style, index) => (
-                  <SelectItem key={`${style.value}-${index}`} value={style.value}>
-                    {style.meaning}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="weight_max">Max Weight (grams)</Label>
+            <Input
+              id="weight_max"
+              type="number"
+              step="0.1"
+              placeholder="e.g., 50.0"
+              value={filters.weight_max || ''}
+              onChange={(e) => handleChange('weight_max', Number(e.target.value))}
+            />
           </div>
 
           <div>
-            <Label htmlFor="style">Style</Label>
-            <Select onValueChange={(value) => handleChange('style', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select style" />
-              </SelectTrigger>
-              <SelectContent>
-                {styles.map((style, index) => (
-                  <SelectItem key={`${style.value}-${index}`} value={style.value}>
-                    {style.meaning}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="carat_weight_min">Min Carat Weight</Label>
+            <Input
+              id="carat_weight_min"
+              type="number"
+              step="0.01"
+              placeholder="e.g., 0.25"
+              value={filters.carat_weight_min || ''}
+              onChange={(e) => handleChange('carat_weight_min', Number(e.target.value))}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="carat_weight_max">Max Carat Weight</Label>
+            <Input
+              id="carat_weight_max"
+              type="number"
+              step="0.01"
+              placeholder="e.g., 2.0"
+              value={filters.carat_weight_max || ''}
+              onChange={(e) => handleChange('carat_weight_max', Number(e.target.value))}
+            />
           </div>
         </div>
 
-        {/* Ring-specific fields */}
-        {filters.jewelry_type === 'Ring' && (
-          <div className="space-y-4">
-            <h3 className="font-medium text-sm">Ring-Specific Options</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="ring_size">Ring Size (US)</Label>
-                <Select onValueChange={(value) => handleChange('ring_size', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select size" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 41 }, (_, i) => {
-                      const size = 3 + (i * 0.25);
-                      return (
-                        <SelectItem key={size} value={size.toString()}>
-                          {size}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="sizable">Sizable</Label>
-                <Select onValueChange={(value) => handleChange('sizable', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select option" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="yes">Yes</SelectItem>
-                    <SelectItem value="no">No</SelectItem>
-                    <SelectItem value="unknown">Unknown</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="band_width">Band Width (mm)</Label>
-                <Input
-                  id="band_width"
-                  type="number"
-                  step="0.1"
-                  placeholder="e.g., 3.5"
-                  value={filters.band_width || ''}
-                  onChange={(e) => handleChange('band_width', Number(e.target.value))}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Weight Range */}
-        <div className="space-y-4">
-          <h3 className="font-medium text-sm">Weight & Price</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="weight_min">Min Weight (grams)</Label>
-              <Input
-                id="weight_min"
-                type="number"
-                step="0.1"
-                placeholder="e.g., 1.0"
-                value={filters.weight_min || ''}
-                onChange={(e) => handleChange('weight_min', Number(e.target.value))}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="weight_max">Max Weight (grams)</Label>
-              <Input
-                id="weight_max"
-                type="number"
-                step="0.1"
-                placeholder="e.g., 50.0"
-                value={filters.weight_max || ''}
-                onChange={(e) => handleChange('weight_max', Number(e.target.value))}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Additional Keywords */}
+        {/* Additional keywords */}
         <div>
           <Label htmlFor="keywords">Additional Keywords</Label>
           <Input
             id="keywords"
-            placeholder="Enter additional search terms"
+            placeholder="Enter additional search terms (comma-separated)"
             value={filters.keywords || ''}
             onChange={(e) => handleChange('keywords', e.target.value)}
           />

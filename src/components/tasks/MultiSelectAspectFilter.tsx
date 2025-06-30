@@ -1,0 +1,140 @@
+
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ChevronDown, X } from 'lucide-react';
+import { useEbayAspects } from '@/hooks/useEbayAspects';
+
+interface MultiSelectAspectFilterProps {
+  title: string;
+  categoryId?: string;
+  aspectName: string;
+  selectedValues: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+}
+
+export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = ({
+  title,
+  categoryId,
+  aspectName,
+  selectedValues,
+  onChange,
+  placeholder = 'Select options...'
+}) => {
+  const { getAspectValues } = useEbayAspects(categoryId);
+  const availableValues = getAspectValues(aspectName);
+
+  const handleValueToggle = (value: string, checked: boolean) => {
+    if (checked) {
+      onChange([...selectedValues, value]);
+    } else {
+      onChange(selectedValues.filter(v => v !== value));
+    }
+  };
+
+  const handleRemoveValue = (valueToRemove: string) => {
+    onChange(selectedValues.filter(v => v !== valueToRemove));
+  };
+
+  const handleClearAll = () => {
+    onChange([]);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>{title}</Label>
+      
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            className="w-full justify-between text-left font-normal"
+          >
+            <span className="truncate">
+              {selectedValues.length > 0 
+                ? `${selectedValues.length} selected`
+                : placeholder
+              }
+            </span>
+            <ChevronDown className="h-4 w-4 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        
+        <DropdownMenuContent className="w-80 max-h-80 overflow-y-auto bg-white">
+          <div className="p-2 space-y-2">
+            {availableValues.length > 0 ? (
+              <>
+                <div className="flex items-center justify-between pb-2 border-b">
+                  <span className="text-sm font-medium">
+                    {availableValues.length} options available
+                  </span>
+                  {selectedValues.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleClearAll}
+                      className="h-6 px-2 text-xs"
+                    >
+                      Clear All
+                    </Button>
+                  )}
+                </div>
+                
+                {availableValues.map((valueObj) => (
+                  <div key={valueObj.value} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`${aspectName}-${valueObj.value}`}
+                      checked={selectedValues.includes(valueObj.value)}
+                      onCheckedChange={(checked) => 
+                        handleValueToggle(valueObj.value, checked as boolean)
+                      }
+                    />
+                    <Label 
+                      htmlFor={`${aspectName}-${valueObj.value}`}
+                      className="text-sm cursor-pointer flex-1"
+                    >
+                      {valueObj.meaning || valueObj.value}
+                    </Label>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="text-sm text-gray-500 py-4 text-center">
+                No {aspectName.toLowerCase()} options available.
+                <br />
+                Try refreshing the aspect data.
+              </div>
+            )}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Selected values display */}
+      {selectedValues.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {selectedValues.map((value) => {
+            const valueObj = availableValues.find(v => v.value === value);
+            return (
+              <div
+                key={value}
+                className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full"
+              >
+                <span>{valueObj?.meaning || value}</span>
+                <button
+                  onClick={() => handleRemoveValue(value)}
+                  className="hover:bg-blue-200 rounded-full p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};

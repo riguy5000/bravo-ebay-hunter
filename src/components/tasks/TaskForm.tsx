@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,15 +10,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { WatchFilters } from './WatchFilters';
-import { JewelryFilters } from './JewelryFilters';
+import { EnhancedWatchFilters } from './EnhancedWatchFilters';
+import { EnhancedJewelryFilters } from './EnhancedJewelryFilters';
 import { EnhancedGemstoneFilters } from './EnhancedGemstoneFilters';
 import { useTasks } from '@/hooks/useTasks';
 import { toast } from 'sonner';
 import { TaskTemplate } from './TaskTemplates';
 import { ArrowLeft, Calendar, MapPin, AlertTriangle } from 'lucide-react';
-import { EnhancedJewelryFilters } from './EnhancedJewelryFilters';
-import { EnhancedWatchFilters } from './EnhancedWatchFilters';
 
 const taskSchema = z.object({
   name: z.string().min(1, 'Task name is required'),
@@ -81,6 +78,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   const handleSubmit = async (data: TaskFormData) => {
     setLoading(true);
     try {
+      console.log('Creating task with data:', data);
+      console.log('Watch filters:', watchFilters);
+      console.log('Jewelry filters:', jewelryFilters);
+      console.log('Gemstone filters:', gemstoneFilters);
+
       const excludeKeywords = excludeKeywordsText
         ? excludeKeywordsText.split(',').map(k => k.trim()).filter(k => k.length > 0)
         : [];
@@ -106,8 +108,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         gemstone_filters: itemType === 'gemstone' ? gemstoneFilters : null,
       };
 
+      console.log('Final task data being submitted:', taskData);
+
       await createTask(taskData);
-      toast.success('Task created successfully!');
+      toast.success('Task created successfully with enhanced multi-select filters!');
       form.reset();
       onSuccess?.();
     } catch (error: any) {
@@ -146,8 +150,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             </CardTitle>
             <CardDescription>
               {template 
-                ? `Using the ${template.name} template with pre-configured settings`
-                : 'Set up automated searches for profitable deals on eBay'
+                ? `Using the ${template.name} template with enhanced multi-select filters`
+                : 'Set up automated searches with comprehensive aspect filtering'
               }
             </CardDescription>
           </div>
@@ -460,7 +464,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               </CardContent>
             </Card>
 
-            {/* Enhanced Item-specific filters */}
+            {/* Enhanced Item-specific filters with multi-select */}
             {itemType === 'watch' && (
               <EnhancedWatchFilters 
                 filters={watchFilters} 
