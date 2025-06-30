@@ -51,14 +51,14 @@ export const useEbayAspects = (categoryId?: string) => {
 
         setAspects(transformedData);
         
-        // If no aspects found, try to populate the cache
+        // If no aspects found, don't automatically populate test data
+        // Let user decide by clicking the button
         if (transformedData.length === 0) {
-          console.log('No aspects found, attempting to refresh cache...');
-          await refreshCache();
+          console.log('No aspects found in database');
         }
       } catch (err: any) {
         console.error('Error fetching eBay aspects:', err);
-        setError(err.message);
+        setError(err.message || 'Failed to fetch aspects');
       } finally {
         setLoading(false);
       }
@@ -73,7 +73,10 @@ export const useEbayAspects = (categoryId?: string) => {
   };
 
   const refreshCache = async () => {
+    if (!categoryId) return;
+    
     try {
+      setError(null);
       console.log('Calling eBay aspects cache refresh...');
       const { data, error } = await supabase.functions.invoke('ebay-aspects-cache');
       
@@ -84,33 +87,40 @@ export const useEbayAspects = (categoryId?: string) => {
       
       console.log('Cache refresh response:', data);
       
+      // Check if the refresh was successful
+      if (data && !data.success) {
+        throw new Error(data.message || 'Cache refresh failed');
+      }
+      
       // Refetch aspects after cache refresh
-      if (categoryId) {
-        const { data: aspectsData, error: aspectsError } = await supabase
-          .from('ebay_aspects')
-          .select('*')
-          .eq('category_id', categoryId)
-          .order('aspect_name');
-        
-        if (aspectsError) {
-          console.error('Error refetching aspects:', aspectsError);
-          throw aspectsError;
-        }
-        
-        // Transform the data to match our EbayAspect interface
-        const transformedData = (aspectsData || []).map(item => ({
-          aspect_name: item.aspect_name,
-          values_json: Array.isArray(item.values_json) ? 
-            (item.values_json as unknown as EbayAspectValue[]) : [],
-          refreshed_at: item.refreshed_at
-        }));
-        
-        setAspects(transformedData);
-        console.log(`Refreshed aspects: ${transformedData.length} found`);
+      const { data: aspectsData, error: aspectsError } = await supabase
+        .from('ebay_aspects')
+        .select('*')
+        .eq('category_id', categoryId)
+        .order('aspect_name');
+      
+      if (aspectsError) {
+        console.error('Error refetching aspects:', aspectsError);
+        throw aspectsError;
+      }
+      
+      // Transform the data to match our EbayAspect interface
+      const transformedData = (aspectsData || []).map(item => ({
+        aspect_name: item.aspect_name,
+        values_json: Array.isArray(item.values_json) ? 
+          (item.values_json as unknown as EbayAspectValue[]) : [],
+        refreshed_at: item.refreshed_at
+      }));
+      
+      setAspects(transformedData);
+      console.log(`Refreshed aspects: ${transformedData.length} found`);
+      
+      if (transformedData.length === 0) {
+        setError('No aspects were loaded from eBay. Try adding test data instead.');
       }
     } catch (err: any) {
       console.error('Error refreshing cache:', err);
-      setError(err.message);
+      setError(err.message || 'Failed to refresh cache');
     }
   };
 
@@ -118,6 +128,7 @@ export const useEbayAspects = (categoryId?: string) => {
     if (!categoryId) return;
     
     try {
+      setError(null);
       console.log('Populating test data for category:', categoryId);
       
       const testAspects = [
@@ -263,27 +274,35 @@ export const useEbayAspects = (categoryId?: string) => {
         }
       ];
       
-      for (const aspect of testAspects) {
-        const { error } = await supabase
-          .from('ebay_aspects')
-          .upsert(aspect, {
-            onConflict: 'category_id,aspect_name',
-            ignoreDuplicates: false
-          });
-          
-        if (error) {
-          console.error('Error inserting test aspect:', error);
-        }
+      // Clear existing test data first
+      await supabase
+        .from('ebay_aspects')
+        .delete()
+        .eq('category_id', categoryId);
+      
+      // Insert test data
+      const { error } = await supabase
+        .from('ebay_aspects')
+        .insert(testAspects);
+        
+      if (error) {
+        console.error('Error inserting test aspect:', error);
+        throw error;
       }
       
       // Refetch after inserting test data
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('ebay_aspects')
         .select('*')
         .eq('category_id', categoryId)
         .order('aspect_name');
       
-      if (!error && data) {
+      if (fetchError) {
+        console.error('Error fetching test data:', fetchError);
+        throw fetchError;
+      }
+      
+      if (data) {
         const transformedData = data.map(item => ({
           aspect_name: item.aspect_name,
           values_json: Array.isArray(item.values_json) ? 
@@ -292,11 +311,11 @@ export const useEbayAspects = (categoryId?: string) => {
         }));
         
         setAspects(transformedData);
-        console.log('Test data populated successfully');
+        console.log('Test data populated successfully:', transformedData.length, 'aspects');
       }
     } catch (err: any) {
       console.error('Error populating test data:', err);
-      setError(err.message);
+      setError(err.message || 'Failed to populate test data');
     }
   };
 

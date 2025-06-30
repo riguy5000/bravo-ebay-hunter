@@ -63,18 +63,32 @@ Deno.serve(async (req) => {
     const accessToken = await getEbayOAuthToken();
     console.log('eBay OAuth token obtained successfully');
 
-    // Use specific leaf categories that are known to have aspects
+    // Use only verified eBay leaf categories for jewelry
     const categories = [
       { id: '164330', name: 'Fine Rings' },
       { id: '164331', name: 'Fine Necklaces & Pendants' },
-      { id: '31387', name: 'Luxury Watches' },
-      { id: '10207', name: 'Loose Diamonds' },
-      { id: '51089', name: 'Loose Gemstones (Non-Diamond)' }
+      { id: '164332', name: 'Fine Earrings' },
+      { id: '164333', name: 'Fine Bracelets' }
     ];
 
     console.log('Starting eBay aspects cache refresh...');
     let totalProcessed = 0;
     let totalInserted = 0;
+    let errors = [];
+
+    // First, clear existing data for these categories to avoid conflicts
+    console.log('Clearing existing aspects data...');
+    const categoryIds = categories.map(c => c.id);
+    const { error: deleteError } = await supabaseClient
+      .from('ebay_aspects')
+      .delete()
+      .in('category_id', categoryIds);
+    
+    if (deleteError) {
+      console.error('Error clearing existing data:', deleteError);
+    } else {
+      console.log('Existing data cleared successfully');
+    }
 
     for (const category of categories) {
       try {
@@ -92,6 +106,7 @@ Deno.serve(async (req) => {
         if (!ebayResponse.ok) {
           const errorText = await ebayResponse.text();
           console.error(`eBay API error for category ${category.id}:`, ebayResponse.status, errorText);
+          errors.push(`Category ${category.id}: ${ebayResponse.status} - ${errorText}`);
           continue;
         }
 
@@ -110,7 +125,8 @@ Deno.serve(async (req) => {
 
         console.log(`Processing ${aspects.length} aspects for ${category.name}`);
 
-        // Process and cache each aspect
+        // Process aspects in batches to avoid conflicts
+        const aspectsToInsert = [];
         for (const aspect of aspects) {
           const aspectName = aspect.localizedAspectName;
           const values = aspect.aspectValues?.map((v: any) => ({
@@ -118,37 +134,35 @@ Deno.serve(async (req) => {
             meaning: v.valueMeaning || v.localizedValue
           })) || [];
 
-          console.log(`Inserting aspect: ${aspectName} with ${values.length} values for category ${category.id}`);
-
-          try {
-            const { error } = await supabaseClient
-              .from('ebay_aspects')
-              .upsert({
-                category_id: category.id,
-                aspect_name: aspectName,
-                values_json: values,
-                refreshed_at: new Date().toISOString()
-              }, {
-                onConflict: 'category_id,aspect_name',
-                ignoreDuplicates: false
-              });
-
-            if (error) {
-              console.error(`Database error inserting aspect ${aspectName}:`, error);
-            } else {
-              console.log(`Successfully inserted aspect: ${aspectName}`);
-              totalInserted++;
-            }
-          } catch (dbError) {
-            console.error(`Exception inserting aspect ${aspectName}:`, dbError);
-          }
+          aspectsToInsert.push({
+            category_id: category.id,
+            aspect_name: aspectName,
+            values_json: values,
+            refreshed_at: new Date().toISOString()
+          });
 
           totalProcessed++;
         }
 
-        console.log(`Successfully processed ${aspects.length} aspects for ${category.name}`);
+        // Insert all aspects for this category at once
+        if (aspectsToInsert.length > 0) {
+          console.log(`Inserting ${aspectsToInsert.length} aspects for ${category.name}`);
+          const { data, error } = await supabaseClient
+            .from('ebay_aspects')
+            .insert(aspectsToInsert);
+
+          if (error) {
+            console.error(`Database error inserting aspects for ${category.name}:`, error);
+            errors.push(`Database error for ${category.name}: ${error.message}`);
+          } else {
+            console.log(`Successfully inserted ${aspectsToInsert.length} aspects for ${category.name}`);
+            totalInserted += aspectsToInsert.length;
+          }
+        }
+
       } catch (error) {
         console.error(`Error processing category ${category.name}:`, error);
+        errors.push(`Category ${category.name}: ${error.message}`);
       }
     }
 
@@ -156,6 +170,7 @@ Deno.serve(async (req) => {
     const { data: insertedAspects, error: selectError } = await supabaseClient
       .from('ebay_aspects')
       .select('category_id, aspect_name')
+      .in('category_id', categoryIds)
       .order('category_id, aspect_name');
 
     if (selectError) {
@@ -171,19 +186,24 @@ Deno.serve(async (req) => {
       console.log('Aspects per category:', categoryStats);
     }
 
+    const response = {
+      success: totalInserted > 0,
+      message: totalInserted > 0 ? 'eBay aspects cache refreshed successfully' : 'No aspects were cached',
+      timestamp: new Date().toISOString(),
+      categories_processed: categories.length,
+      total_aspects_processed: totalProcessed,
+      total_aspects_inserted: totalInserted,
+      aspects_in_db: insertedAspects?.length || 0,
+      errors: errors.length > 0 ? errors : undefined
+    };
+
+    console.log('Final response:', response);
+
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: 'eBay aspects cache refreshed',
-        timestamp: new Date().toISOString(),
-        categories_processed: categories.length,
-        total_aspects_processed: totalProcessed,
-        total_aspects_inserted: totalInserted,
-        aspects_in_db: insertedAspects?.length || 0
-      }),
+      JSON.stringify(response),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
+        status: totalInserted > 0 ? 200 : 207 // 207 Multi-Status if partial success
       }
     );
 
@@ -191,6 +211,7 @@ Deno.serve(async (req) => {
     console.error('eBay aspects cache error:', error);
     return new Response(
       JSON.stringify({ 
+        success: false,
         error: error.message,
         timestamp: new Date().toISOString(),
         details: error.stack

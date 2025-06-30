@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useEbayAspects } from '@/hooks/useEbayAspects';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, TestTube } from 'lucide-react';
+import { RefreshCw, TestTube, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface EnhancedJewelryFiltersProps {
   filters: any;
@@ -18,10 +19,11 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
   filters, 
   onChange 
 }) => {
-  // Use Fine Rings category (164330) - a valid leaf category with aspects
-  const { aspects, loading, getAspectValues, refreshCache, populateTestData } = useEbayAspects('164330');
+  // Use Fine Rings category (164330) - a verified working leaf category
+  const { aspects, loading, error, getAspectValues, refreshCache, populateTestData } = useEbayAspects('164330');
   const [selectedMetal, setSelectedMetal] = useState(filters.metal || '');
   const [isPopulatingTestData, setIsPopulatingTestData] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   const handleChange = (key: string, value: any) => {
     const newFilters = { ...filters, [key]: value };
@@ -50,6 +52,15 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
       await populateTestData();
     } finally {
       setIsPopulatingTestData(false);
+    }
+  };
+
+  const handleRefreshCache = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshCache();
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -122,15 +133,27 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={refreshCache}
+            onClick={handleRefreshCache}
+            disabled={isRefreshing}
             className="flex items-center gap-2"
           >
-            <RefreshCw className="h-4 w-4" />
-            Refresh eBay Data
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh eBay Data'}
           </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        
+        {/* Show error if there's one */}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Error loading eBay aspects: {error}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Show data status */}
         <div className="text-sm text-gray-600 mb-4">
           {aspects.length > 0 ? (
@@ -149,8 +172,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                 <SelectValue placeholder="Select condition" />
               </SelectTrigger>
               <SelectContent>
-                {conditions.map((condition) => (
-                  <SelectItem key={condition.value} value={condition.value}>
+                {conditions.map((condition, index) => (
+                  <SelectItem key={`${condition.value}-${index}`} value={condition.value}>
                     {condition.meaning}
                   </SelectItem>
                 ))}
@@ -165,8 +188,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               <SelectContent>
-                {jewelryTypes.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
+                {jewelryTypes.map((type, index) => (
+                  <SelectItem key={`${type.value}-${index}`} value={type.value}>
                     {type.meaning}
                   </SelectItem>
                 ))}
@@ -189,8 +212,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                   <SelectValue placeholder="Select metal" />
                 </SelectTrigger>
                 <SelectContent>
-                  {metals.map((metal) => (
-                    <SelectItem key={metal.value} value={metal.value}>
+                  {metals.map((metal, index) => (
+                    <SelectItem key={`${metal.value}-${index}`} value={metal.value}>
                       {metal.meaning}
                     </SelectItem>
                   ))}
@@ -208,8 +231,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                   <SelectValue placeholder="Select purity" />
                 </SelectTrigger>
                 <SelectContent>
-                  {getFilteredMetalPurities().map((purity) => (
-                    <SelectItem key={purity.value} value={purity.value}>
+                  {getFilteredMetalPurities().map((purity, index) => (
+                    <SelectItem key={`${purity.value}-${index}`} value={purity.value}>
                       {purity.meaning}
                     </SelectItem>
                   ))}
@@ -230,8 +253,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                   <SelectValue placeholder="Select main stone" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mainStones.map((stone) => (
-                    <SelectItem key={stone.value} value={stone.value}>
+                  {mainStones.map((stone, index) => (
+                    <SelectItem key={`${stone.value}-${index}`} value={stone.value}>
                       {stone.meaning}
                     </SelectItem>
                   ))}
@@ -246,8 +269,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                   <SelectValue placeholder="Select shape" />
                 </SelectTrigger>
                 <SelectContent>
-                  {stoneShapes.map((shape) => (
-                    <SelectItem key={shape.value} value={shape.value}>
+                  {stoneShapes.map((shape, index) => (
+                    <SelectItem key={`${shape.value}-${index}`} value={shape.value}>
                       {shape.meaning}
                     </SelectItem>
                   ))}
@@ -262,8 +285,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                   <SelectValue placeholder="Select color" />
                 </SelectTrigger>
                 <SelectContent>
-                  {stoneColors.map((color) => (
-                    <SelectItem key={color.value} value={color.value}>
+                  {stoneColors.map((color, index) => (
+                    <SelectItem key={`${color.value}-${index}`} value={color.value}>
                       {color.meaning}
                     </SelectItem>
                   ))}
@@ -278,8 +301,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                   <SelectValue placeholder="Select creation" />
                 </SelectTrigger>
                 <SelectContent>
-                  {stoneCreations.map((creation) => (
-                    <SelectItem key={creation.value} value={creation.value}>
+                  {stoneCreations.map((creation, index) => (
+                    <SelectItem key={`${creation.value}-${index}`} value={creation.value}>
                       {creation.meaning}
                     </SelectItem>
                   ))}
@@ -298,8 +321,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                 <SelectValue placeholder="Select setting" />
               </SelectTrigger>
               <SelectContent>
-                {settingStyles.map((style) => (
-                  <SelectItem key={style.value} value={style.value}>
+                {settingStyles.map((style, index) => (
+                  <SelectItem key={`${style.value}-${index}`} value={style.value}>
                     {style.meaning}
                   </SelectItem>
                 ))}
@@ -314,8 +337,8 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
                 <SelectValue placeholder="Select style" />
               </SelectTrigger>
               <SelectContent>
-                {styles.map((style) => (
-                  <SelectItem key={style.value} value={style.value}>
+                {styles.map((style, index) => (
+                  <SelectItem key={`${style.value}-${index}`} value={style.value}>
                     {style.meaning}
                   </SelectItem>
                 ))}
