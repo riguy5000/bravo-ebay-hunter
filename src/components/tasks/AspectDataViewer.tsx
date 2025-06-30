@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,7 +44,23 @@ export const AspectDataViewer: React.FC = () => {
       
       data?.forEach(row => {
         const aspectName = row.aspect_name;
-        const values = row.values_json as AspectValue[] || [];
+        // Properly handle the JSON type conversion
+        let values: AspectValue[] = [];
+        
+        try {
+          if (row.values_json && Array.isArray(row.values_json)) {
+            values = (row.values_json as unknown as AspectValue[]).filter(
+              (item): item is AspectValue => 
+                typeof item === 'object' && 
+                item !== null && 
+                'value' in item && 
+                'meaning' in item
+            );
+          }
+        } catch (e) {
+          console.warn(`Failed to parse values for aspect ${aspectName}:`, e);
+          values = [];
+        }
         
         if (!organized[aspectName]) {
           organized[aspectName] = [];
