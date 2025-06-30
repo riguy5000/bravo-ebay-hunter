@@ -51,9 +51,9 @@ async function createTestAspectData(supabaseClient: any) {
   console.log('Creating comprehensive test aspect data...');
   
   const testAspectData = [
-    // Jewelry aspects
+    // Category 50647 - Fine Jewelry (most comprehensive)
     {
-      category_id: 'jewelry_general',
+      category_id: '50647',
       aspect_name: 'Metal',
       values_json: [
         { value: 'Gold', meaning: 'Gold' },
@@ -68,7 +68,7 @@ async function createTestAspectData(supabaseClient: any) {
       ]
     },
     {
-      category_id: 'jewelry_general',
+      category_id: '50647',
       aspect_name: 'Color',
       values_json: [
         { value: 'Gold', meaning: 'Gold' },
@@ -83,7 +83,7 @@ async function createTestAspectData(supabaseClient: any) {
       ]
     },
     {
-      category_id: 'jewelry_general',
+      category_id: '50647',
       aspect_name: 'Type',
       values_json: [
         { value: 'Ring', meaning: 'Ring' },
@@ -97,7 +97,7 @@ async function createTestAspectData(supabaseClient: any) {
       ]
     },
     {
-      category_id: 'jewelry_general',
+      category_id: '50647',
       aspect_name: 'Brand',
       values_json: [
         { value: 'Tiffany & Co.', meaning: 'Tiffany & Co.' },
@@ -111,7 +111,7 @@ async function createTestAspectData(supabaseClient: any) {
       ]
     },
     {
-      category_id: 'jewelry_general',
+      category_id: '50647',
       aspect_name: 'Main Stone',
       values_json: [
         { value: 'Diamond', meaning: 'Diamond' },
@@ -127,7 +127,7 @@ async function createTestAspectData(supabaseClient: any) {
       ]
     },
     {
-      category_id: 'jewelry_general',
+      category_id: '50647',
       aspect_name: 'Metal Purity',
       values_json: [
         { value: '10K', meaning: '10K' },
@@ -141,7 +141,47 @@ async function createTestAspectData(supabaseClient: any) {
       ]
     },
     {
-      category_id: 'jewelry_general',
+      category_id: '50647',
+      aspect_name: 'Setting Style',
+      values_json: [
+        { value: 'Solitaire', meaning: 'Solitaire' },
+        { value: 'Halo', meaning: 'Halo' },
+        { value: 'Three Stone', meaning: 'Three Stone' },
+        { value: 'Vintage', meaning: 'Vintage' },
+        { value: 'Modern', meaning: 'Modern' },
+        { value: 'Art Deco', meaning: 'Art Deco' },
+        { value: 'Cluster', meaning: 'Cluster' },
+        { value: 'Tension', meaning: 'Tension' }
+      ]
+    },
+    {
+      category_id: '50647',
+      aspect_name: 'Era',
+      values_json: [
+        { value: 'Victorian', meaning: 'Victorian (1837-1901)' },
+        { value: 'Edwardian', meaning: 'Edwardian (1901-1915)' },
+        { value: 'Art Deco', meaning: 'Art Deco (1920-1935)' },
+        { value: 'Retro', meaning: 'Retro (1935-1950)' },
+        { value: 'Mid Century', meaning: 'Mid Century (1950-1970)' },
+        { value: 'Contemporary', meaning: 'Contemporary (1970+)' }
+      ]
+    },
+    {
+      category_id: '50647',
+      aspect_name: 'Features',
+      values_json: [
+        { value: 'Adjustable', meaning: 'Adjustable' },
+        { value: 'Engraved', meaning: 'Engraved' },
+        { value: 'Handmade', meaning: 'Handmade' },
+        { value: 'Vintage', meaning: 'Vintage' },
+        { value: 'Signed', meaning: 'Signed' },
+        { value: 'Stackable', meaning: 'Stackable' },
+        { value: 'Convertible', meaning: 'Convertible' },
+        { value: 'Magnetic Clasp', meaning: 'Magnetic Clasp' }
+      ]
+    },
+    {
+      category_id: '50647',
       aspect_name: 'Condition',
       values_json: [
         { value: 'New', meaning: 'New' },
@@ -223,18 +263,18 @@ async function createTestAspectData(supabaseClient: any) {
     }
   ];
 
-  // Clear existing test data
+  // Clear existing test data for category 50647
   const { error: deleteError } = await supabaseClient
     .from('ebay_aspects')
     .delete()
-    .in('category_id', ['jewelry_general', 'watch_general', 'gemstone_general']);
+    .eq('category_id', '50647');
 
   if (deleteError) {
-    console.error('Error clearing test data:', deleteError);
+    console.error('Error clearing test data for 50647:', deleteError);
   }
 
-  // Insert test data
-  for (const aspectData of testAspectData) {
+  // Insert comprehensive test data for category 50647
+  for (const aspectData of testAspectData.filter(a => a.category_id === '50647')) {
     const { error } = await supabaseClient
       .from('ebay_aspects')
       .insert({
@@ -247,7 +287,7 @@ async function createTestAspectData(supabaseClient: any) {
     if (error) {
       console.error(`Error inserting test data for ${aspectData.aspect_name}:`, error);
     } else {
-      console.log(`✓ Inserted test data for ${aspectData.aspect_name}: ${aspectData.values_json.length} values`);
+      console.log(`✓ Inserted comprehensive test data for ${aspectData.aspect_name}: ${aspectData.values_json.length} values`);
     }
   }
 }

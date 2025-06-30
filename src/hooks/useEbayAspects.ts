@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -27,6 +26,141 @@ const getTestDataForCategory = (categoryId: string): EbayAspect[] => {
       refreshed_at: new Date().toISOString()
     }
   ];
+
+  // Comprehensive category 50647 (Fine Jewelry) data - matches what's in the database
+  if (categoryId === '50647' || categoryId === 'jewelry_general') {
+    return [
+      ...baseAspects,
+      {
+        aspect_name: 'Metal',
+        values_json: [
+          { value: 'Gold', meaning: 'Gold' },
+          { value: 'White Gold', meaning: 'White Gold' },
+          { value: 'Yellow Gold', meaning: 'Yellow Gold' },
+          { value: 'Rose Gold', meaning: 'Rose Gold' },
+          { value: 'Silver', meaning: 'Silver' },
+          { value: 'Sterling Silver', meaning: 'Sterling Silver' },
+          { value: 'Platinum', meaning: 'Platinum' },
+          { value: 'Stainless Steel', meaning: 'Stainless Steel' },
+          { value: 'Titanium', meaning: 'Titanium' }
+        ],
+        refreshed_at: new Date().toISOString()
+      },
+      {
+        aspect_name: 'Color',
+        values_json: [
+          { value: 'Yellow', meaning: 'Yellow' },
+          { value: 'White', meaning: 'White' },
+          { value: 'Rose', meaning: 'Rose' },
+          { value: 'Silver', meaning: 'Silver' },
+          { value: 'Gold', meaning: 'Gold' },
+          { value: 'Black', meaning: 'Black' },
+          { value: 'Blue', meaning: 'Blue' },
+          { value: 'Green', meaning: 'Green' },
+          { value: 'Red', meaning: 'Red' }
+        ],
+        refreshed_at: new Date().toISOString()
+      },
+      {
+        aspect_name: 'Type',
+        values_json: [
+          { value: 'Ring', meaning: 'Ring' },
+          { value: 'Necklace', meaning: 'Necklace' },
+          { value: 'Bracelet', meaning: 'Bracelet' },
+          { value: 'Earrings', meaning: 'Earrings' },
+          { value: 'Pendant', meaning: 'Pendant' },
+          { value: 'Brooch', meaning: 'Brooch' },
+          { value: 'Charm', meaning: 'Charm' },
+          { value: 'Anklet', meaning: 'Anklet' }
+        ],
+        refreshed_at: new Date().toISOString()
+      },
+      {
+        aspect_name: 'Brand',
+        values_json: [
+          { value: 'Tiffany & Co.', meaning: 'Tiffany & Co.' },
+          { value: 'Cartier', meaning: 'Cartier' },
+          { value: 'Pandora', meaning: 'Pandora' },
+          { value: 'David Yurman', meaning: 'David Yurman' },
+          { value: 'Kay Jewelers', meaning: 'Kay Jewelers' },
+          { value: 'Zales', meaning: 'Zales' },
+          { value: 'Jared', meaning: 'Jared' },
+          { value: 'Blue Nile', meaning: 'Blue Nile' }
+        ],
+        refreshed_at: new Date().toISOString()
+      },
+      {
+        aspect_name: 'Main Stone',
+        values_json: [
+          { value: 'Diamond', meaning: 'Diamond' },
+          { value: 'Ruby', meaning: 'Ruby' },
+          { value: 'Sapphire', meaning: 'Sapphire' },
+          { value: 'Emerald', meaning: 'Emerald' },
+          { value: 'Pearl', meaning: 'Pearl' },
+          { value: 'Amethyst', meaning: 'Amethyst' },
+          { value: 'Citrine', meaning: 'Citrine' },
+          { value: 'Garnet', meaning: 'Garnet' },
+          { value: 'Topaz', meaning: 'Topaz' },
+          { value: 'Opal', meaning: 'Opal' }
+        ],
+        refreshed_at: new Date().toISOString()
+      },
+      {
+        aspect_name: 'Metal Purity',
+        values_json: [
+          { value: '10K', meaning: '10 Karat' },
+          { value: '14K', meaning: '14 Karat' },
+          { value: '18K', meaning: '18 Karat' },
+          { value: '22K', meaning: '22 Karat' },
+          { value: '24K', meaning: '24 Karat' },
+          { value: '925', meaning: '925 Sterling Silver' },
+          { value: '950', meaning: '950 Platinum' },
+          { value: '999', meaning: '999 Fine Silver' }
+        ],
+        refreshed_at: new Date().toISOString()
+      },
+      {
+        aspect_name: 'Setting Style',
+        values_json: [
+          { value: 'Solitaire', meaning: 'Solitaire' },
+          { value: 'Halo', meaning: 'Halo' },
+          { value: 'Three Stone', meaning: 'Three Stone' },
+          { value: 'Vintage', meaning: 'Vintage' },
+          { value: 'Modern', meaning: 'Modern' },
+          { value: 'Art Deco', meaning: 'Art Deco' },
+          { value: 'Cluster', meaning: 'Cluster' },
+          { value: 'Tension', meaning: 'Tension' }
+        ],
+        refreshed_at: new Date().toISOString()
+      },
+      {
+        aspect_name: 'Era',
+        values_json: [
+          { value: 'Victorian', meaning: 'Victorian (1837-1901)' },
+          { value: 'Edwardian', meaning: 'Edwardian (1901-1915)' },
+          { value: 'Art Deco', meaning: 'Art Deco (1920-1935)' },
+          { value: 'Retro', meaning: 'Retro (1935-1950)' },
+          { value: 'Mid Century', meaning: 'Mid Century (1950-1970)' },
+          { value: 'Contemporary', meaning: 'Contemporary (1970+)' }
+        ],
+        refreshed_at: new Date().toISOString()
+      },
+      {
+        aspect_name: 'Features',
+        values_json: [
+          { value: 'Adjustable', meaning: 'Adjustable' },
+          { value: 'Engraved', meaning: 'Engraved' },
+          { value: 'Handmade', meaning: 'Handmade' },
+          { value: 'Vintage', meaning: 'Vintage' },
+          { value: 'Signed', meaning: 'Signed' },
+          { value: 'Stackable', meaning: 'Stackable' },
+          { value: 'Convertible', meaning: 'Convertible' },
+          { value: 'Magnetic Clasp', meaning: 'Magnetic Clasp' }
+        ],
+        refreshed_at: new Date().toISOString()
+      }
+    ];
+  }
 
   // Gemstone-specific test data
   if (categoryId === '10207' || categoryId === '51089' || categoryId === 'gemstone_general') {
@@ -117,94 +251,15 @@ const getTestDataForCategory = (categoryId: string): EbayAspect[] => {
     ];
   }
 
-  // Jewelry-specific test data (default and all jewelry subcategories)
+  // Default jewelry test data for other categories
   return [
     ...baseAspects,
     {
       aspect_name: 'Metal',
       values_json: [
         { value: 'Gold', meaning: 'Gold' },
-        { value: 'White Gold', meaning: 'White Gold' },
-        { value: 'Yellow Gold', meaning: 'Yellow Gold' },
-        { value: 'Rose Gold', meaning: 'Rose Gold' },
         { value: 'Silver', meaning: 'Silver' },
-        { value: 'Sterling Silver', meaning: 'Sterling Silver' },
-        { value: 'Platinum', meaning: 'Platinum' },
-        { value: 'Stainless Steel', meaning: 'Stainless Steel' },
-        { value: 'Titanium', meaning: 'Titanium' }
-      ],
-      refreshed_at: new Date().toISOString()
-    },
-    {
-      aspect_name: 'Color',
-      values_json: [
-        { value: 'Yellow', meaning: 'Yellow' },
-        { value: 'White', meaning: 'White' },
-        { value: 'Rose', meaning: 'Rose' },
-        { value: 'Silver', meaning: 'Silver' },
-        { value: 'Gold', meaning: 'Gold' },
-        { value: 'Black', meaning: 'Black' },
-        { value: 'Blue', meaning: 'Blue' },
-        { value: 'Green', meaning: 'Green' },
-        { value: 'Red', meaning: 'Red' }
-      ],
-      refreshed_at: new Date().toISOString()
-    },
-    {
-      aspect_name: 'Type',
-      values_json: [
-        { value: 'Ring', meaning: 'Ring' },
-        { value: 'Necklace', meaning: 'Necklace' },
-        { value: 'Bracelet', meaning: 'Bracelet' },
-        { value: 'Earrings', meaning: 'Earrings' },
-        { value: 'Pendant', meaning: 'Pendant' },
-        { value: 'Brooch', meaning: 'Brooch' },
-        { value: 'Charm', meaning: 'Charm' },
-        { value: 'Anklet', meaning: 'Anklet' }
-      ],
-      refreshed_at: new Date().toISOString()
-    },
-    {
-      aspect_name: 'Brand',
-      values_json: [
-        { value: 'Tiffany & Co.', meaning: 'Tiffany & Co.' },
-        { value: 'Cartier', meaning: 'Cartier' },
-        { value: 'Pandora', meaning: 'Pandora' },
-        { value: 'David Yurman', meaning: 'David Yurman' },
-        { value: 'Kay Jewelers', meaning: 'Kay Jewelers' },
-        { value: 'Zales', meaning: 'Zales' },
-        { value: 'Jared', meaning: 'Jared' },
-        { value: 'Blue Nile', meaning: 'Blue Nile' }
-      ],
-      refreshed_at: new Date().toISOString()
-    },
-    {
-      aspect_name: 'Main Stone',
-      values_json: [
-        { value: 'Diamond', meaning: 'Diamond' },
-        { value: 'Ruby', meaning: 'Ruby' },
-        { value: 'Sapphire', meaning: 'Sapphire' },
-        { value: 'Emerald', meaning: 'Emerald' },
-        { value: 'Pearl', meaning: 'Pearl' },
-        { value: 'Amethyst', meaning: 'Amethyst' },
-        { value: 'Citrine', meaning: 'Citrine' },
-        { value: 'Garnet', meaning: 'Garnet' },
-        { value: 'Topaz', meaning: 'Topaz' },
-        { value: 'Opal', meaning: 'Opal' }
-      ],
-      refreshed_at: new Date().toISOString()
-    },
-    {
-      aspect_name: 'Metal Purity',
-      values_json: [
-        { value: '10K', meaning: '10 Karat' },
-        { value: '14K', meaning: '14 Karat' },
-        { value: '18K', meaning: '18 Karat' },
-        { value: '22K', meaning: '22 Karat' },
-        { value: '24K', meaning: '24 Karat' },
-        { value: '925', meaning: '925 Sterling Silver' },
-        { value: '950', meaning: '950 Platinum' },
-        { value: '999', meaning: '999 Fine Silver' }
+        { value: 'Platinum', meaning: 'Platinum' }
       ],
       refreshed_at: new Date().toISOString()
     }

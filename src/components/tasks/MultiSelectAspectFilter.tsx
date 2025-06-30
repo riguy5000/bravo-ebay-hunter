@@ -5,12 +5,13 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { ChevronDown, X, RefreshCw } from 'lucide-react';
+import { ChevronDown, X, RefreshCw, Info } from 'lucide-react';
 import { useEbayAspects } from '@/hooks/useEbayAspects';
 
 interface MultiSelectAspectFilterProps {
   title: string;
   categoryId?: string;
+  fallbackCategoryId?: string;
   aspectName: string;
   selectedValues: string[];
   onChange: (values: string[]) => void;
@@ -20,22 +21,33 @@ interface MultiSelectAspectFilterProps {
 export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = ({
   title,
   categoryId,
+  fallbackCategoryId,
   aspectName,
   selectedValues,
   onChange,
   placeholder = 'Select options...'
 }) => {
-  const { aspects, getAspectValues, loading, error, populateTestData } = useEbayAspects(categoryId);
-  const availableValues = getAspectValues(aspectName);
+  const { aspects: primaryAspects, getAspectValues: getPrimaryValues, loading: primaryLoading, error: primaryError, populateTestData } = useEbayAspects(categoryId);
+  const { aspects: fallbackAspects, getAspectValues: getFallbackValues, loading: fallbackLoading } = useEbayAspects(fallbackCategoryId);
+  
+  // Try primary category first, then fallback
+  const primaryValues = getPrimaryValues(aspectName);
+  const fallbackValues = getFallbackValues(aspectName);
+  
+  // Use primary values if available, otherwise fallback
+  const availableValues = primaryValues.length > 0 ? primaryValues : fallbackValues;
+  const loading = primaryLoading || fallbackLoading;
+  const usingFallback = primaryValues.length === 0 && fallbackValues.length > 0;
 
   console.log('MultiSelectAspectFilter:', {
     title,
-    categoryId,
     aspectName,
-    aspectsCount: aspects.length,
-    availableValuesCount: availableValues.length,
-    loading,
-    error
+    categoryId,
+    fallbackCategoryId,
+    primaryValuesCount: primaryValues.length,
+    fallbackValuesCount: fallbackValues.length,
+    usingFallback,
+    loading
   });
 
   const handleValueToggle = (value: string, checked: boolean) => {
@@ -60,7 +72,15 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
 
   return (
     <div className="space-y-2">
-      <Label>{title}</Label>
+      <div className="flex items-center gap-2">
+        <Label>{title}</Label>
+        {usingFallback && (
+          <div className="flex items-center gap-1 text-xs text-blue-600">
+            <Info className="h-3 w-3" />
+            <span>Using fallback data</span>
+          </div>
+        )}
+      </div>
       
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -78,22 +98,29 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
           </Button>
         </DropdownMenuTrigger>
         
-        <DropdownMenuContent className="w-80 max-h-80 overflow-y-auto bg-white">
+        <DropdownMenuContent className="w-80 max-h-80 overflow-y-auto bg-white z-50">
           <div className="p-2 space-y-2">
             {loading ? (
               <div className="text-sm text-gray-500 py-4 text-center">
                 Loading {aspectName.toLowerCase()} options...
               </div>
-            ) : error ? (
+            ) : primaryError && !usingFallback ? (
               <div className="text-sm text-red-500 py-2 text-center">
-                Error: {error}
+                Error: {primaryError}
               </div>
             ) : availableValues.length > 0 ? (
               <>
                 <div className="flex items-center justify-between pb-2 border-b">
-                  <span className="text-sm font-medium">
-                    {availableValues.length} options available
-                  </span>
+                  <div className="text-sm space-y-1">
+                    <div className="font-medium">
+                      {availableValues.length} options available
+                    </div>
+                    {usingFallback && (
+                      <div className="text-xs text-blue-600">
+                        Using category {fallbackCategoryId} data
+                      </div>
+                    )}
+                  </div>
                   {selectedValues.length > 0 && (
                     <Button
                       variant="ghost"
@@ -128,7 +155,7 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
               <div className="text-sm text-gray-500 py-4 text-center space-y-2">
                 <div>No {aspectName.toLowerCase()} options available.</div>
                 <div className="text-xs text-gray-400">
-                  Category: {categoryId || 'None'}
+                  Primary: {categoryId || 'None'} | Fallback: {fallbackCategoryId || 'None'}
                 </div>
                 <Button
                   variant="outline"
