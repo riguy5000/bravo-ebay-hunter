@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -14,9 +15,7 @@ import { CalendarIcon } from "lucide-react"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
-import { useUser } from '@clerk/clerk-react';
 import { supabase } from '@/integrations/supabase/client';
-import { MultiSelect } from '@/components/ui/multi-select';
 import { EnhancedJewelryFilters } from './EnhancedJewelryFilters';
 import { EnhancedWatchFilters } from './EnhancedWatchFilters';
 import { EnhancedGemstoneFilters } from './EnhancedGemstoneFilters';
@@ -51,7 +50,6 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
   const [gemstoneFilters, setGemstoneFilters] = useState({});
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
 
-  const { user } = useUser();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -81,21 +79,20 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
 
     setLoading(true);
     try {
       const taskData = {
         name,
-        item_type: itemType,
+        item_type: itemType as 'jewelry' | 'watch' | 'gemstone',
         max_price: maxPrice || null,
         min_seller_feedback: minFeedback || 0,
         poll_interval: pollInterval || 300,
         exclude_keywords: excludeKeywords.filter(k => k.trim()),
         listing_format: listingFormats.length > 0 ? listingFormats : null,
         item_location: itemLocation || null,
-        date_from: dateFrom || null,
-        date_to: dateTo || null,
+        date_from: dateFrom ? dateFrom.toISOString() : null,
+        date_to: dateTo ? dateTo.toISOString() : null,
         price_delta_type: priceDeltaType,
         price_delta_value: priceDeltaValue || null,
         price_percentage: pricePercentage || null,
@@ -112,15 +109,15 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
           ...gemstoneFilters,
           selected_subcategories: selectedSubcategories
         } : null,
-        user_id: user.id,
-        status: 'active'
+        user_id: 'temp-user-id', // TODO: Replace with actual user ID from auth context
+        status: 'active' as const
       };
 
       console.log('Creating task with data:', taskData);
 
       const { data, error } = await supabase
         .from('tasks')
-        .insert([taskData])
+        .insert(taskData)
         .select()
         .single();
 
@@ -130,10 +127,19 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
       }
 
       console.log('Task created successfully:', data);
+      toast({
+        title: "Success",
+        description: "Task created successfully!",
+      });
       onSuccess();
     } catch (error: any) {
       console.error('Failed to create task:', error);
       setError(error.message || 'Failed to create task');
+      toast({
+        title: "Error",
+        description: error.message || 'Failed to create task',
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -229,9 +235,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    if (e.target.value.trim()) {
-                      handleKeywordAdd(e.target.value.trim());
-                      (e.target as HTMLInputElement).value = '';
+                    const target = e.target as HTMLInputElement;
+                    if (target.value.trim()) {
+                      handleKeywordAdd(target.value.trim());
+                      target.value = '';
                     }
                   }
                 }}
@@ -239,8 +246,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
               <Button
                 type="button"
                 size="sm"
-                onClick={() => {
-                  const input = document.querySelector('input[placeholder="Enter keyword"]') as HTMLInputElement;
+                onClick={(e) => {
+                  const target = e.target as HTMLButtonElement;
+                  const input = target.parentElement?.querySelector('input') as HTMLInputElement;
                   if (input && input.value.trim()) {
                     handleKeywordAdd(input.value.trim());
                     input.value = '';
@@ -274,6 +282,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
                   key={format}
                   variant={listingFormats.includes(format) ? 'default' : 'outline'}
                   size="sm"
+                  type="button"
                   onClick={() => handleListingFormatToggle(format)}
                 >
                   {format}
@@ -397,14 +406,15 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
             )}
           </div>
 
-          <div>
-            <Label htmlFor="auctionAlert">Auction Alert</Label>
-            <Input
+          <div className="flex items-center space-x-2">
+            <input
               id="auctionAlert"
               type="checkbox"
               checked={auctionAlert}
               onChange={(e) => setAuctionAlert(e.target.checked)}
+              className="h-4 w-4"
             />
+            <Label htmlFor="auctionAlert">Auction Alert</Label>
           </div>
         </CardContent>
       </Card>
@@ -438,14 +448,18 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
         />
       )}
 
+      {error && (
+        <div className="text-red-600 text-sm">{error}</div>
+      )}
+
       <div className="flex justify-between">
         {onBackToTemplates && (
-          <Button variant="secondary" onClick={onBackToTemplates}>
+          <Button type="button" variant="secondary" onClick={onBackToTemplates}>
             Back to Templates
           </Button>
         )}
-        <div>
-          <Button variant="ghost" onClick={onCancel} disabled={loading}>
+        <div className="space-x-2">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
             Cancel
           </Button>
           <Button type="submit" disabled={loading}>
