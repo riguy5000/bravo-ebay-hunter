@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useEbayAspects } from '@/hooks/useEbayAspects';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, TestTube } from 'lucide-react';
 
 interface EnhancedJewelryFiltersProps {
   filters: any;
@@ -18,8 +18,10 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
   filters, 
   onChange 
 }) => {
-  const { aspects, loading, getAspectValues, refreshCache } = useEbayAspects('281'); // Fine Jewelry category
+  // Use Fine Rings category (164330) - a valid leaf category with aspects
+  const { aspects, loading, getAspectValues, refreshCache, populateTestData } = useEbayAspects('164330');
   const [selectedMetal, setSelectedMetal] = useState(filters.metal || '');
+  const [isPopulatingTestData, setIsPopulatingTestData] = useState(false);
   
   const handleChange = (key: string, value: any) => {
     const newFilters = { ...filters, [key]: value };
@@ -39,6 +41,15 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
       handleChange(key, [...currentValues, value]);
     } else {
       handleChange(key, currentValues.filter((v: string) => v !== value));
+    }
+  };
+
+  const handlePopulateTestData = async () => {
+    setIsPopulatingTestData(true);
+    try {
+      await populateTestData();
+    } finally {
+      setIsPopulatingTestData(false);
     }
   };
 
@@ -97,17 +108,38 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Enhanced Jewelry Filters</CardTitle>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={refreshCache}
-          className="flex items-center gap-2"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh eBay Data
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handlePopulateTestData}
+            disabled={isPopulatingTestData}
+            className="flex items-center gap-2"
+          >
+            <TestTube className="h-4 w-4" />
+            {isPopulatingTestData ? 'Adding Test Data...' : 'Add Test Data'}
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={refreshCache}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh eBay Data
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Show data status */}
+        <div className="text-sm text-gray-600 mb-4">
+          {aspects.length > 0 ? (
+            <span className="text-green-600">✓ {aspects.length} aspects loaded from eBay</span>
+          ) : (
+            <span className="text-orange-600">⚠ No aspects loaded - try refreshing or adding test data</span>
+          )}
+        </div>
+
         {/* Basic Properties */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

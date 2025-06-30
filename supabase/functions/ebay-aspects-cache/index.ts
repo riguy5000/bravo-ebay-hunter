@@ -63,18 +63,18 @@ Deno.serve(async (req) => {
     const accessToken = await getEbayOAuthToken();
     console.log('eBay OAuth token obtained successfully');
 
-    // Start with just one working category to test
+    // Use specific leaf categories that are known to have aspects
     const categories = [
-      { id: '31387', name: 'Luxury Watches' }, // Start with this known working category
-      // We'll add more categories once this works:
-      // { id: '164330', name: 'Fine Rings' },
-      // { id: '164331', name: 'Fine Necklaces & Pendants' },
-      // { id: '10207', name: 'Loose Diamonds' },
-      // { id: '51089', name: 'Loose Gemstones (Non-Diamond)' }
+      { id: '164330', name: 'Fine Rings' },
+      { id: '164331', name: 'Fine Necklaces & Pendants' },
+      { id: '31387', name: 'Luxury Watches' },
+      { id: '10207', name: 'Loose Diamonds' },
+      { id: '51089', name: 'Loose Gemstones (Non-Diamond)' }
     ];
 
     console.log('Starting eBay aspects cache refresh...');
     let totalProcessed = 0;
+    let totalInserted = 0;
 
     for (const category of categories) {
       try {
@@ -92,27 +92,23 @@ Deno.serve(async (req) => {
         if (!ebayResponse.ok) {
           const errorText = await ebayResponse.text();
           console.error(`eBay API error for category ${category.id}:`, ebayResponse.status, errorText);
-          
-          // Try to parse the error response
-          try {
-            const errorJson = JSON.parse(errorText);
-            console.error('eBay API error details:', errorJson);
-          } catch (e) {
-            console.error('Could not parse eBay error response');
-          }
           continue;
         }
 
         const aspectsData = await ebayResponse.json();
-        console.log(`Raw eBay response for ${category.name}:`, JSON.stringify(aspectsData, null, 2));
+        console.log(`eBay API response for ${category.name}:`, {
+          hasAspects: !!aspectsData.aspects,
+          aspectCount: aspectsData.aspects?.length || 0
+        });
         
         const aspects = aspectsData.aspects || [];
-        console.log(`Processing ${aspects.length} aspects for ${category.name}`);
-
+        
         if (aspects.length === 0) {
           console.warn(`No aspects found for category ${category.name} (${category.id})`);
           continue;
         }
+
+        console.log(`Processing ${aspects.length} aspects for ${category.name}`);
 
         // Process and cache each aspect
         for (const aspect of aspects) {
@@ -122,28 +118,32 @@ Deno.serve(async (req) => {
             meaning: v.valueMeaning || v.localizedValue
           })) || [];
 
-          console.log(`Caching aspect: ${aspectName} with ${values.length} values`);
+          console.log(`Inserting aspect: ${aspectName} with ${values.length} values for category ${category.id}`);
 
-          // Upsert aspect data - note: we're not using the brand column
-          const { error } = await supabaseClient
-            .from('ebay_aspects')
-            .upsert({
-              category_id: category.id,
-              aspect_name: aspectName,
-              values_json: values,
-              refreshed_at: new Date().toISOString()
-            }, {
-              onConflict: 'category_id,aspect_name',
-              ignoreDuplicates: false
-            });
+          try {
+            const { error } = await supabaseClient
+              .from('ebay_aspects')
+              .upsert({
+                category_id: category.id,
+                aspect_name: aspectName,
+                values_json: values,
+                refreshed_at: new Date().toISOString()
+              }, {
+                onConflict: 'category_id,aspect_name',
+                ignoreDuplicates: false
+              });
 
-          if (error) {
-            console.error(`Error caching aspect ${aspectName} for category ${category.id}:`, error);
-            console.error('Error details:', JSON.stringify(error, null, 2));
-          } else {
-            console.log(`Successfully cached aspect: ${aspectName}`);
-            totalProcessed++;
+            if (error) {
+              console.error(`Database error inserting aspect ${aspectName}:`, error);
+            } else {
+              console.log(`Successfully inserted aspect: ${aspectName}`);
+              totalInserted++;
+            }
+          } catch (dbError) {
+            console.error(`Exception inserting aspect ${aspectName}:`, dbError);
           }
+
+          totalProcessed++;
         }
 
         console.log(`Successfully processed ${aspects.length} aspects for ${category.name}`);
@@ -152,17 +152,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Check what was actually inserted
+    // Verify what was actually inserted
     const { data: insertedAspects, error: selectError } = await supabaseClient
       .from('ebay_aspects')
-      .select('category_id, aspect_name, values_json')
+      .select('category_id, aspect_name')
       .order('category_id, aspect_name');
 
     if (selectError) {
       console.error('Error checking inserted aspects:', selectError);
     } else {
-      console.log(`Total aspects in database: ${insertedAspects?.length || 0}`);
-      console.log('Sample aspects:', insertedAspects?.slice(0, 3));
+      console.log(`Database verification: ${insertedAspects?.length || 0} total aspects stored`);
+      
+      // Log summary by category
+      const categoryStats = insertedAspects?.reduce((acc: any, row: any) => {
+        acc[row.category_id] = (acc[row.category_id] || 0) + 1;
+        return acc;
+      }, {});
+      console.log('Aspects per category:', categoryStats);
     }
 
     return new Response(
@@ -172,6 +178,7 @@ Deno.serve(async (req) => {
         timestamp: new Date().toISOString(),
         categories_processed: categories.length,
         total_aspects_processed: totalProcessed,
+        total_aspects_inserted: totalInserted,
         aspects_in_db: insertedAspects?.length || 0
       }),
       { 

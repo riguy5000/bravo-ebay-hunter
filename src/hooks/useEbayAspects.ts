@@ -136,7 +136,11 @@ export const useEbayAspects = (categoryId?: string) => {
           aspect_name: 'Metal',
           values_json: [
             { value: 'Gold', meaning: 'Gold' },
+            { value: 'White Gold', meaning: 'White Gold' },
+            { value: 'Yellow Gold', meaning: 'Yellow Gold' },
+            { value: 'Rose Gold', meaning: 'Rose Gold' },
             { value: 'Silver', meaning: 'Silver' },
+            { value: 'Sterling Silver', meaning: 'Sterling Silver' },
             { value: 'Platinum', meaning: 'Platinum' },
             { value: 'Palladium', meaning: 'Palladium' }
           ]
@@ -145,10 +149,116 @@ export const useEbayAspects = (categoryId?: string) => {
           category_id: categoryId,
           aspect_name: 'Metal Purity',
           values_json: [
+            { value: '10k', meaning: '10 Karat' },
             { value: '14k', meaning: '14 Karat' },
             { value: '18k', meaning: '18 Karat' },
-            { value: '925', meaning: 'Sterling Silver' },
-            { value: '950', meaning: '950 Platinum' }
+            { value: '22k', meaning: '22 Karat' },
+            { value: '24k', meaning: '24 Karat' },
+            { value: '925', meaning: 'Sterling Silver (925)' },
+            { value: '950', meaning: '950 Platinum' },
+            { value: '999', meaning: 'Fine Silver (999)' }
+          ]
+        },
+        {
+          category_id: categoryId,
+          aspect_name: 'Main Stone',
+          values_json: [
+            { value: 'Diamond', meaning: 'Diamond' },
+            { value: 'Ruby', meaning: 'Ruby' },
+            { value: 'Sapphire', meaning: 'Sapphire' },
+            { value: 'Emerald', meaning: 'Emerald' },
+            { value: 'Pearl', meaning: 'Pearl' },
+            { value: 'Opal', meaning: 'Opal' },
+            { value: 'Amethyst', meaning: 'Amethyst' },
+            { value: 'Garnet', meaning: 'Garnet' },
+            { value: 'Topaz', meaning: 'Topaz' },
+            { value: 'Turquoise', meaning: 'Turquoise' }
+          ]
+        },
+        {
+          category_id: categoryId,
+          aspect_name: 'Main Stone Shape',
+          values_json: [
+            { value: 'Round', meaning: 'Round' },
+            { value: 'Princess', meaning: 'Princess' },
+            { value: 'Emerald', meaning: 'Emerald Cut' },
+            { value: 'Oval', meaning: 'Oval' },
+            { value: 'Pear', meaning: 'Pear' },
+            { value: 'Marquise', meaning: 'Marquise' },
+            { value: 'Asscher', meaning: 'Asscher' },
+            { value: 'Cushion', meaning: 'Cushion' },
+            { value: 'Heart', meaning: 'Heart' },
+            { value: 'Radiant', meaning: 'Radiant' }
+          ]
+        },
+        {
+          category_id: categoryId,
+          aspect_name: 'Main Stone Colour',
+          values_json: [
+            { value: 'Colorless', meaning: 'Colorless' },
+            { value: 'Yellow', meaning: 'Yellow' },
+            { value: 'Blue', meaning: 'Blue' },
+            { value: 'Pink', meaning: 'Pink' },
+            { value: 'Green', meaning: 'Green' },
+            { value: 'Red', meaning: 'Red' },
+            { value: 'Purple', meaning: 'Purple' },
+            { value: 'Orange', meaning: 'Orange' },
+            { value: 'Brown', meaning: 'Brown' },
+            { value: 'Black', meaning: 'Black' },
+            { value: 'White', meaning: 'White' }
+          ]
+        },
+        {
+          category_id: categoryId,
+          aspect_name: 'Main Stone Creation',
+          values_json: [
+            { value: 'Natural', meaning: 'Natural' },
+            { value: 'Lab-Created', meaning: 'Lab-Created' },
+            { value: 'Synthetic', meaning: 'Synthetic' },
+            { value: 'Treated', meaning: 'Treated' },
+            { value: 'Enhanced', meaning: 'Enhanced' }
+          ]
+        },
+        {
+          category_id: categoryId,
+          aspect_name: 'Jewelry Type',
+          values_json: [
+            { value: 'Ring', meaning: 'Ring' },
+            { value: 'Necklace', meaning: 'Necklace' },
+            { value: 'Earrings', meaning: 'Earrings' },
+            { value: 'Bracelet', meaning: 'Bracelet' },
+            { value: 'Pendant', meaning: 'Pendant' },
+            { value: 'Brooch', meaning: 'Brooch' },
+            { value: 'Anklet', meaning: 'Anklet' },
+            { value: 'Chain', meaning: 'Chain' }
+          ]
+        },
+        {
+          category_id: categoryId,
+          aspect_name: 'Setting Style',
+          values_json: [
+            { value: 'Solitaire', meaning: 'Solitaire' },
+            { value: 'Halo', meaning: 'Halo' },
+            { value: 'Three Stone', meaning: 'Three Stone' },
+            { value: 'Vintage', meaning: 'Vintage' },
+            { value: 'Modern', meaning: 'Modern' },
+            { value: 'Art Deco', meaning: 'Art Deco' },
+            { value: 'Cathedral', meaning: 'Cathedral' },
+            { value: 'Tension', meaning: 'Tension' }
+          ]
+        },
+        {
+          category_id: categoryId,
+          aspect_name: 'Style',
+          values_json: [
+            { value: 'Classic', meaning: 'Classic' },
+            { value: 'Modern', meaning: 'Modern' },
+            { value: 'Vintage', meaning: 'Vintage' },
+            { value: 'Art Deco', meaning: 'Art Deco' },
+            { value: 'Victorian', meaning: 'Victorian' },
+            { value: 'Edwardian', meaning: 'Edwardian' },
+            { value: 'Contemporary', meaning: 'Contemporary' },
+            { value: 'Antique', meaning: 'Antique' }
           ]
         }
       ];
