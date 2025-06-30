@@ -20,10 +20,13 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
     onChange({ ...filters, [key]: value });
   };
 
-  // Use test category for consistent data, fall back to subcategories if available
+  // Use the first selected subcategory, or fall back to jewelry_general
   const categoryId = selectedSubcategories.length > 0 
     ? selectedSubcategories[0] 
     : 'jewelry_general';
+
+  console.log('Enhanced Jewelry Filters categoryId:', categoryId);
+  console.log('Selected subcategories:', selectedSubcategories);
 
   return (
     <Card>
@@ -32,6 +35,11 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
         <p className="text-sm text-gray-600">
           Using comprehensive jewelry aspect data to help you find exactly what you're looking for.
         </p>
+        {selectedSubcategories.length > 0 && (
+          <p className="text-xs text-blue-600">
+            Using category: {categoryId}
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Multi-select aspect filters */}

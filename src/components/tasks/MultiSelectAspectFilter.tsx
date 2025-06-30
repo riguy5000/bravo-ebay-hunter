@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { ChevronDown, X } from 'lucide-react';
+import { ChevronDown, X, RefreshCw } from 'lucide-react';
 import { useEbayAspects } from '@/hooks/useEbayAspects';
 
 interface MultiSelectAspectFilterProps {
@@ -25,8 +25,18 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
   onChange,
   placeholder = 'Select options...'
 }) => {
-  const { getAspectValues } = useEbayAspects(categoryId);
+  const { aspects, getAspectValues, loading, error, populateTestData } = useEbayAspects(categoryId);
   const availableValues = getAspectValues(aspectName);
+
+  console.log('MultiSelectAspectFilter:', {
+    title,
+    categoryId,
+    aspectName,
+    aspectsCount: aspects.length,
+    availableValuesCount: availableValues.length,
+    loading,
+    error
+  });
 
   const handleValueToggle = (value: string, checked: boolean) => {
     if (checked) {
@@ -42,6 +52,10 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
 
   const handleClearAll = () => {
     onChange([]);
+  };
+
+  const handlePopulateTestData = () => {
+    populateTestData();
   };
 
   return (
@@ -66,7 +80,15 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
         
         <DropdownMenuContent className="w-80 max-h-80 overflow-y-auto bg-white">
           <div className="p-2 space-y-2">
-            {availableValues.length > 0 ? (
+            {loading ? (
+              <div className="text-sm text-gray-500 py-4 text-center">
+                Loading {aspectName.toLowerCase()} options...
+              </div>
+            ) : error ? (
+              <div className="text-sm text-red-500 py-2 text-center">
+                Error: {error}
+              </div>
+            ) : availableValues.length > 0 ? (
               <>
                 <div className="flex items-center justify-between pb-2 border-b">
                   <span className="text-sm font-medium">
@@ -103,10 +125,20 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
                 ))}
               </>
             ) : (
-              <div className="text-sm text-gray-500 py-4 text-center">
-                No {aspectName.toLowerCase()} options available.
-                <br />
-                Try refreshing the aspect data.
+              <div className="text-sm text-gray-500 py-4 text-center space-y-2">
+                <div>No {aspectName.toLowerCase()} options available.</div>
+                <div className="text-xs text-gray-400">
+                  Category: {categoryId || 'None'}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePopulateTestData}
+                  className="flex items-center gap-1"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Add Test Data
+                </Button>
               </div>
             )}
           </div>

@@ -29,7 +29,7 @@ const getTestDataForCategory = (categoryId: string): EbayAspect[] => {
   ];
 
   // Gemstone-specific test data
-  if (categoryId === '10207' || categoryId === '51089') {
+  if (categoryId === '10207' || categoryId === '51089' || categoryId === 'gemstone_general') {
     return [
       ...baseAspects,
       {
@@ -51,7 +51,7 @@ const getTestDataForCategory = (categoryId: string): EbayAspect[] => {
         refreshed_at: new Date().toISOString()
       },
       {
-        aspect_name: 'Shape / Cut',
+        aspect_name: 'Cut',
         values_json: [
           { value: 'Round', meaning: 'Round' },
           { value: 'Princess', meaning: 'Princess' },
@@ -65,64 +65,12 @@ const getTestDataForCategory = (categoryId: string): EbayAspect[] => {
           { value: 'Radiant', meaning: 'Radiant' }
         ],
         refreshed_at: new Date().toISOString()
-      },
-      {
-        aspect_name: 'Creation',
-        values_json: [
-          { value: 'Natural', meaning: 'Natural' },
-          { value: 'Lab-Created', meaning: 'Lab-Created' },
-          { value: 'Synthetic', meaning: 'Synthetic' },
-          { value: 'Enhanced', meaning: 'Enhanced' },
-          { value: 'Treated', meaning: 'Treated' }
-        ],
-        refreshed_at: new Date().toISOString()
-      },
-      {
-        aspect_name: 'Colour (Diamonds)',
-        values_json: [
-          { value: 'D', meaning: 'D (Colorless)' },
-          { value: 'E', meaning: 'E (Colorless)' },
-          { value: 'F', meaning: 'F (Colorless)' },
-          { value: 'G', meaning: 'G (Near Colorless)' },
-          { value: 'H', meaning: 'H (Near Colorless)' },
-          { value: 'I', meaning: 'I (Near Colorless)' },
-          { value: 'J', meaning: 'J (Near Colorless)' }
-        ],
-        refreshed_at: new Date().toISOString()
-      },
-      {
-        aspect_name: 'Clarity (Diamonds)',
-        values_json: [
-          { value: 'FL', meaning: 'Flawless' },
-          { value: 'IF', meaning: 'Internally Flawless' },
-          { value: 'VVS1', meaning: 'Very Very Slightly Included 1' },
-          { value: 'VVS2', meaning: 'Very Very Slightly Included 2' },
-          { value: 'VS1', meaning: 'Very Slightly Included 1' },
-          { value: 'VS2', meaning: 'Very Slightly Included 2' },
-          { value: 'SI1', meaning: 'Slightly Included 1' },
-          { value: 'SI2', meaning: 'Slightly Included 2' }
-        ],
-        refreshed_at: new Date().toISOString()
-      },
-      {
-        aspect_name: 'Carat Weight',
-        values_json: [
-          { value: '0.25', meaning: '0.25 ct' },
-          { value: '0.50', meaning: '0.50 ct' },
-          { value: '0.75', meaning: '0.75 ct' },
-          { value: '1.00', meaning: '1.00 ct' },
-          { value: '1.50', meaning: '1.50 ct' },
-          { value: '2.00', meaning: '2.00 ct' },
-          { value: '3.00', meaning: '3.00 ct' },
-          { value: '5.00', meaning: '5.00 ct' }
-        ],
-        refreshed_at: new Date().toISOString()
       }
     ];
   }
 
   // Watch-specific test data
-  if (categoryId === '31387') {
+  if (categoryId === '31387' || categoryId === '31388' || categoryId === '31389' || categoryId === 'watch_general') {
     return [
       ...baseAspects,
       {
@@ -165,45 +113,11 @@ const getTestDataForCategory = (categoryId: string): EbayAspect[] => {
           { value: 'Carbon Fiber', meaning: 'Carbon Fiber' }
         ],
         refreshed_at: new Date().toISOString()
-      },
-      {
-        aspect_name: 'Department',
-        values_json: [
-          { value: 'Men', meaning: 'Men' },
-          { value: 'Women', meaning: 'Women' },
-          { value: 'Unisex', meaning: 'Unisex' }
-        ],
-        refreshed_at: new Date().toISOString()
-      },
-      {
-        aspect_name: 'Band Material',
-        values_json: [
-          { value: 'Leather', meaning: 'Leather' },
-          { value: 'Metal', meaning: 'Metal' },
-          { value: 'Rubber', meaning: 'Rubber' },
-          { value: 'Fabric', meaning: 'Fabric' },
-          { value: 'Ceramic', meaning: 'Ceramic' },
-          { value: 'Silicone', meaning: 'Silicone' }
-        ],
-        refreshed_at: new Date().toISOString()
-      },
-      {
-        aspect_name: 'Case Size',
-        values_json: [
-          { value: '28mm', meaning: '28mm' },
-          { value: '32mm', meaning: '32mm' },
-          { value: '36mm', meaning: '36mm' },
-          { value: '40mm', meaning: '40mm' },
-          { value: '42mm', meaning: '42mm' },
-          { value: '44mm', meaning: '44mm' },
-          { value: '46mm', meaning: '46mm' }
-        ],
-        refreshed_at: new Date().toISOString()
       }
     ];
   }
 
-  // Jewelry-specific test data (existing categories)
+  // Jewelry-specific test data (default and all jewelry subcategories)
   return [
     ...baseAspects,
     {
@@ -215,7 +129,52 @@ const getTestDataForCategory = (categoryId: string): EbayAspect[] => {
         { value: 'Rose Gold', meaning: 'Rose Gold' },
         { value: 'Silver', meaning: 'Silver' },
         { value: 'Sterling Silver', meaning: 'Sterling Silver' },
-        { value: 'Platinum', meaning: 'Platinum' }
+        { value: 'Platinum', meaning: 'Platinum' },
+        { value: 'Stainless Steel', meaning: 'Stainless Steel' },
+        { value: 'Titanium', meaning: 'Titanium' }
+      ],
+      refreshed_at: new Date().toISOString()
+    },
+    {
+      aspect_name: 'Color',
+      values_json: [
+        { value: 'Yellow', meaning: 'Yellow' },
+        { value: 'White', meaning: 'White' },
+        { value: 'Rose', meaning: 'Rose' },
+        { value: 'Silver', meaning: 'Silver' },
+        { value: 'Gold', meaning: 'Gold' },
+        { value: 'Black', meaning: 'Black' },
+        { value: 'Blue', meaning: 'Blue' },
+        { value: 'Green', meaning: 'Green' },
+        { value: 'Red', meaning: 'Red' }
+      ],
+      refreshed_at: new Date().toISOString()
+    },
+    {
+      aspect_name: 'Type',
+      values_json: [
+        { value: 'Ring', meaning: 'Ring' },
+        { value: 'Necklace', meaning: 'Necklace' },
+        { value: 'Bracelet', meaning: 'Bracelet' },
+        { value: 'Earrings', meaning: 'Earrings' },
+        { value: 'Pendant', meaning: 'Pendant' },
+        { value: 'Brooch', meaning: 'Brooch' },
+        { value: 'Charm', meaning: 'Charm' },
+        { value: 'Anklet', meaning: 'Anklet' }
+      ],
+      refreshed_at: new Date().toISOString()
+    },
+    {
+      aspect_name: 'Brand',
+      values_json: [
+        { value: 'Tiffany & Co.', meaning: 'Tiffany & Co.' },
+        { value: 'Cartier', meaning: 'Cartier' },
+        { value: 'Pandora', meaning: 'Pandora' },
+        { value: 'David Yurman', meaning: 'David Yurman' },
+        { value: 'Kay Jewelers', meaning: 'Kay Jewelers' },
+        { value: 'Zales', meaning: 'Zales' },
+        { value: 'Jared', meaning: 'Jared' },
+        { value: 'Blue Nile', meaning: 'Blue Nile' }
       ],
       refreshed_at: new Date().toISOString()
     },
@@ -226,7 +185,26 @@ const getTestDataForCategory = (categoryId: string): EbayAspect[] => {
         { value: 'Ruby', meaning: 'Ruby' },
         { value: 'Sapphire', meaning: 'Sapphire' },
         { value: 'Emerald', meaning: 'Emerald' },
-        { value: 'Pearl', meaning: 'Pearl' }
+        { value: 'Pearl', meaning: 'Pearl' },
+        { value: 'Amethyst', meaning: 'Amethyst' },
+        { value: 'Citrine', meaning: 'Citrine' },
+        { value: 'Garnet', meaning: 'Garnet' },
+        { value: 'Topaz', meaning: 'Topaz' },
+        { value: 'Opal', meaning: 'Opal' }
+      ],
+      refreshed_at: new Date().toISOString()
+    },
+    {
+      aspect_name: 'Metal Purity',
+      values_json: [
+        { value: '10K', meaning: '10 Karat' },
+        { value: '14K', meaning: '14 Karat' },
+        { value: '18K', meaning: '18 Karat' },
+        { value: '22K', meaning: '22 Karat' },
+        { value: '24K', meaning: '24 Karat' },
+        { value: '925', meaning: '925 Sterling Silver' },
+        { value: '950', meaning: '950 Platinum' },
+        { value: '999', meaning: '999 Fine Silver' }
       ],
       refreshed_at: new Date().toISOString()
     }
@@ -269,14 +247,22 @@ export const useEbayAspects = (categoryId?: string) => {
           refreshed_at: item.refreshed_at
         }));
 
-        setAspects(transformedData);
-        
         if (transformedData.length === 0) {
-          console.log('No aspects found in database for category', categoryId);
+          console.log('No aspects found in database, using test data for category', categoryId);
+          // Use test data as fallback
+          const testData = getTestDataForCategory(categoryId);
+          setAspects(testData);
+        } else {
+          setAspects(transformedData);
         }
       } catch (err: any) {
         console.error('Error fetching eBay aspects:', err);
         setError(err.message || 'Failed to fetch aspects');
+        
+        // Use test data as fallback when there's an error
+        console.log('Using test data as fallback for category', categoryId);
+        const testData = getTestDataForCategory(categoryId);
+        setAspects(testData);
       } finally {
         setLoading(false);
       }
