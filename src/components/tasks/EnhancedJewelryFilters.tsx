@@ -8,30 +8,37 @@ import { Label } from '@/components/ui/label';
 interface EnhancedJewelryFiltersProps {
   filters: any;
   onChange: (filters: any) => void;
+  selectedSubcategories?: string[];
 }
 
 export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({ 
   filters, 
-  onChange 
+  onChange,
+  selectedSubcategories = []
 }) => {
   const handleChange = (key: string, value: any) => {
     onChange({ ...filters, [key]: value });
   };
 
-  // Use multiple jewelry categories to get comprehensive aspect data
-  const jewelryCategoryIds = ['164330', '45077', '164331', '45080', '155124', '164395']; // Mix of fine, fashion, men's, and wedding jewelry
+  // Use test category for consistent data, fall back to subcategories if available
+  const categoryId = selectedSubcategories.length > 0 
+    ? selectedSubcategories[0] 
+    : 'jewelry_general';
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Enhanced Jewelry Filters</CardTitle>
+        <p className="text-sm text-gray-600">
+          Using comprehensive jewelry aspect data to help you find exactly what you're looking for.
+        </p>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Multi-select aspect filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <MultiSelectAspectFilter
             title="Metal Types"
-            categoryId={jewelryCategoryIds[0]}
+            categoryId={categoryId}
             aspectName="Metal"
             selectedValues={filters.metal || []}
             onChange={(values) => handleChange('metal', values)}
@@ -40,7 +47,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Colors"
-            categoryId={jewelryCategoryIds[1]}
+            categoryId={categoryId}
             aspectName="Color"
             selectedValues={filters.colors || []}
             onChange={(values) => handleChange('colors', values)}
@@ -49,7 +56,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Jewelry Types"
-            categoryId={jewelryCategoryIds[2]}
+            categoryId={categoryId}
             aspectName="Type"
             selectedValues={filters.categories || []}
             onChange={(values) => handleChange('categories', values)}
@@ -58,7 +65,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Conditions"
-            categoryId={jewelryCategoryIds[0]}
+            categoryId={categoryId}
             aspectName="Condition"
             selectedValues={filters.conditions || []}
             onChange={(values) => handleChange('conditions', values)}
@@ -67,7 +74,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Brands"
-            categoryId={jewelryCategoryIds[3]}
+            categoryId={categoryId}
             aspectName="Brand"
             selectedValues={filters.brands || []}
             onChange={(values) => handleChange('brands', values)}
@@ -76,7 +83,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Main Stone"
-            categoryId={jewelryCategoryIds[4]}
+            categoryId={categoryId}
             aspectName="Main Stone"
             selectedValues={filters.main_stones || []}
             onChange={(values) => handleChange('main_stones', values)}
@@ -85,42 +92,15 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Metal Purity"
-            categoryId={jewelryCategoryIds[0]}
+            categoryId={categoryId}
             aspectName="Metal Purity"
             selectedValues={filters.metal_purity || []}
             onChange={(values) => handleChange('metal_purity', values)}
             placeholder="Select purity..."
           />
-
-          <MultiSelectAspectFilter
-            title="Style"
-            categoryId={jewelryCategoryIds[1]}
-            aspectName="Style"
-            selectedValues={filters.styles || []}
-            onChange={(values) => handleChange('styles', values)}
-            placeholder="Select styles..."
-          />
-
-          <MultiSelectAspectFilter
-            title="Main Stone Color"
-            categoryId={jewelryCategoryIds[5]}
-            aspectName="Main Stone Color"
-            selectedValues={filters.stone_colors || []}
-            onChange={(values) => handleChange('stone_colors', values)}
-            placeholder="Select stone colors..."
-          />
-
-          <MultiSelectAspectFilter
-            title="Material"
-            categoryId={jewelryCategoryIds[2]}
-            aspectName="Material"
-            selectedValues={filters.materials || []}
-            onChange={(values) => handleChange('materials', values)}
-            placeholder="Select materials..."
-          />
         </div>
 
-        {/* Numeric filters */}
+        {/* Price and size filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="weight_min">Min Weight (grams)</Label>
@@ -128,9 +108,9 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
               id="weight_min"
               type="number"
               step="0.1"
-              placeholder="e.g., 5.0"
+              placeholder="e.g., 1.0"
               value={filters.weight_min || ''}
-              onChange={(e) => handleChange('weight_min', Number(e.target.value))}
+              onChange={(e) => handleChange('weight_min', Number(e.target.value) || null)}
             />
           </div>
 
@@ -142,31 +122,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
               step="0.1"
               placeholder="e.g., 50.0"
               value={filters.weight_max || ''}
-              onChange={(e) => handleChange('weight_max', Number(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="carat_weight_min">Min Carat Weight</Label>
-            <Input
-              id="carat_weight_min"
-              type="number"
-              step="0.01"
-              placeholder="e.g., 0.25"
-              value={filters.carat_weight_min || ''}
-              onChange={(e) => handleChange('carat_weight_min', Number(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="carat_weight_max">Max Carat Weight</Label>
-            <Input
-              id="carat_weight_max"
-              type="number"
-              step="0.01"
-              placeholder="e.g., 2.0"
-              value={filters.carat_weight_max || ''}
-              onChange={(e) => handleChange('carat_weight_max', Number(e.target.value))}
+              onChange={(e) => handleChange('weight_max', Number(e.target.value) || null)}
             />
           </div>
         </div>

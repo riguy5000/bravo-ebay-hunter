@@ -49,8 +49,23 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
   const [watchFilters, setWatchFilters] = useState({});
   const [gemstoneFilters, setGemstoneFilters] = useState({});
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const { toast } = useToast();
+
+  useEffect(() => {
+    // Get current user
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('Current user:', user);
+      setCurrentUser(user);
+      
+      if (!user) {
+        setError('You must be logged in to create tasks');
+      }
+    };
+    getCurrentUser();
+  }, []);
 
   useEffect(() => {
     if (template) {
@@ -80,7 +95,19 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!currentUser) {
+      setError('You must be logged in to create tasks');
+      toast({
+        title: "Error",
+        description: "You must be logged in to create tasks",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
+    setError(null);
+    
     try {
       const taskData = {
         name,
@@ -109,7 +136,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
           ...gemstoneFilters,
           selected_subcategories: selectedSubcategories
         } : null,
-        user_id: 'temp-user-id', // TODO: Replace with actual user ID from auth context
+        user_id: currentUser.id,
         status: 'active' as const
       };
 
@@ -129,7 +156,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
       console.log('Task created successfully:', data);
       toast({
         title: "Success",
-        description: "Task created successfully!",
+        description: "Task created successfully! The task scheduler will start searching for matches.",
       });
       onSuccess();
     } catch (error: any) {
@@ -156,7 +183,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
             <Label htmlFor="name">Task Name</Label>
             <Input
               id="name"
-              placeholder="e.g., Rolex Submariner Search"
+              placeholder="e.g., Gold Ring Search"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -165,7 +192,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
 
           <div>
             <Label htmlFor="itemType">Item Type</Label>
-            <Select onValueChange={setItemType} defaultValue={itemType || undefined}>
+            <Select onValueChange={setItemType} value={itemType || undefined}>
               <SelectTrigger>
                 <SelectValue placeholder="Select an item type" />
               </SelectTrigger>
@@ -186,11 +213,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="maxPrice">Maximum Price</Label>
+              <Label htmlFor="maxPrice">Maximum Price ($)</Label>
               <Input
                 id="maxPrice"
                 type="number"
-                placeholder="e.g., 1500"
+                placeholder="e.g., 500"
                 value={maxPrice === null ? '' : maxPrice.toString()}
                 onChange={(e) => setMaxPrice(e.target.value === '' ? null : Number(e.target.value))}
               />
@@ -201,7 +228,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
               <Input
                 id="minFeedback"
                 type="number"
-                placeholder="e.g., 500"
+                placeholder="e.g., 100"
                 value={minFeedback === null ? '' : minFeedback.toString()}
                 onChange={(e) => setMinFeedback(e.target.value === '' ? null : Number(e.target.value))}
               />
@@ -212,11 +239,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
 
       <Card>
         <CardHeader>
-          <CardTitle>Polling and Exclusion Settings</CardTitle>
+          <CardTitle>Search Settings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="pollInterval">Poll Interval (seconds)</Label>
+            <Label htmlFor="pollInterval">Search Interval (seconds)</Label>
             <Input
               id="pollInterval"
               type="number"
@@ -231,7 +258,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
             <div className="flex space-x-2">
               <Input
                 type="text"
-                placeholder="Enter keyword"
+                placeholder="Enter keyword to exclude"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -247,33 +274,25 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
                 type="button"
                 size="sm"
                 onClick={(e) => {
-                  const target = e.target as HTMLButtonElement;
-                  const input = target.parentElement?.querySelector('input') as HTMLInputElement;
+                  const input = (e.target as HTMLButtonElement).parentElement?.querySelector('input') as HTMLInputElement;
                   if (input && input.value.trim()) {
                     handleKeywordAdd(input.value.trim());
                     input.value = '';
                   }
                 }}
               >
-                Add Keyword
+                Add
               </Button>
             </div>
             <div className="flex flex-wrap gap-2 mt-2">
               {excludeKeywords.map((keyword, index) => (
                 <Button key={index} variant="secondary" size="sm" onClick={() => handleKeywordRemove(index)}>
-                  {keyword}
+                  {keyword} ×
                 </Button>
               ))}
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Advanced Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
           <div>
             <Label>Listing Formats</Label>
             <div className="flex flex-wrap gap-2">
@@ -289,121 +308,6 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
                 </Button>
               ))}
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="itemLocation">Item Location</Label>
-            <Input
-              id="itemLocation"
-              placeholder="e.g., US, CA, UK"
-              value={itemLocation || ''}
-              onChange={(e) => setItemLocation(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Date From</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !dateFrom && "text-muted-foreground"
-                    )}
-                  >
-                    {dateFrom ? format(dateFrom, "PPP") : (
-                      <span>Pick a date</span>
-                    )}
-                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dateFrom}
-                    onSelect={setDateFrom}
-                    disabled={(date) =>
-                      date > new Date()
-                    }
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div>
-              <Label>Date To</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !dateTo && "text-muted-foreground"
-                    )}
-                  >
-                    {dateTo ? format(dateTo, "PPP") : (
-                      <span>Pick a date</span>
-                    )}
-                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dateTo}
-                    onSelect={setDateTo}
-                    disabled={(date) =>
-                      date > new Date()
-                    }
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="priceDeltaType">Price Delta Type</Label>
-              <Select onValueChange={(value) => setPriceDeltaType(value as 'fixed' | 'percentage')} defaultValue={priceDeltaType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select delta type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fixed">Fixed</SelectItem>
-                  <SelectItem value="percentage">Percentage</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {priceDeltaType === 'fixed' && (
-              <div>
-                <Label htmlFor="priceDeltaValue">Price Delta Value</Label>
-                <Input
-                  id="priceDeltaValue"
-                  type="number"
-                  placeholder="e.g., 10"
-                  value={priceDeltaValue === null ? '' : priceDeltaValue.toString()}
-                  onChange={(e) => setPriceDeltaValue(e.target.value === '' ? null : Number(e.target.value))}
-                />
-              </div>
-            )}
-
-            {priceDeltaType === 'percentage' && (
-              <div>
-                <Label htmlFor="pricePercentage">Price Percentage</Label>
-                <Input
-                  id="pricePercentage"
-                  type="number"
-                  placeholder="e.g., 5"
-                  value={pricePercentage === null ? '' : pricePercentage.toString()}
-                  onChange={(e) => setPricePercentage(e.target.value === '' ? null : Number(e.target.value))}
-                />
-              </div>
-            )}
           </div>
 
           <div className="flex items-center space-x-2">
@@ -431,6 +335,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
         <EnhancedJewelryFilters
           filters={jewelryFilters}
           onChange={setJewelryFilters}
+          selectedSubcategories={selectedSubcategories}
         />
       )}
 
@@ -438,6 +343,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
         <EnhancedWatchFilters
           filters={watchFilters}
           onChange={setWatchFilters}
+          selectedSubcategories={selectedSubcategories}
         />
       )}
 
@@ -445,11 +351,18 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
         <EnhancedGemstoneFilters
           filters={gemstoneFilters}
           onChange={setGemstoneFilters}
+          selectedSubcategories={selectedSubcategories}
         />
       )}
 
+      {!currentUser && (
+        <div className="text-orange-600 text-sm p-4 bg-orange-50 rounded">
+          ⚠️ You must be logged in to create tasks. Please sign in first.
+        </div>
+      )}
+
       {error && (
-        <div className="text-red-600 text-sm">{error}</div>
+        <div className="text-red-600 text-sm p-4 bg-red-50 rounded">{error}</div>
       )}
 
       <div className="flex justify-between">
@@ -462,7 +375,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
           <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
             Cancel
           </Button>
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" disabled={loading || !currentUser}>
             {loading ? 'Creating...' : 'Create Task'}
           </Button>
         </div>

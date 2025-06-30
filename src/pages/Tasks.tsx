@@ -8,6 +8,7 @@ import { TaskTemplates, TaskTemplate } from '@/components/tasks/TaskTemplates';
 import { TaskList } from '@/components/tasks/TaskList';
 import { TaskSchedulerTest } from '@/components/TaskSchedulerTest';
 import { AspectDataViewer } from '@/components/tasks/AspectDataViewer';
+import { TestDataPopulator } from '@/components/TestDataPopulator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -89,7 +90,8 @@ const Tasks = () => {
             <div className="lg:col-span-2">
               <TaskList onEditTask={handleEditTask} />
             </div>
-            <div>
+            <div className="space-y-4">
+              <TestDataPopulator />
               <TaskSchedulerTest />
             </div>
           </div>

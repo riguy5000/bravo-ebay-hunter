@@ -40,48 +40,41 @@ interface Task {
 const buildSearchKeywords = (task: Task): string => {
   let keywords = '';
   
-  // Base keywords by item type
+  // Build search keywords from task type and filters
   switch (task.item_type) {
     case 'watch':
-      keywords = task.watch_filters?.brand 
-        ? `${task.watch_filters.brand} watch`
-        : 'watch';
-      if (task.watch_filters?.model) {
-        keywords += ` ${task.watch_filters.model}`;
+      keywords = 'watch';
+      if (task.watch_filters?.brands?.length > 0) {
+        keywords = `${task.watch_filters.brands[0]} watch`;
+      }
+      if (task.watch_filters?.keywords) {
+        keywords += ` ${task.watch_filters.keywords}`;
       }
       break;
     case 'jewelry':
-      keywords = task.jewelry_filters?.metal 
-        ? `${task.jewelry_filters.metal.join(' OR ')} jewelry`
-        : 'jewelry';
-      if (task.jewelry_filters?.categories) {
-        keywords += ` ${task.jewelry_filters.categories.join(' OR ')}`;
+      keywords = 'jewelry';
+      if (task.jewelry_filters?.metal?.length > 0) {
+        keywords = `${task.jewelry_filters.metal[0]} jewelry`;
+      }
+      if (task.jewelry_filters?.categories?.length > 0) {
+        keywords += ` ${task.jewelry_filters.categories[0]}`;
+      }
+      if (task.jewelry_filters?.keywords) {
+        keywords += ` ${task.jewelry_filters.keywords}`;
       }
       break;
     case 'gemstone':
-      keywords = task.gemstone_filters?.type 
-        ? `${task.gemstone_filters.type} gemstone`
-        : 'gemstone';
-      if (task.gemstone_filters?.cut) {
-        keywords += ` ${task.gemstone_filters.cut}`;
+      keywords = 'gemstone';
+      if (task.gemstone_filters?.stone_types?.length > 0) {
+        keywords = `${task.gemstone_filters.stone_types[0]}`;
+      }
+      if (task.gemstone_filters?.keywords) {
+        keywords += ` ${task.gemstone_filters.keywords}`;
       }
       break;
   }
   
-  return keywords || task.name;
-};
-
-const mapListingFormats = (formats?: string[]): string[] => {
-  if (!formats) return [];
-  
-  const formatMap: { [key: string]: string } = {
-    'auction': 'Auction',
-    'buy_it_now': 'FixedPrice',  
-    'best_offer': 'AuctionWithBIN',
-    'classified': 'Classified'
-  };
-  
-  return formats.map(f => formatMap[f] || f).filter(Boolean);
+  return keywords || task.name.toLowerCase();
 };
 
 const getMatchTableName = (itemType: string): string => {
@@ -97,8 +90,8 @@ const createMatchRecord = (task: Task, item: any) => {
     ebay_url: item.listingUrl,
     listed_price: item.price,
     currency: item.currency || 'USD',
-    buy_format: item.listingType,
-    seller_feedback: item.sellerInfo?.feedbackScore,
+    buy_format: item.listingType || 'Unknown',
+    seller_feedback: item.sellerInfo?.feedbackScore || 0,
     found_at: new Date().toISOString(),
     status: 'new' as const
   };
@@ -108,33 +101,33 @@ const createMatchRecord = (task: Task, item: any) => {
     case 'watch':
       return {
         ...baseMatch,
-        case_material: item.caseMaterial,
-        band_material: item.bandMaterial,
-        movement: item.movement,
-        dial_colour: item.dialColour,
-        case_size_mm: item.caseSizeMm,
+        case_material: item.caseMaterial || 'Unknown',
+        band_material: item.bandMaterial || 'Unknown',
+        movement: item.movement || 'Unknown',
+        dial_colour: item.dialColour || 'Unknown',
+        case_size_mm: item.caseSizeMm || null,
       };
     
     case 'jewelry':
       return {
         ...baseMatch,
-        weight_g: item.weightG,
-        karat: item.karat,
-        metal_type: item.metalType,
-        spot_price_oz: item.spotPriceOz,
-        melt_value: item.meltValue,
-        profit_scrap: item.profitScrap,
+        weight_g: item.weightG || null,
+        karat: item.karat || null,
+        metal_type: item.metalType || 'Unknown',
+        spot_price_oz: item.spotPriceOz || null,
+        melt_value: item.meltValue || null,
+        profit_scrap: item.profitScrap || null,
       };
     
     case 'gemstone':
       return {
         ...baseMatch,
-        shape: item.shape,
-        carat: item.carat,
-        colour: item.colour,
-        clarity: item.clarity,
-        cut_grade: item.cutGrade,
-        cert_lab: item.certLab,
+        shape: item.shape || 'Unknown',
+        carat: item.carat || null,
+        colour: item.colour || 'Unknown',
+        clarity: item.clarity || 'Unknown',
+        cut_grade: item.cutGrade || 'Unknown',
+        cert_lab: item.certLab || 'Unknown',
       };
     
     default:
@@ -149,7 +142,7 @@ const processTask = async (task: Task) => {
     const searchParams = {
       keywords: buildSearchKeywords(task),
       maxPrice: task.max_price,
-      listingType: mapListingFormats(task.listing_format),
+      listingType: task.listing_format || ['Auction', 'FixedPrice'],
       minFeedback: task.min_seller_feedback || 0,
       itemLocation: task.item_location,
       dateFrom: task.date_from,
@@ -172,20 +165,24 @@ const processTask = async (task: Task) => {
     console.log(`Found ${items?.length || 0} items for task ${task.name}`);
 
     if (!items || items.length === 0) {
+      console.log(`No items found for task ${task.name}`);
       return;
     }
 
     const tableName = getMatchTableName(task.item_type);
+    let newMatches = 0;
     
     // Process each item and create matches
-    for (const item of items) {
+    for (const item of items.slice(0, 10)) { // Limit to first 10 items for testing
       // Skip if price is too high
       if (task.max_price && item.price > task.max_price) {
+        console.log(`Skipping item ${item.itemId} - price too high: $${item.price}`);
         continue;
       }
 
       // Skip if seller feedback is too low
       if (task.min_seller_feedback && item.sellerInfo?.feedbackScore < task.min_seller_feedback) {
+        console.log(`Skipping item ${item.itemId} - feedback too low: ${item.sellerInfo?.feedbackScore}`);
         continue;
       }
 
@@ -224,9 +221,12 @@ const processTask = async (task: Task) => {
       if (insertError) {
         console.error('Error inserting match:', insertError);
       } else {
-        console.log(`Created ${task.item_type} match for item: ${item.title}`);
+        console.log(`✓ Created ${task.item_type} match: ${item.title} - $${item.price}`);
+        newMatches++;
       }
     }
+
+    console.log(`✓ Task ${task.name} processed: ${newMatches} new matches created`);
 
   } catch (error) {
     console.error(`Error processing task ${task.id}:`, error);
@@ -271,25 +271,16 @@ const handler = async (req: Request): Promise<Response> => {
     // Process each task
     let processedCount = 0;
     for (const task of tasks) {
-      // Check if enough time has passed since last execution
-      const lastRun = new Date(task.updated_at);
-      const now = new Date();
-      const timeDiff = (now.getTime() - lastRun.getTime()) / 1000;
-      const pollInterval = task.poll_interval || 30;
-
-      if (timeDiff >= pollInterval) {
-        await processTask(task);
-        
-        // Update the task's updated_at timestamp
-        await supabase
-          .from('tasks')
-          .update({ updated_at: now.toISOString() })
-          .eq('id', task.id);
-        
-        processedCount++;
-      } else {
-        console.log(`Task ${task.name} not ready yet (${Math.round(pollInterval - timeDiff)}s remaining)`);
-      }
+      console.log(`\n--- Processing Task: ${task.name} ---`);
+      await processTask(task);
+      
+      // Update the task's updated_at timestamp
+      await supabase
+        .from('tasks')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', task.id);
+      
+      processedCount++;
     }
 
     return new Response(JSON.stringify({ 
