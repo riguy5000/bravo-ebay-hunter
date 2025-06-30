@@ -24,7 +24,6 @@ async function getEbayOAuthToken(): Promise<string> {
     throw new Error('eBay credentials not configured');
   }
 
-  // Create the OAuth credentials string
   const credentials = btoa(`${ebayAppId}:${ebayCertId}`);
   
   const tokenUrl = 'https://api.ebay.com/identity/v1/oauth2/token';
@@ -47,6 +46,37 @@ async function getEbayOAuthToken(): Promise<string> {
   return tokenData.access_token;
 }
 
+// Function to verify if a category is a valid leaf category
+async function verifyCategoryIsLeaf(categoryId: string, accessToken: string): Promise<boolean> {
+  try {
+    const url = `https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_category_subtree?category_id=${categoryId}`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Category verification failed for ${categoryId}:`, response.status);
+      return false;
+    }
+
+    const data = await response.json();
+    const category = data.categorySubtree;
+    
+    // A leaf category has no children
+    const isLeaf = !category.childCategoryTreeNodes || category.childCategoryTreeNodes.length === 0;
+    console.log(`Category ${categoryId} (${category.category?.categoryName}) is ${isLeaf ? 'LEAF' : 'NON-LEAF'}`);
+    
+    return isLeaf;
+  } catch (error) {
+    console.error(`Error verifying category ${categoryId}:`, error);
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -58,25 +88,36 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Get OAuth token for eBay API
     console.log('Getting eBay OAuth token...');
     const accessToken = await getEbayOAuthToken();
     console.log('eBay OAuth token obtained successfully');
 
-    // Categories for all item types: jewelry, gemstones, and watches
+    // Expanded list of categories to get comprehensive aspect data
     const categories = [
-      // Jewelry categories (verified working)
+      // Fine Jewelry categories (verified working)
       { id: '164330', name: 'Fine Rings', type: 'jewelry' },
       { id: '164331', name: 'Fine Necklaces & Pendants', type: 'jewelry' },
       { id: '164332', name: 'Fine Earrings', type: 'jewelry' },
       { id: '164333', name: 'Fine Bracelets', type: 'jewelry' },
+      { id: '164334', name: 'Fine Brooches & Pins', type: 'jewelry' },
+      
+      // Fashion Jewelry categories (for more variety)
+      { id: '45077', name: 'Fashion Rings', type: 'jewelry' },
+      { id: '45080', name: 'Fashion Necklaces & Pendants', type: 'jewelry' },
+      { id: '45081', name: 'Fashion Earrings', type: 'jewelry' },
+      { id: '45079', name: 'Fashion Bracelets', type: 'jewelry' },
       
       // Gemstone categories (to be verified)
       { id: '10207', name: 'Loose Diamonds', type: 'gemstone' },
       { id: '51089', name: 'Loose Gemstones (Non-Diamond)', type: 'gemstone' },
       
-      // Watch category (to be verified)
-      { id: '31387', name: 'Luxury Watches/Wristwatches', type: 'watch' }
+      // Watch categories
+      { id: '31387', name: 'Luxury Watches/Wristwatches', type: 'watch' },
+      { id: '14324', name: 'Casual Watches', type: 'watch' },
+      
+      // Additional jewelry categories for more comprehensive data
+      { id: '164336', name: 'Fine Charms & Charm Bracelets', type: 'jewelry' },
+      { id: '164338', name: 'Fine Body Jewelry', type: 'jewelry' },
     ];
 
     console.log('Starting eBay aspects cache refresh for all categories...');
@@ -84,22 +125,41 @@ Deno.serve(async (req) => {
     let totalInserted = 0;
     let errors = [];
     let successfulCategories = [];
+    let verificationResults = [];
 
-    // First, clear existing data for these categories to avoid conflicts
-    console.log('Clearing existing aspects data...');
-    const categoryIds = categories.map(c => c.id);
-    const { error: deleteError } = await supabaseClient
-      .from('ebay_aspects')
-      .delete()
-      .in('category_id', categoryIds);
-    
-    if (deleteError) {
-      console.error('Error clearing existing data:', deleteError);
-    } else {
-      console.log('Existing data cleared successfully');
+    // First, verify which categories are valid leaf categories
+    console.log('Verifying category validity...');
+    for (const category of categories) {
+      const isLeaf = await verifyCategoryIsLeaf(category.id, accessToken);
+      verificationResults.push({
+        ...category,
+        isLeaf,
+        verified: isLeaf
+      });
     }
 
-    for (const category of categories) {
+    // Filter to only work with verified leaf categories
+    const validCategories = verificationResults.filter(cat => cat.verified);
+    console.log(`Found ${validCategories.length} valid leaf categories out of ${categories.length} total`);
+
+    // Clear existing data for valid categories
+    console.log('Clearing existing aspects data...');
+    const validCategoryIds = validCategories.map(c => c.id);
+    if (validCategoryIds.length > 0) {
+      const { error: deleteError } = await supabaseClient
+        .from('ebay_aspects')
+        .delete()
+        .in('category_id', validCategoryIds);
+      
+      if (deleteError) {
+        console.error('Error clearing existing data:', deleteError);
+      } else {
+        console.log('Existing data cleared successfully');
+      }
+    }
+
+    // Process each valid category
+    for (const category of validCategories) {
       try {
         console.log(`Fetching aspects for ${category.type}: ${category.name} (${category.id})`);
         
@@ -134,7 +194,10 @@ Deno.serve(async (req) => {
 
         console.log(`Processing ${aspects.length} aspects for ${category.type}: ${category.name}`);
 
-        // Process aspects in batches to avoid conflicts
+        // Log aspect names for debugging
+        const aspectNames = aspects.map((asp: any) => asp.localizedAspectName);
+        console.log(`Aspect names for ${category.name}:`, aspectNames);
+
         const aspectsToInsert = [];
         for (const aspect of aspects) {
           const aspectName = aspect.localizedAspectName;
@@ -146,14 +209,13 @@ Deno.serve(async (req) => {
           aspectsToInsert.push({
             category_id: category.id,
             aspect_name: aspectName,
-            values_json: values,
+            values_json: values as any,
             refreshed_at: new Date().toISOString()
           });
 
           totalProcessed++;
         }
 
-        // Insert all aspects for this category at once
         if (aspectsToInsert.length > 0) {
           console.log(`Inserting ${aspectsToInsert.length} aspects for ${category.type}: ${category.name}`);
           const { data, error } = await supabaseClient
@@ -176,11 +238,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Verify what was actually inserted
+    // Verify what was actually inserted and get aspect summary
     const { data: insertedAspects, error: selectError } = await supabaseClient
       .from('ebay_aspects')
-      .select('category_id, aspect_name')
-      .in('category_id', categoryIds)
+      .select('category_id, aspect_name, values_json')
+      .in('category_id', validCategoryIds)
       .order('category_id, aspect_name');
 
     if (selectError) {
@@ -188,25 +250,44 @@ Deno.serve(async (req) => {
     } else {
       console.log(`Database verification: ${insertedAspects?.length || 0} total aspects stored`);
       
-      // Log summary by category
-      const categoryStats = insertedAspects?.reduce((acc: any, row: any) => {
-        const category = categories.find(c => c.id === row.category_id);
-        const key = category ? `${category.type}: ${category.name}` : row.category_id;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {});
-      console.log('Aspects per category:', categoryStats);
+      // Create comprehensive aspect summary
+      const aspectSummary: Record<string, Set<string>> = {};
+      
+      insertedAspects?.forEach((row: any) => {
+        const aspectName = row.aspect_name;
+        const values = row.values_json || [];
+        
+        if (!aspectSummary[aspectName]) {
+          aspectSummary[aspectName] = new Set();
+        }
+        
+        values.forEach((valueObj: any) => {
+          if (valueObj && valueObj.value) {
+            aspectSummary[aspectName].add(valueObj.value);
+          }
+        });
+      });
+
+      // Convert sets to arrays for response
+      const aspectLists: Record<string, string[]> = {};
+      Object.keys(aspectSummary).forEach(aspectName => {
+        aspectLists[aspectName] = Array.from(aspectSummary[aspectName]).sort();
+      });
+
+      console.log('Comprehensive aspect summary:', aspectLists);
     }
 
     const response = {
       success: totalInserted > 0,
       message: totalInserted > 0 ? 'eBay aspects cache refreshed successfully' : 'No aspects were cached',
       timestamp: new Date().toISOString(),
-      categories_processed: categories.length,
+      categories_attempted: categories.length,
+      categories_verified: validCategories.length,
       successful_categories: successfulCategories,
       total_aspects_processed: totalProcessed,
       total_aspects_inserted: totalInserted,
       aspects_in_db: insertedAspects?.length || 0,
+      category_verification: verificationResults,
       errors: errors.length > 0 ? errors : undefined
     };
 
@@ -216,7 +297,7 @@ Deno.serve(async (req) => {
       JSON.stringify(response),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: totalInserted > 0 ? 200 : 207 // 207 Multi-Status if partial success
+        status: totalInserted > 0 ? 200 : 207
       }
     );
 

@@ -2,12 +2,14 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, Database } from 'lucide-react';
 import { TaskForm } from '@/components/tasks/TaskForm';
 import { TaskTemplates, TaskTemplate } from '@/components/tasks/TaskTemplates';
 import { TaskList } from '@/components/tasks/TaskList';
 import { TaskSchedulerTest } from '@/components/TaskSchedulerTest';
+import { AspectDataViewer } from '@/components/tasks/AspectDataViewer';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const Tasks = () => {
   const [showCreateFlow, setShowCreateFlow] = useState(false);
@@ -38,7 +40,6 @@ const Tasks = () => {
 
   const handleEditTask = (taskId: string) => {
     setEditingTaskId(taskId);
-    // In a real implementation, you'd load the task data for editing
   };
 
   const renderCreateFlow = () => {
@@ -74,14 +75,30 @@ const Tasks = () => {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <TaskList onEditTask={handleEditTask} />
-        </div>
-        <div>
-          <TaskSchedulerTest />
-        </div>
-      </div>
+      <Tabs defaultValue="tasks" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="tasks">Tasks & Testing</TabsTrigger>
+          <TabsTrigger value="aspects">
+            <Database className="h-4 w-4 mr-2" />
+            eBay Aspect Data
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tasks" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <TaskList onEditTask={handleEditTask} />
+            </div>
+            <div>
+              <TaskSchedulerTest />
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="aspects">
+          <AspectDataViewer />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={showCreateFlow} onOpenChange={setShowCreateFlow}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
