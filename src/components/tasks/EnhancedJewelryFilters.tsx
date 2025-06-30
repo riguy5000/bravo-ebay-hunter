@@ -19,7 +19,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
   };
 
   // Use multiple jewelry categories to get comprehensive aspect data
-  const jewelryCategoryIds = ['164330', '45077', '164331', '45080']; // Mix of fine and fashion jewelry
+  const jewelryCategoryIds = ['164330', '45077', '164331', '45080', '155124', '164395']; // Mix of fine, fashion, men's, and wedding jewelry
 
   return (
     <Card>
@@ -39,21 +39,21 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           />
 
           <MultiSelectAspectFilter
-            title="Jewelry Types"
-            categoryId={jewelryCategoryIds[1]}
-            aspectName="Type"
-            selectedValues={filters.categories || []}
-            onChange={(values) => handleChange('categories', values)}
-            placeholder="Select jewelry types..."
-          />
-
-          <MultiSelectAspectFilter
             title="Colors"
-            categoryId={jewelryCategoryIds[0]}
+            categoryId={jewelryCategoryIds[1]}
             aspectName="Color"
             selectedValues={filters.colors || []}
             onChange={(values) => handleChange('colors', values)}
             placeholder="Select colors..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Jewelry Types"
+            categoryId={jewelryCategoryIds[2]}
+            aspectName="Type"
+            selectedValues={filters.categories || []}
+            onChange={(values) => handleChange('categories', values)}
+            placeholder="Select jewelry types..."
           />
 
           <MultiSelectAspectFilter
@@ -67,7 +67,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Brands"
-            categoryId={jewelryCategoryIds[1]}
+            categoryId={jewelryCategoryIds[3]}
             aspectName="Brand"
             selectedValues={filters.brands || []}
             onChange={(values) => handleChange('brands', values)}
@@ -76,7 +76,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Main Stone"
-            categoryId={jewelryCategoryIds[0]}
+            categoryId={jewelryCategoryIds[4]}
             aspectName="Main Stone"
             selectedValues={filters.main_stones || []}
             onChange={(values) => handleChange('main_stones', values)}
@@ -103,7 +103,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Main Stone Color"
-            categoryId={jewelryCategoryIds[0]}
+            categoryId={jewelryCategoryIds[5]}
             aspectName="Main Stone Color"
             selectedValues={filters.stone_colors || []}
             onChange={(values) => handleChange('stone_colors', values)}
@@ -112,7 +112,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           <MultiSelectAspectFilter
             title="Material"
-            categoryId={jewelryCategoryIds[1]}
+            categoryId={jewelryCategoryIds[2]}
             aspectName="Material"
             selectedValues={filters.materials || []}
             onChange={(values) => handleChange('materials', values)}

@@ -1,505 +1,458 @@
-import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Switch } from '@/components/ui/switch';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
-import { EnhancedWatchFilters } from './EnhancedWatchFilters';
+import { Calendar } from "@/components/ui/calendar"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { CalendarIcon } from "lucide-react"
+import { format } from "date-fns"
+import { cn } from "@/lib/utils"
+import { useToast } from "@/components/ui/use-toast"
+import { useUser } from '@clerk/clerk-react';
+import { supabase } from '@/integrations/supabase/client';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { EnhancedJewelryFilters } from './EnhancedJewelryFilters';
+import { EnhancedWatchFilters } from './EnhancedWatchFilters';
 import { EnhancedGemstoneFilters } from './EnhancedGemstoneFilters';
-import { useTasks } from '@/hooks/useTasks';
-import { toast } from 'sonner';
-import { TaskTemplate } from './TaskTemplates';
-import { ArrowLeft, Calendar, MapPin, AlertTriangle } from 'lucide-react';
-
-const taskSchema = z.object({
-  name: z.string().min(1, 'Task name is required'),
-  item_type: z.enum(['watch', 'jewelry', 'gemstone']),
-  status: z.enum(['active', 'paused', 'stopped']).default('active'),
-  max_price: z.number().min(0).optional(),
-  price_percentage: z.number().min(0).max(100).optional(),
-  price_delta_type: z.enum(['absolute', 'percent']).default('absolute'),
-  price_delta_value: z.number().min(0).optional(),
-  listing_format: z.array(z.string()).optional(),
-  min_seller_feedback: z.number().min(0).optional(),
-  poll_interval: z.number().min(5).default(30),
-  exclude_keywords: z.array(z.string()).optional(),
-  auction_alert: z.boolean().default(false),
-  date_from: z.string().optional(),
-  date_to: z.string().optional(),
-  item_location: z.string().optional(),
-});
-
-type TaskFormData = z.infer<typeof taskSchema>;
+import { SubcategorySelector } from './SubcategorySelector';
 
 interface TaskFormProps {
-  onSuccess?: () => void;
-  onCancel?: () => void;
-  template?: TaskTemplate | null;
+  template?: any;
+  onSuccess: () => void;
+  onCancel: () => void;
   onBackToTemplates?: () => void;
 }
 
-export const TaskForm: React.FC<TaskFormProps> = ({ 
-  onSuccess, 
-  onCancel, 
-  template,
-  onBackToTemplates 
-}) => {
-  const { createTask } = useTasks();
+export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCancel, onBackToTemplates }) => {
+  const [name, setName] = useState('');
+  const [itemType, setItemType] = useState<string | null>(null);
+  const [maxPrice, setMaxPrice] = useState<number | null>(null);
+  const [minFeedback, setMinFeedback] = useState<number | null>(null);
+  const [pollInterval, setPollInterval] = useState<number | null>(300);
+  const [excludeKeywords, setExcludeKeywords] = useState<string[]>([]);
+  const [listingFormats, setListingFormats] = useState<string[]>([]);
+  const [itemLocation, setItemLocation] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+  const [priceDeltaType, setPriceDeltaType] = useState<'fixed' | 'percentage'>('fixed');
+  const [priceDeltaValue, setPriceDeltaValue] = useState<number | null>(null);
+  const [pricePercentage, setPricePercentage] = useState<number | null>(null);
+  const [auctionAlert, setAuctionAlert] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [watchFilters, setWatchFilters] = useState(template?.config?.watch_filters || {});
-  const [jewelryFilters, setJewelryFilters] = useState(template?.config?.jewelry_filters || {});
-  const [gemstoneFilters, setGemstoneFilters] = useState(template?.config?.gemstone_filters || {});
-  const [excludeKeywordsText, setExcludeKeywordsText] = useState(
-    template?.config?.exclude_keywords?.join(', ') || ''
-  );
+  const [error, setError] = useState<string | null>(null);
+  const [jewelryFilters, setJewelryFilters] = useState({});
+  const [watchFilters, setWatchFilters] = useState({});
+  const [gemstoneFilters, setGemstoneFilters] = useState({});
+  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
 
-  const form = useForm<TaskFormData>({
-    resolver: zodResolver(taskSchema),
-    defaultValues: template?.config || {
-      status: 'active',
-      poll_interval: 30,
-      listing_format: [],
-      min_seller_feedback: 0,
-      price_delta_type: 'absolute',
-      auction_alert: false,
-    },
-  });
+  const { user } = useUser();
+  const { toast } = useToast();
 
-  const itemType = form.watch('item_type');
-  const priceRule = form.watch('price_delta_type');
+  useEffect(() => {
+    if (template) {
+      setName(template.name || '');
+      setItemType(template.itemType || null);
+    }
+  }, [template]);
 
-  const handleSubmit = async (data: TaskFormData) => {
+  const handleKeywordAdd = (keyword: string) => {
+    setExcludeKeywords([...excludeKeywords, keyword]);
+  };
+
+  const handleKeywordRemove = (index: number) => {
+    const newKeywords = [...excludeKeywords];
+    newKeywords.splice(index, 1);
+    setExcludeKeywords(newKeywords);
+  };
+
+  const handleListingFormatToggle = (format: string) => {
+    if (listingFormats.includes(format)) {
+      setListingFormats(listingFormats.filter(f => f !== format));
+    } else {
+      setListingFormats([...listingFormats, format]);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
     setLoading(true);
     try {
-      console.log('Creating task with data:', data);
-      console.log('Watch filters:', watchFilters);
-      console.log('Jewelry filters:', jewelryFilters);
-      console.log('Gemstone filters:', gemstoneFilters);
-
-      const excludeKeywords = excludeKeywordsText
-        ? excludeKeywordsText.split(',').map(k => k.trim()).filter(k => k.length > 0)
-        : [];
-
       const taskData = {
-        name: data.name,
-        item_type: data.item_type,
-        status: data.status || 'active',
-        max_price: data.max_price,
-        price_percentage: data.price_percentage,
-        price_delta_type: data.price_delta_type,
-        price_delta_value: data.price_delta_value,
-        listing_format: data.listing_format,
-        min_seller_feedback: data.min_seller_feedback,
-        poll_interval: data.poll_interval || 30,
-        exclude_keywords: excludeKeywords,
-        auction_alert: data.auction_alert,
-        date_from: data.date_from,
-        date_to: data.date_to,
-        item_location: data.item_location,
-        watch_filters: itemType === 'watch' ? watchFilters : null,
-        jewelry_filters: itemType === 'jewelry' ? jewelryFilters : null,
-        gemstone_filters: itemType === 'gemstone' ? gemstoneFilters : null,
+        name,
+        item_type: itemType,
+        max_price: maxPrice || null,
+        min_seller_feedback: minFeedback || 0,
+        poll_interval: pollInterval || 300,
+        exclude_keywords: excludeKeywords.filter(k => k.trim()),
+        listing_format: listingFormats.length > 0 ? listingFormats : null,
+        item_location: itemLocation || null,
+        date_from: dateFrom || null,
+        date_to: dateTo || null,
+        price_delta_type: priceDeltaType,
+        price_delta_value: priceDeltaValue || null,
+        price_percentage: pricePercentage || null,
+        auction_alert: auctionAlert,
+        jewelry_filters: itemType === 'jewelry' ? {
+          ...jewelryFilters,
+          selected_subcategories: selectedSubcategories
+        } : null,
+        watch_filters: itemType === 'watch' ? {
+          ...watchFilters,
+          selected_subcategories: selectedSubcategories
+        } : null,
+        gemstone_filters: itemType === 'gemstone' ? {
+          ...gemstoneFilters,
+          selected_subcategories: selectedSubcategories
+        } : null,
+        user_id: user.id,
+        status: 'active'
       };
 
-      console.log('Final task data being submitted:', taskData);
+      console.log('Creating task with data:', taskData);
 
-      await createTask(taskData);
-      toast.success('Task created successfully with enhanced multi-select filters!');
-      form.reset();
-      onSuccess?.();
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert([taskData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating task:', error);
+        throw error;
+      }
+
+      console.log('Task created successfully:', data);
+      onSuccess();
     } catch (error: any) {
-      console.error('Task creation error:', error);
-      toast.error(error.message || 'Failed to create task');
+      console.error('Failed to create task:', error);
+      setError(error.message || 'Failed to create task');
     } finally {
       setLoading(false);
     }
   };
 
-  const listingFormats = [
-    { id: 'auction', label: 'Auction' },
-    { id: 'buy_it_now', label: 'Buy It Now' },
-    { id: 'best_offer', label: 'Best Offer' },
-    { id: 'classified', label: 'Classified Ad' },
-  ];
-
   return (
-    <Card className="w-full max-w-4xl mx-auto">
-      <CardHeader>
-        <div className="flex items-center gap-4">
-          {onBackToTemplates && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={onBackToTemplates}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to Templates
-            </Button>
-          )}
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Basic Task Details</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div>
-            <CardTitle>
-              {template ? `Create ${template.name}` : 'Create New Search Task'}
-            </CardTitle>
-            <CardDescription>
-              {template 
-                ? `Using the ${template.name} template with enhanced multi-select filters`
-                : 'Set up automated searches with comprehensive aspect filtering'
-              }
-            </CardDescription>
+            <Label htmlFor="name">Task Name</Label>
+            <Input
+              id="name"
+              placeholder="e.g., Rolex Submariner Search"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            {/* Basic Information */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Task Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Vintage Rolex Watches" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
-              <FormField
-                control={form.control}
-                name="item_type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Item Type</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select item type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="watch">Watches</SelectItem>
-                        <SelectItem value="jewelry">Jewelry</SelectItem>
-                        <SelectItem value="gemstone">Gemstones</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+          <div>
+            <Label htmlFor="itemType">Item Type</Label>
+            <Select onValueChange={setItemType} defaultValue={itemType || undefined}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an item type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="jewelry">Jewelry</SelectItem>
+                <SelectItem value="watch">Watches</SelectItem>
+                <SelectItem value="gemstone">Gemstones</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Price and Feedback Criteria</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="maxPrice">Maximum Price</Label>
+              <Input
+                id="maxPrice"
+                type="number"
+                placeholder="e.g., 1500"
+                value={maxPrice === null ? '' : maxPrice.toString()}
+                onChange={(e) => setMaxPrice(e.target.value === '' ? null : Number(e.target.value))}
               />
             </div>
 
-            {/* Price Criteria */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Price Rules</CardTitle>
-                <CardDescription>
-                  Set price limits and comparison rules
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="price_delta_type"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Price Rule Type</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="absolute">Absolute Price ($)</SelectItem>
-                            <SelectItem value="percent">Percentage Below Reference</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="price_delta_value"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {priceRule === 'percent' ? 'Percentage Below (%)' : 'Maximum Price ($)'}
-                        </FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder={priceRule === 'percent' ? 'e.g., 15' : 'e.g., 1000'}
-                            {...field}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="max_price"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Hard Maximum Price ($)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="e.g., 5000"
-                            {...field}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Never exceed this price regardless of other rules
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="min_seller_feedback"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Min Seller Feedback</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="e.g., 100"
-                            {...field}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Advanced Filters */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Advanced Filters</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="listing_format"
-                  render={() => (
-                    <FormItem>
-                      <FormLabel>Listing Formats</FormLabel>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {listingFormats.map((format) => (
-                          <FormField
-                            key={format.id}
-                            control={form.control}
-                            name="listing_format"
-                            render={({ field }) => (
-                              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                                <FormControl>
-                                  <Checkbox
-                                    checked={field.value?.includes(format.id)}
-                                    onCheckedChange={(checked) => {
-                                      return checked
-                                        ? field.onChange([...(field.value || []), format.id])
-                                        : field.onChange(field.value?.filter((value) => value !== format.id));
-                                    }}
-                                  />
-                                </FormControl>
-                                <FormLabel className="font-normal">
-                                  {format.label}
-                                </FormLabel>
-                              </FormItem>
-                            )}
-                          />
-                        ))}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Exclude Keywords */}
-                <FormItem>
-                  <FormLabel>Exclude Keywords</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="plated, filled, hollow, cartier, tiffany"
-                      value={excludeKeywordsText}
-                      onChange={(e) => setExcludeKeywordsText(e.target.value)}
-                      className="min-h-[80px]"
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Comma-separated keywords to exclude from search results
-                  </FormDescription>
-                </FormItem>
-
-                {/* Date Range and Location */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="date_from"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
-                          Date From
-                        </FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="date_to"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
-                          Date To
-                        </FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="item_location"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4" />
-                          Item Location
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="US, UK, Worldwide" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Auction Alert and Poll Interval */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="auction_alert"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel className="flex items-center gap-2">
-                            <AlertTriangle className="h-4 w-4" />
-                            Auction Alerts
-                          </FormLabel>
-                          <FormDescription>
-                            Get notified 2 minutes before auction ends
-                          </FormDescription>
-                        </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="poll_interval"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Poll Interval (seconds)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="30"
-                            min="5"
-                            {...field}
-                            onChange={(e) => field.onChange(Number(e.target.value))}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Minimum 5 seconds. Lower = more API calls.
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Enhanced Item-specific filters with multi-select */}
-            {itemType === 'watch' && (
-              <EnhancedWatchFilters 
-                filters={watchFilters} 
-                onChange={setWatchFilters} 
+            <div>
+              <Label htmlFor="minFeedback">Minimum Seller Feedback</Label>
+              <Input
+                id="minFeedback"
+                type="number"
+                placeholder="e.g., 500"
+                value={minFeedback === null ? '' : minFeedback.toString()}
+                onChange={(e) => setMinFeedback(e.target.value === '' ? null : Number(e.target.value))}
               />
-            )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-            {itemType === 'jewelry' && (
-              <EnhancedJewelryFilters 
-                filters={jewelryFilters} 
-                onChange={setJewelryFilters} 
+      <Card>
+        <CardHeader>
+          <CardTitle>Polling and Exclusion Settings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="pollInterval">Poll Interval (seconds)</Label>
+            <Input
+              id="pollInterval"
+              type="number"
+              placeholder="e.g., 300"
+              value={pollInterval === null ? '' : pollInterval.toString()}
+              onChange={(e) => setPollInterval(e.target.value === '' ? null : Number(e.target.value))}
+            />
+          </div>
+
+          <div>
+            <Label>Exclude Keywords</Label>
+            <div className="flex space-x-2">
+              <Input
+                type="text"
+                placeholder="Enter keyword"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (e.target.value.trim()) {
+                      handleKeywordAdd(e.target.value.trim());
+                      (e.target as HTMLInputElement).value = '';
+                    }
+                  }
+                }}
               />
-            )}
-
-            {itemType === 'gemstone' && (
-              <EnhancedGemstoneFilters 
-                filters={gemstoneFilters} 
-                onChange={setGemstoneFilters} 
-              />
-            )}
-
-            {/* Form Actions */}
-            <div className="flex justify-end space-x-4">
-              {onCancel && (
-                <Button type="button" variant="outline" onClick={onCancel}>
-                  Cancel
-                </Button>
-              )}
-              <Button type="submit" disabled={loading}>
-                {loading ? 'Creating...' : 'Create Task'}
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  const input = document.querySelector('input[placeholder="Enter keyword"]') as HTMLInputElement;
+                  if (input && input.value.trim()) {
+                    handleKeywordAdd(input.value.trim());
+                    input.value = '';
+                  }
+                }}
+              >
+                Add Keyword
               </Button>
             </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {excludeKeywords.map((keyword, index) => (
+                <Button key={index} variant="secondary" size="sm" onClick={() => handleKeywordRemove(index)}>
+                  {keyword}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Advanced Filters</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label>Listing Formats</Label>
+            <div className="flex flex-wrap gap-2">
+              {['Auction', 'FixedPrice', 'StoreInventory'].map(format => (
+                <Button
+                  key={format}
+                  variant={listingFormats.includes(format) ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleListingFormatToggle(format)}
+                >
+                  {format}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="itemLocation">Item Location</Label>
+            <Input
+              id="itemLocation"
+              placeholder="e.g., US, CA, UK"
+              value={itemLocation || ''}
+              onChange={(e) => setItemLocation(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Date From</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !dateFrom && "text-muted-foreground"
+                    )}
+                  >
+                    {dateFrom ? format(dateFrom, "PPP") : (
+                      <span>Pick a date</span>
+                    )}
+                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateFrom}
+                    onSelect={setDateFrom}
+                    disabled={(date) =>
+                      date > new Date()
+                    }
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <Label>Date To</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !dateTo && "text-muted-foreground"
+                    )}
+                  >
+                    {dateTo ? format(dateTo, "PPP") : (
+                      <span>Pick a date</span>
+                    )}
+                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateTo}
+                    onSelect={setDateTo}
+                    disabled={(date) =>
+                      date > new Date()
+                    }
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="priceDeltaType">Price Delta Type</Label>
+              <Select onValueChange={(value) => setPriceDeltaType(value as 'fixed' | 'percentage')} defaultValue={priceDeltaType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select delta type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed">Fixed</SelectItem>
+                  <SelectItem value="percentage">Percentage</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {priceDeltaType === 'fixed' && (
+              <div>
+                <Label htmlFor="priceDeltaValue">Price Delta Value</Label>
+                <Input
+                  id="priceDeltaValue"
+                  type="number"
+                  placeholder="e.g., 10"
+                  value={priceDeltaValue === null ? '' : priceDeltaValue.toString()}
+                  onChange={(e) => setPriceDeltaValue(e.target.value === '' ? null : Number(e.target.value))}
+                />
+              </div>
+            )}
+
+            {priceDeltaType === 'percentage' && (
+              <div>
+                <Label htmlFor="pricePercentage">Price Percentage</Label>
+                <Input
+                  id="pricePercentage"
+                  type="number"
+                  placeholder="e.g., 5"
+                  value={pricePercentage === null ? '' : pricePercentage.toString()}
+                  onChange={(e) => setPricePercentage(e.target.value === '' ? null : Number(e.target.value))}
+                />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="auctionAlert">Auction Alert</Label>
+            <Input
+              id="auctionAlert"
+              type="checkbox"
+              checked={auctionAlert}
+              onChange={(e) => setAuctionAlert(e.target.checked)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {itemType && (
+        <SubcategorySelector
+          itemType={itemType}
+          selectedSubcategories={selectedSubcategories}
+          onChange={setSelectedSubcategories}
+        />
+      )}
+
+      {itemType === 'jewelry' && (
+        <EnhancedJewelryFilters
+          filters={jewelryFilters}
+          onChange={setJewelryFilters}
+        />
+      )}
+
+      {itemType === 'watch' && (
+        <EnhancedWatchFilters
+          filters={watchFilters}
+          onChange={setWatchFilters}
+        />
+      )}
+
+      {itemType === 'gemstone' && (
+        <EnhancedGemstoneFilters
+          filters={gemstoneFilters}
+          onChange={setGemstoneFilters}
+        />
+      )}
+
+      <div className="flex justify-between">
+        {onBackToTemplates && (
+          <Button variant="secondary" onClick={onBackToTemplates}>
+            Back to Templates
+          </Button>
+        )}
+        <div>
+          <Button variant="ghost" onClick={onCancel} disabled={loading}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? 'Creating...' : 'Create Task'}
+          </Button>
+        </div>
+      </div>
+    </form>
   );
 };

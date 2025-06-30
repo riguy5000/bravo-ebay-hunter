@@ -53,47 +53,103 @@ async function getEbayOAuthToken(): Promise<string> {
   return tokenData.access_token;
 }
 
-// Function to get subcategories for a given category
-async function getSubcategories(categoryId: string, accessToken: string): Promise<CategoryInfo[]> {
-  try {
-    const url = `https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_category_subtree?category_id=${categoryId}`;
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-      },
-    });
+// Function to get subcategories for a given category with retry logic
+async function getSubcategories(categoryId: string, accessToken: string, retries = 2): Promise<CategoryInfo[]> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const url = `https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_category_subtree?category_id=${categoryId}`;
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        },
+      });
 
-    if (!response.ok) {
-      console.error(`Failed to get subcategories for ${categoryId}:`, response.status);
-      return [];
-    }
-
-    const data = await response.json();
-    const category = data.categorySubtree;
-    
-    if (!category || !category.childCategoryTreeNodes) {
-      return [];
-    }
-
-    const subcategories: CategoryInfo[] = [];
-    for (const child of category.childCategoryTreeNodes) {
-      if (child.category) {
-        subcategories.push({
-          id: child.category.categoryId,
-          name: child.category.categoryName,
-          type: 'subcategory'
-        });
+      if (!response.ok) {
+        if (attempt < retries) {
+          console.warn(`Attempt ${attempt + 1} failed for subcategories of ${categoryId}, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          continue;
+        }
+        console.error(`Failed to get subcategories for ${categoryId} after ${retries + 1} attempts:`, response.status);
+        return [];
       }
-    }
 
-    console.log(`Found ${subcategories.length} subcategories for ${categoryId}`);
-    return subcategories;
-  } catch (error) {
-    console.error(`Error getting subcategories for ${categoryId}:`, error);
-    return [];
+      const data = await response.json();
+      const category = data.categorySubtree;
+      
+      if (!category || !category.childCategoryTreeNodes) {
+        return [];
+      }
+
+      const subcategories: CategoryInfo[] = [];
+      for (const child of category.childCategoryTreeNodes) {
+        if (child.category) {
+          subcategories.push({
+            id: child.category.categoryId,
+            name: child.category.categoryName,
+            type: 'subcategory'
+          });
+        }
+      }
+
+      console.log(`Found ${subcategories.length} subcategories for ${categoryId}`);
+      return subcategories;
+    } catch (error) {
+      if (attempt < retries) {
+        console.warn(`Attempt ${attempt + 1} failed for subcategories of ${categoryId}, retrying...`, error);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        continue;
+      }
+      console.error(`Error getting subcategories for ${categoryId} after ${retries + 1} attempts:`, error);
+      return [];
+    }
   }
+  return [];
+}
+
+// Function to fetch aspects with retry logic
+async function fetchAspectsWithRetry(categoryId: string, categoryName: string, accessToken: string, retries = 2): Promise<EbayAspect[]> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const ebayUrl = `https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_item_aspects_for_category?category_id=${categoryId}`;
+      const ebayResponse = await fetch(ebayUrl, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        },
+      });
+
+      if (!ebayResponse.ok) {
+        if (attempt < retries) {
+          console.warn(`Attempt ${attempt + 1} failed for ${categoryName} (${categoryId}), retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          continue;
+        }
+        console.warn(`eBay API error for ${categoryName} (${categoryId}) after ${retries + 1} attempts: ${ebayResponse.status}`);
+        return [];
+      }
+
+      const aspectsData = await ebayResponse.json();
+      console.log(`eBay API response for ${categoryName}:`, {
+        hasAspects: !!aspectsData.aspects,
+        aspectCount: aspectsData.aspects?.length || 0
+      });
+      
+      return aspectsData.aspects || [];
+    } catch (error) {
+      if (attempt < retries) {
+        console.warn(`Attempt ${attempt + 1} failed for ${categoryName} (${categoryId}), retrying...`, error);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        continue;
+      }
+      console.error(`Error fetching aspects for ${categoryName} (${categoryId}) after ${retries + 1} attempts:`, error);
+      return [];
+    }
+  }
+  return [];
 }
 
 Deno.serve(async (req) => {
@@ -111,39 +167,47 @@ Deno.serve(async (req) => {
     const accessToken = await getEbayOAuthToken();
     console.log('eBay OAuth token obtained successfully');
 
-    // Comprehensive list of categories including main categories and known productive subcategories
+    // Comprehensive list of jewelry categories with focus on missing aspects
     const categories = [
-      // Fine Jewelry categories
+      // Fine Jewelry - Core categories
       { id: '164330', name: 'Fine Rings', type: 'jewelry' },
       { id: '164331', name: 'Fine Necklaces & Pendants', type: 'jewelry' },
       { id: '164332', name: 'Fine Earrings', type: 'jewelry' },
       { id: '164333', name: 'Fine Bracelets', type: 'jewelry' },
       { id: '164334', name: 'Fine Brooches & Pins', type: 'jewelry' },
       { id: '164336', name: 'Fine Charms & Charm Bracelets', type: 'jewelry' },
-      { id: '164338', name: 'Fine Body Jewelry', type: 'jewelry' },
       
-      // Fashion Jewelry categories
+      // Fashion Jewelry - Core categories
       { id: '45077', name: 'Fashion Rings', type: 'jewelry' },
       { id: '45080', name: 'Fashion Necklaces & Pendants', type: 'jewelry' },
       { id: '45081', name: 'Fashion Earrings', type: 'jewelry' },
       { id: '45079', name: 'Fashion Bracelets', type: 'jewelry' },
       { id: '45078', name: 'Fashion Pins & Brooches', type: 'jewelry' },
       
-      // Vintage & Antique Jewelry
-      { id: '48579', name: 'Vintage & Antique Jewelry', type: 'jewelry' },
-      { id: '48580', name: 'Vintage Fine Jewelry', type: 'jewelry' },
-      { id: '48581', name: 'Vintage Costume Jewelry', type: 'jewelry' },
-      
-      // Men's Jewelry
+      // Men's Jewelry - Specific subcategories
       { id: '155123', name: 'Men\'s Jewelry', type: 'jewelry' },
       { id: '155124', name: 'Men\'s Rings', type: 'jewelry' },
       { id: '155125', name: 'Men\'s Necklaces', type: 'jewelry' },
       { id: '155126', name: 'Men\'s Bracelets', type: 'jewelry' },
       
-      // Gemstone categories
+      // Wedding & Engagement - High-value categories
+      { id: '164395', name: 'Engagement Rings', type: 'jewelry' },
+      { id: '164396', name: 'Wedding Bands', type: 'jewelry' },
+      { id: '164397', name: 'Wedding Sets', type: 'jewelry' },
+      
+      // Vintage & Antique - Often have unique aspects
+      { id: '48579', name: 'Vintage & Antique Jewelry', type: 'jewelry' },
+      { id: '48580', name: 'Vintage Fine Jewelry', type: 'jewelry' },
+      { id: '48581', name: 'Vintage Costume Jewelry', type: 'jewelry' },
+      
+      // Metal-specific categories (should have Metal Purity, Base Metal)
+      { id: '164344', name: 'Gold Jewelry', type: 'jewelry' },
+      { id: '164345', name: 'Silver Jewelry', type: 'jewelry' },
+      { id: '164346', name: 'Platinum Jewelry', type: 'jewelry' },
+      
+      // Gemstone categories for missing stone aspects
       { id: '10207', name: 'Loose Diamonds', type: 'gemstone' },
       { id: '51089', name: 'Loose Gemstones (Non-Diamond)', type: 'gemstone' },
-      { id: '164334', name: 'Gemstone Jewelry', type: 'gemstone' },
       
       // Watch categories
       { id: '31387', name: 'Luxury Watches/Wristwatches', type: 'watch' },
@@ -151,35 +215,31 @@ Deno.serve(async (req) => {
       { id: '31388', name: 'Men\'s Watches', type: 'watch' },
       { id: '31389', name: 'Women\'s Watches', type: 'watch' },
       
-      // Wedding & Engagement
-      { id: '164395', name: 'Engagement Rings', type: 'jewelry' },
-      { id: '164396', name: 'Wedding Bands', type: 'jewelry' },
-      { id: '164397', name: 'Wedding Sets', type: 'jewelry' },
-      
-      // Specific metal categories (these often have great aspect data)
-      { id: '164344', name: 'Gold Jewelry', type: 'jewelry' },
-      { id: '164345', name: 'Silver Jewelry', type: 'jewelry' },
-      { id: '164346', name: 'Platinum Jewelry', type: 'jewelry' },
+      // Additional specialized categories
+      { id: '164338', name: 'Fine Body Jewelry', type: 'jewelry' },
+      { id: '50647', name: 'Watches Parts & Accessories', type: 'watch' },
+      { id: '281', name: 'Jewelry & Watches', type: 'jewelry' },
     ];
 
-    console.log('Starting eBay aspects cache refresh for all categories...');
+    console.log('Starting comprehensive eBay aspects cache refresh...');
     let totalProcessed = 0;
     let totalInserted = 0;
     let errors = [];
     let successfulCategories = [];
     let allCategoriesToProcess: CategoryInfo[] = [];
 
-    // Collect all categories including subcategories
+    // Collect all categories including their subcategories
     for (const category of categories) {
       allCategoriesToProcess.push(category);
       
-      // Get subcategories for each main category
+      // Get subcategories for each main category (limited to avoid timeout)
       try {
         const subcategories = await getSubcategories(category.id, accessToken);
-        for (const subcat of subcategories.slice(0, 5)) { // Limit to top 5 subcategories per main category
+        // Add up to 3 subcategories per main category to avoid overwhelming the system
+        for (const subcat of subcategories.slice(0, 3)) {
           allCategoriesToProcess.push({
             ...subcat,
-            type: category.type // Inherit parent type
+            type: category.type
           });
         }
       } catch (error) {
@@ -189,7 +249,7 @@ Deno.serve(async (req) => {
 
     console.log(`Processing ${allCategoriesToProcess.length} total categories (including subcategories)`);
 
-    // Clear existing data for all categories we're about to process
+    // Clear existing data for categories we're processing
     console.log('Clearing existing aspects data...');
     const categoryIds = allCategoriesToProcess.map(c => c.id);
     if (categoryIds.length > 0) {
@@ -205,34 +265,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Process each category (no leaf verification - process all categories)
+    // Process each category
     for (const category of allCategoriesToProcess) {
       try {
         console.log(`Fetching aspects for ${category.type}: ${category.name} (${category.id})`);
         
-        const ebayUrl = `https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_item_aspects_for_category?category_id=${category.id}`;
-        const ebayResponse = await fetch(ebayUrl, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-          },
-        });
-
-        if (!ebayResponse.ok) {
-          const errorText = await ebayResponse.text();
-          console.warn(`eBay API error for ${category.type} category ${category.id}: ${ebayResponse.status}`);
-          // Don't treat as fatal error - continue with other categories
-          continue;
-        }
-
-        const aspectsData = await ebayResponse.json();
-        console.log(`eBay API response for ${category.name}:`, {
-          hasAspects: !!aspectsData.aspects,
-          aspectCount: aspectsData.aspects?.length || 0
-        });
-        
-        const aspects = aspectsData.aspects || [];
+        const aspects = await fetchAspectsWithRetry(category.id, category.name, accessToken);
         
         if (aspects.length === 0) {
           console.log(`No aspects found for ${category.type} category ${category.name} (${category.id})`);
@@ -262,7 +300,7 @@ Deno.serve(async (req) => {
 
         if (aspectsToInsert.length > 0) {
           console.log(`Inserting ${aspectsToInsert.length} aspects for ${category.type}: ${category.name}`);
-          const { data, error } = await supabaseClient
+          const { error } = await supabaseClient
             .from('ebay_aspects')
             .insert(aspectsToInsert);
 
@@ -282,7 +320,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Verify what was actually inserted and get aspect summary
+    // Verify what was inserted and provide aspect summary
     const { data: insertedAspects, error: selectError } = await supabaseClient
       .from('ebay_aspects')
       .select('category_id, aspect_name, values_json')
@@ -293,17 +331,14 @@ Deno.serve(async (req) => {
     } else {
       console.log(`Database verification: ${insertedAspects?.length || 0} total aspects stored`);
       
-      // Create comprehensive aspect summary
+      // Check for key missing aspects
       const aspectSummary: Record<string, Set<string>> = {};
-      
       insertedAspects?.forEach((row: any) => {
         const aspectName = row.aspect_name;
-        const values = row.values_json || [];
-        
         if (!aspectSummary[aspectName]) {
           aspectSummary[aspectName] = new Set();
         }
-        
+        const values = row.values_json || [];
         values.forEach((valueObj: any) => {
           if (valueObj && valueObj.value) {
             aspectSummary[aspectName].add(valueObj.value);
@@ -311,19 +346,11 @@ Deno.serve(async (req) => {
         });
       });
 
-      // Convert sets to arrays for response
-      const aspectLists: Record<string, string[]> = {};
-      Object.keys(aspectSummary).forEach(aspectName => {
-        aspectLists[aspectName] = Array.from(aspectSummary[aspectName]).sort();
-      });
-
-      console.log('Comprehensive aspect summary:', aspectLists);
-      
       // Log key aspects we were looking for
-      const keyAspects = ['Color', 'Metal', 'Metal Purity', 'Base Metal', 'Type', 'Style', 'Main Stone', 'Main Stone Color', 'Material', 'Item Location', 'Brand', 'Condition'];
+      const keyAspects = ['Color', 'Metal', 'Metal Purity', 'Base Metal', 'Type', 'Style', 'Main Stone', 'Main Stone Color', 'Material', 'Condition', 'Brand'];
       keyAspects.forEach(aspect => {
-        if (aspectLists[aspect]) {
-          console.log(`✓ Found ${aspect}: ${aspectLists[aspect].length} values`);
+        if (aspectSummary[aspect]) {
+          console.log(`✓ Found ${aspect}: ${aspectSummary[aspect].size} values`);
         } else {
           console.log(`✗ Missing ${aspect}`);
         }
@@ -332,14 +359,14 @@ Deno.serve(async (req) => {
 
     const response = {
       success: totalInserted > 0,
-      message: totalInserted > 0 ? 'eBay aspects cache refreshed successfully with subcategories' : 'No aspects were cached',
+      message: totalInserted > 0 ? 'eBay aspects cache refreshed successfully with comprehensive categories and subcategories' : 'No aspects were cached',
       timestamp: new Date().toISOString(),
       categories_attempted: allCategoriesToProcess.length,
       successful_categories: successfulCategories,
       total_aspects_processed: totalProcessed,
       total_aspects_inserted: totalInserted,
       aspects_in_db: insertedAspects?.length || 0,
-      errors: errors.length > 0 ? errors.slice(0, 10) : undefined // Limit error reporting
+      errors: errors.length > 0 ? errors.slice(0, 10) : undefined
     };
 
     console.log('Final response:', response);
