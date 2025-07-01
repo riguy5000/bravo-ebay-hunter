@@ -373,13 +373,23 @@ const handler = async (req: Request): Promise<Response> => {
     // Try API keys until one works
     let lastError: any = null;
     let rateLimitedCount = 0;
+    const triedKeys = new Set<string>();
 
     for (let attempt = 0; attempt < apiKeys.length; attempt++) {
-      const selectedKey = selectApiKey(apiKeys, rotationStrategy);
+      const availableKeys = apiKeys.filter(key => !triedKeys.has(key.app_id));
+      
+      if (availableKeys.length === 0) {
+        break;
+      }
+
+      const selectedKey = selectApiKey(availableKeys, rotationStrategy);
       
       if (!selectedKey) {
         throw new Error('No API keys available for use');
       }
+
+      // Mark this key as tried
+      triedKeys.add(selectedKey.app_id);
 
       try {
         console.log(`Attempt ${attempt + 1}: Using API key "${selectedKey.label}"`);
@@ -408,12 +418,7 @@ const handler = async (req: Request): Promise<Response> => {
       } catch (error: any) {
         console.error(`Failed with API key "${selectedKey.label}":`, error);
         lastError = error;
-        
-        // Remove this key from future attempts in this request
-        const keyIndex = apiKeys.findIndex(k => k.key === selectedKey.key);
-        if (keyIndex > -1) {
-          apiKeys.splice(keyIndex, 1);
-        }
+        continue;
       }
     }
 
