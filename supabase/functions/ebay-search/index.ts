@@ -56,7 +56,7 @@ const buildEbaySearchUrl = (params: SearchRequest): string => {
     'RESPONSE-DATA-FORMAT': 'JSON',
     'REST-PAYLOAD': '',
     'keywords': params.keywords,
-    'paginationInput.entriesPerPage': '25', // Reduced from 100 to avoid rate limits
+    'paginationInput.entriesPerPage': '10', // Reduced to minimize API usage
     'sortOrder': params.sortOrder || 'PricePlusShipping'
   });
 
@@ -178,8 +178,9 @@ const handler = async (req: Request): Promise<Response> => {
     const searchUrl = buildEbaySearchUrl(searchParams);
     console.log('eBay API URL (truncated):', searchUrl.substring(0, 200) + '...');
 
-    // Add delay to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Add longer delay to avoid rate limiting
+    console.log('Waiting 3 seconds to avoid rate limiting...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     const response = await fetch(searchUrl, {
       method: 'GET',
@@ -200,9 +201,10 @@ const handler = async (req: Request): Promise<Response> => {
       if (response.status === 500 && errorText.includes('exceeded the number of times')) {
         return new Response(JSON.stringify({ 
           success: false, 
-          error: 'eBay API rate limit exceeded. Please wait a few minutes before trying again.',
+          error: 'eBay API rate limit exceeded. The system cleanup should resolve this in a few minutes.',
           rateLimited: true,
           items: [],
+          recommendation: 'Please run the cron cleanup function to remove orphaned jobs causing excessive API calls.',
           debug: {
             timestamp: new Date().toISOString(),
             status: response.status,
@@ -227,7 +229,8 @@ const handler = async (req: Request): Promise<Response> => {
       success: true, 
       items: items,
       totalResults: items.length,
-      message: `Found ${items.length} items successfully`
+      message: `Found ${items.length} items successfully`,
+      apiStatus: 'healthy'
     }), {
       status: 200,
       headers: {
@@ -245,6 +248,9 @@ const handler = async (req: Request): Promise<Response> => {
         success: false, 
         error: error.message,
         items: [],
+        recommendation: error.message.includes('rate limit') ? 
+          'Run the cron cleanup function to remove orphaned jobs causing excessive API calls.' :
+          'Check eBay API configuration and network connectivity.',
         debug: {
           timestamp: new Date().toISOString(),
           errorType: error.constructor.name,

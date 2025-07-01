@@ -30,7 +30,7 @@ interface GoldPriceResponse {
   price_gram_10k: number;
 }
 
-// Mock data for when API is unavailable
+// Enhanced mock data with all metals for when API is unavailable
 const getMockGoldPrices = () => {
   return [
     {
@@ -58,6 +58,28 @@ const getMockGoldPrices = () => {
       low: 30.45,
       currency: 'USD',
       lastUpdated: new Date().toISOString()
+    },
+    {
+      metal: 'Platinum',
+      symbol: 'XPT',
+      price: 980.50,
+      change: -5.25,
+      changePercent: -0.53,
+      high: 995.00,
+      low: 975.00,
+      currency: 'USD',
+      lastUpdated: new Date().toISOString()
+    },
+    {
+      metal: 'Palladium',
+      symbol: 'XPD',
+      price: 1025.75,
+      change: 12.30,
+      changePercent: 1.22,
+      high: 1035.00,
+      low: 1010.50,
+      currency: 'USD',
+      lastUpdated: new Date().toISOString()
     }
   ];
 };
@@ -75,7 +97,8 @@ const handler = async (req: Request): Promise<Response> => {
       console.log('GOLD_API_KEY not configured, using mock data');
       return new Response(JSON.stringify({ 
         prices: getMockGoldPrices(),
-        message: 'Using mock data - API key not configured' 
+        message: 'Using mock data - API key not configured',
+        apiStatus: 'no-key'
       }), {
         status: 200,
         headers: {
@@ -101,8 +124,9 @@ const handler = async (req: Request): Promise<Response> => {
           console.log('Gold API quota exceeded, using mock data');
           return new Response(JSON.stringify({ 
             prices: getMockGoldPrices(),
-            message: 'API quota exceeded - using estimated prices. Please upgrade your Gold API plan for real-time data.',
-            quotaExceeded: true
+            message: 'API quota exceeded - using estimated prices. The cleanup function should reduce API calls.',
+            quotaExceeded: true,
+            apiStatus: 'quota-exceeded'
           }), {
             status: 200,
             headers: {
@@ -119,7 +143,7 @@ const handler = async (req: Request): Promise<Response> => {
       
       const goldData: GoldPriceResponse = await goldResponse.json();
       
-      // Return just gold data if successful
+      // Try to fetch other metals as well if quota allows
       const prices = [{
         metal: 'Gold',
         symbol: 'XAU',
@@ -136,11 +160,38 @@ const handler = async (req: Request): Promise<Response> => {
         lastUpdated: new Date().toISOString()
       }];
 
-      console.log('Successfully fetched gold prices from API');
+      // Try to fetch silver if we have quota
+      try {
+        const silverResponse = await fetch(`https://www.goldapi.io/api/XAG/USD`, {
+          headers: {
+            'x-access-token': goldApiKey,
+          },
+        });
+        
+        if (silverResponse.ok) {
+          const silverData: GoldPriceResponse = await silverResponse.json();
+          prices.push({
+            metal: 'Silver',
+            symbol: 'XAG',
+            price: silverData.price,
+            change: silverData.ch,
+            changePercent: silverData.chp,
+            high: silverData.high_price,
+            low: silverData.low_price,
+            currency: silverData.currency,
+            lastUpdated: new Date().toISOString()
+          });
+        }
+      } catch (silverError) {
+        console.log('Could not fetch silver price, continuing with just gold');
+      }
+
+      console.log(`Successfully fetched ${prices.length} metal prices from API`);
 
       return new Response(JSON.stringify({ 
         prices,
-        message: 'Real-time gold prices fetched successfully'
+        message: `Real-time ${prices.length === 1 ? 'gold' : 'metal'} prices fetched successfully`,
+        apiStatus: 'healthy'
       }), {
         status: 200,
         headers: {
@@ -154,7 +205,8 @@ const handler = async (req: Request): Promise<Response> => {
       return new Response(JSON.stringify({ 
         prices: getMockGoldPrices(),
         message: 'API temporarily unavailable - using estimated prices',
-        fallback: true
+        fallback: true,
+        apiStatus: 'error'
       }), {
         status: 200,
         headers: {
@@ -171,7 +223,8 @@ const handler = async (req: Request): Promise<Response> => {
     return new Response(JSON.stringify({ 
       prices: getMockGoldPrices(),
       message: 'Using fallback data due to technical issues',
-      error: error.message
+      error: error.message,
+      apiStatus: 'fallback'
     }), {
       status: 200,
       headers: {

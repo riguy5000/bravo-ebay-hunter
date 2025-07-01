@@ -61,15 +61,17 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     // Update task last_run timestamp - CRITICAL for showing task is working
-    const { error: updateError } = await supabase
-      .from('tasks')
-      .update({ last_run: new Date().toISOString() })
-      .in('id', Array.from(validTaskIds));
+    if (validTaskIds.size > 0) {
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update({ last_run: new Date().toISOString() })
+        .in('id', Array.from(validTaskIds));
 
-    if (updateError) {
-      console.error('❌ Error updating task last_run timestamps:', updateError);
-    } else {
-      console.log(`✅ Updated last_run timestamps for ${validTaskIds.size} tasks`);
+      if (updateError) {
+        console.error('❌ Error updating task last_run timestamps:', updateError);
+      } else {
+        console.log(`✅ Updated last_run timestamps for ${validTaskIds.size} tasks`);
+      }
     }
 
     console.log(`🎯 Cleanup Summary:`);

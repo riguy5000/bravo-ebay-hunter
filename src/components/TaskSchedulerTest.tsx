@@ -30,9 +30,19 @@ export const TaskSchedulerTest: React.FC = () => {
       }
 
       console.log('Cron cleanup result:', data);
-      toast.success(`✅ Cleanup completed! Found ${data.validTasks} valid tasks, cleaned ${data.orphanedJobsCleanedUp} orphaned cron jobs`);
       
-      setCleanupDone(true);
+      if (data.success) {
+        toast.success(`✅ Cleanup completed! Found ${data.validTasks} valid tasks, cleaned ${data.orphanedJobsCleanedUp} orphaned cron jobs`);
+        setCleanupDone(true);
+        
+        // Wait a few seconds for rate limits to reset
+        setTimeout(() => {
+          toast.info('✨ API rate limits should now be resolved. You can test the eBay API.');
+        }, 3000);
+      } else {
+        toast.error('Cleanup failed: ' + data.error);
+      }
+      
       await refetch();
       
     } catch (error: any) {
@@ -69,7 +79,7 @@ export const TaskSchedulerTest: React.FC = () => {
         toast.success(`✅ eBay API test successful! Found ${data.items.length} items`);
         setEbayTestDone(true);
       } else if (data.rateLimited) {
-        toast.warning('⏰ eBay API rate limited. Wait a few minutes then try again.');
+        toast.warning('⏰ eBay API still rate limited. The cleanup may need more time to take effect.');
       } else {
         toast.error('eBay API test failed: ' + (data.error || 'Unknown error'));
       }
@@ -210,37 +220,40 @@ export const TaskSchedulerTest: React.FC = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Step 1: Cleanup */}
-        <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="flex items-center gap-2 text-sm text-blue-800 mb-2">
+        {/* Step 1: Critical System Cleanup */}
+        <div className="space-y-2 p-3 bg-red-50 rounded-lg border border-red-200">
+          <div className="flex items-center gap-2 text-sm text-red-800 mb-2">
             {cleanupDone ? <CheckCircle className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4" />}
-            <span className="font-medium">Step 1: System Cleanup</span>
+            <span className="font-medium">🚨 CRITICAL: System Cleanup</span>
           </div>
           <Button 
             onClick={cleanupOrphanedCronJobs} 
             disabled={isCleaning || cleanupDone}
-            variant={cleanupDone ? "secondary" : "default"}
+            variant={cleanupDone ? "secondary" : "destructive"}
             className="w-full"
           >
             {isCleaning ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Cleaning...
+                Fixing System...
               </>
             ) : cleanupDone ? (
               <>
                 <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
-                Cleanup Complete
+                System Fixed ✅
               </>
             ) : (
               <>
                 <Trash2 className="h-4 w-4 mr-2" />
-                Clean Up System
+                Fix System Now
               </>
             )}
           </Button>
-          <p className="text-xs text-blue-700">
-            {cleanupDone ? 'System cleanup completed successfully!' : 'Remove orphaned processes and fix rate limiting issues'}
+          <p className="text-xs text-red-700">
+            {cleanupDone ? 
+              '✅ Orphaned cron jobs removed! APIs should work normally now.' : 
+              '⚠️ REQUIRED: Removes orphaned jobs that are spamming APIs and causing rate limits'
+            }
           </p>
         </div>
 
@@ -264,7 +277,7 @@ export const TaskSchedulerTest: React.FC = () => {
             ) : ebayTestDone ? (
               <>
                 <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
-                API Test Passed
+                API Working ✅
               </>
             ) : (
               <>
@@ -274,7 +287,12 @@ export const TaskSchedulerTest: React.FC = () => {
             )}
           </Button>
           <p className="text-xs text-yellow-700">
-            {ebayTestDone ? 'eBay API is working correctly!' : 'Verify eBay connection after cleanup'}
+            {ebayTestDone ? 
+              '✅ eBay API is working correctly!' : 
+              cleanupDone ? 
+                'Now test if eBay API is working after cleanup' :
+                'Wait for system cleanup to complete first'
+            }
           </p>
         </div>
 
@@ -324,14 +342,35 @@ export const TaskSchedulerTest: React.FC = () => {
           </div>
         )}
 
-        {/* Manual run all tasks */}
-        {activeTasks.length > 0 && (
-          <div className="space-y-2">
+        {/* System Status */}
+        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+          <div className="flex items-center gap-2 text-sm text-blue-800 mb-2">
+            <Clock className="h-4 w-4" />
+            <span className="font-medium">System Status</span>
+          </div>
+          <ul className="text-xs text-blue-700 space-y-1">
+            <li>• System cleanup: {cleanupDone ? '✅ Complete' : '❌ REQUIRED'}</li>
+            <li>• eBay API: {ebayTestDone ? '✅ Working' : cleanupDone ? '⏳ Ready to test' : '❌ Rate limited'}</li>
+            <li>• Gold Prices API: {cleanupDone ? '✅ Should be working' : '❌ Quota exceeded'}</li>
+            <li>• {tasks.length} total task(s) | {activeTasks.length} active</li>
+            {goldScrapTask && (
+              <li>• Gold Scanner: {goldScrapTask.cron_job_id ? '✅ Scheduled' : '⏳ Not scheduled'}</li>
+            )}
+          </ul>
+        </div>
+
+        {/* Emergency Actions */}
+        <div className="border-t pt-4 space-y-2">
+          <p className="text-xs text-gray-500 text-center">Emergency Actions</p>
+          
+          {/* Manual run all tasks */}
+          {activeTasks.length > 0 && (
             <Button 
               onClick={runTaskScheduler} 
               disabled={isRunning}
               variant="outline"
               className="w-full"
+              size="sm"
             >
               {isRunning ? (
                 <>
@@ -345,16 +384,15 @@ export const TaskSchedulerTest: React.FC = () => {
                 </>
               )}
             </Button>
-          </div>
-        )}
+          )}
 
-        {/* Fix Scheduling Button */}
-        <div className="border-t pt-4">
+          {/* Fix Scheduling Button */}
           <Button 
             onClick={fixCronScheduling} 
             disabled={isScheduling || activeTasks.length === 0}
             variant="secondary"
             className="w-full"
+            size="sm"
           >
             {isScheduling ? (
               <>
@@ -368,37 +406,6 @@ export const TaskSchedulerTest: React.FC = () => {
               </>
             )}
           </Button>
-          <p className="text-xs text-gray-500 mt-1">
-            {activeTasks.length === 0 
-              ? 'No active tasks to schedule' 
-              : `Will schedule ${activeTasks.length} active task(s)`
-            }
-          </p>
-        </div>
-        
-        {/* Status Info */}
-        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-          <div className="flex items-center gap-2 text-sm text-blue-800 mb-2">
-            <Clock className="h-4 w-4" />
-            <span className="font-medium">System Status</span>
-          </div>
-          <ul className="text-xs text-blue-700 space-y-1">
-            <li>• {tasks.length} total task(s) found</li>
-            <li>• {activeTasks.length} active task(s)</li>
-            <li>• {activeTasks.filter(t => t.cron_job_id).length} task(s) scheduled</li>
-            <li>• System cleanup: {cleanupDone ? '✅ Complete' : '⏳ Pending'}</li>
-            <li>• eBay API: {ebayTestDone ? '✅ Working' : '⏳ Not tested'}</li>
-            {goldScrapTask ? (
-              <>
-                <li>• Gold Scanner: {goldScrapTask.cron_job_id ? '✅ Scheduled' : '⏳ Not scheduled'}</li>
-                {goldScrapTask.last_run && (
-                  <li>• Last run: {new Date(goldScrapTask.last_run).toLocaleString()}</li>
-                )}
-              </>
-            ) : (
-              <li>• Gold Scanner: {hasNoTasks ? '❌ Create new task' : '❌ Not found'}</li>
-            )}
-          </ul>
         </div>
       </CardContent>
     </Card>
