@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -323,4 +324,3 @@ export const TaskTemplates: React.FC<TaskTemplatesProps> = ({
 };
 
 export { TASK_TEMPLATES };
-export type { TaskTemplate };
