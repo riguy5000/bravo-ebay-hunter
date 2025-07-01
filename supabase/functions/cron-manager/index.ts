@@ -13,52 +13,11 @@ const supabase = createClient(
 );
 
 interface CronRequest {
-  action: 'schedule' | 'unschedule';
-  taskId: string;
+  action: 'schedule' | 'unschedule' | 'schedule-metal-prices';
+  taskId?: string;
   pollInterval?: number;
+  metalInterval?: number;
 }
-
-const scheduleCronJob = async (taskId: string, pollInterval: number) => {
-  console.log(`📅 Scheduling cron job for task ${taskId} with interval ${pollInterval}s`);
-  
-  try {
-    const { data, error } = await supabase.rpc('schedule_task_cron', {
-      task_id_param: taskId,
-      poll_interval_param: pollInterval
-    });
-
-    if (error) {
-      console.error('Error scheduling cron job:', error);
-      throw error;
-    }
-
-    console.log(`✅ Cron job scheduled with ID: ${data}`);
-    return data;
-  } catch (error) {
-    console.error('Failed to schedule cron job:', error);
-    throw error;
-  }
-};
-
-const unscheduleCronJob = async (taskId: string) => {
-  console.log(`🗑️ Unscheduling cron job for task ${taskId}`);
-  
-  try {
-    const { error } = await supabase.rpc('unschedule_task_cron', {
-      task_id_param: taskId
-    });
-
-    if (error) {
-      console.error('Error unscheduling cron job:', error);
-      throw error;
-    }
-
-    console.log(`✅ Cron job unscheduled for task ${taskId}`);
-  } catch (error) {
-    console.error('Failed to unschedule cron job:', error);
-    throw error;
-  }
-};
 
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
@@ -66,85 +25,102 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { action, taskId, pollInterval }: CronRequest = await req.json();
+    const { action, taskId, pollInterval, metalInterval }: CronRequest = await req.json();
     
-    console.log(`🔧 Cron manager called: ${action} for task ${taskId}`);
+    console.log(`🔧 Cron manager called: ${action}${taskId ? ` for task ${taskId}` : ''}`);
+
+    if (action === 'schedule-metal-prices') {
+      // Schedule metal price fetching (separate from eBay tasks)
+      const interval = metalInterval || 86400; // Default to daily
+      console.log(`🥇 Scheduling metal price cron job with interval ${interval}s`);
+      
+      const { data, error } = await supabase.rpc('schedule_task_cron', {
+        task_id_param: 'metal-prices', // Use a fixed ID for metal prices
+        poll_interval_param: interval
+      });
+
+      if (error) {
+        console.error('❌ Error scheduling metal price cron job:', error);
+        throw error;
+      }
+
+      console.log('✅ Metal price cron job scheduled with ID:', data);
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        cronJobId: data,
+        message: `Metal price cron job scheduled with ${interval}s interval`,
+        type: 'metal-prices'
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
 
     if (!taskId) {
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: 'Task ID is required' 
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
+      throw new Error('Task ID is required for eBay task scheduling');
     }
-
-    let cronJobId = null;
 
     if (action === 'schedule') {
-      if (!pollInterval) {
-        return new Response(JSON.stringify({ 
-          success: false, 
-          error: 'Poll interval is required for scheduling' 
-        }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders },
-        });
-      }
+      const interval = pollInterval || 300; // Default to 5 minutes
+      console.log(`📅 Scheduling cron job for task ${taskId} with interval ${interval}s`);
       
-      cronJobId = await scheduleCronJob(taskId, pollInterval);
-      
-      // Update the task with the cron job ID
-      const { error: updateError } = await supabase
-        .from('tasks')
-        .update({ cron_job_id: cronJobId })
-        .eq('id', taskId);
+      const { data, error } = await supabase.rpc('schedule_task_cron', {
+        task_id_param: taskId,
+        poll_interval_param: interval
+      });
 
-      if (updateError) {
-        console.error('Error updating task with cron job ID:', updateError);
-        // Try to clean up the cron job if task update fails
-        await unscheduleCronJob(taskId).catch(console.error);
-        throw updateError;
+      if (error) {
+        console.error('❌ Error scheduling cron job:', error);
+        throw error;
       }
-    } else if (action === 'unschedule') {
-      await unscheduleCronJob(taskId);
-      
-      // Clear the cron job ID from the task
-      const { error: updateError } = await supabase
-        .from('tasks')
-        .update({ cron_job_id: null })
-        .eq('id', taskId);
 
-      if (updateError) {
-        console.error('Error clearing cron job ID from task:', updateError);
-        throw updateError;
-      }
-    } else {
+      console.log('✅ Cron job scheduled with ID:', data);
+      
       return new Response(JSON.stringify({ 
-        success: false, 
-        error: 'Invalid action. Must be "schedule" or "unschedule"' 
+        success: true, 
+        cronJobId: data,
+        message: `eBay task cron job scheduled with ${interval}s interval`,
+        type: 'ebay-task'
       }), {
-        status: 400,
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+
+    } else if (action === 'unschedule') {
+      console.log(`🗑️ Unscheduling cron job for task ${taskId}`);
+      
+      const { error } = await supabase.rpc('unschedule_task_cron', {
+        task_id_param: taskId
+      });
+
+      if (error) {
+        console.error('❌ Error unscheduling cron job:', error);
+        throw error;
+      }
+
+      console.log('✅ Cron job unscheduled successfully');
+      
+      return new Response(JSON.stringify({ 
+        success: true,
+        message: 'eBay task cron job unscheduled successfully',
+        type: 'ebay-task'
+      }), {
+        status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
 
-    return new Response(JSON.stringify({ 
-      success: true,
-      message: `Task ${action}d successfully`,
-      cronJobId: cronJobId
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    });
+    throw new Error(`Unknown action: ${action}`);
 
   } catch (error: any) {
     console.error('💥 Error in cron manager:', error);
+    
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error.message 
+        error: error.message,
+        timestamp: new Date().toISOString()
       }),
       {
         status: 500,

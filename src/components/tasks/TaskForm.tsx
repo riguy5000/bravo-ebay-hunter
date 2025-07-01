@@ -1,517 +1,312 @@
+
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar } from "@/components/ui/calendar"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { CalendarIcon, Brain, Zap, Clock, Info } from "lucide-react"
-import { format } from "date-fns"
-import { cn } from "@/lib/utils"
-import { useToast } from "@/components/ui/use-toast"
-import { supabase } from '@/integrations/supabase/client';
-import { EnhancedJewelryFilters } from './EnhancedJewelryFilters';
-import { EnhancedWatchFilters } from './EnhancedWatchFilters';
-import { EnhancedGemstoneFilters } from './EnhancedGemstoneFilters';
-import { SubcategorySelector } from './SubcategorySelector';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowLeft, Save } from 'lucide-react';
+import { toast } from 'sonner';
+import { useTasks } from '@/hooks/useTasks';
+import { WatchFilters } from './WatchFilters';
+import { JewelryFilters } from './JewelryFilters';
+import { GemstoneFliters } from './GemstoneFliters';
+import type { TaskTemplate } from './TaskTemplates';
 
 interface TaskFormProps {
-  template?: any;
+  template?: TaskTemplate | null;
   onSuccess: () => void;
   onCancel: () => void;
   onBackToTemplates?: () => void;
 }
 
-export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCancel, onBackToTemplates }) => {
-  const [name, setName] = useState('');
-  const [itemType, setItemType] = useState<string | null>(null);
-  const [maxPrice, setMaxPrice] = useState<number | null>(null);
-  const [minFeedback, setMinFeedback] = useState<number | null>(null);
-  const [pollInterval, setPollInterval] = useState<number | null>(86400); // Default to 24 hours
-  const [excludeKeywords, setExcludeKeywords] = useState<string[]>([]);
-  const [listingFormats, setListingFormats] = useState<string[]>([]);
-  const [itemLocation, setItemLocation] = useState<string | null>(null);
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
-  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
-  const [priceDeltaType, setPriceDeltaType] = useState<'fixed' | 'percentage'>('fixed');
-  const [priceDeltaValue, setPriceDeltaValue] = useState<number | null>(null);
-  const [pricePercentage, setPricePercentage] = useState<number | null>(null);
-  const [auctionAlert, setAuctionAlert] = useState(false);
+export const TaskForm: React.FC<TaskFormProps> = ({
+  template,
+  onSuccess,
+  onCancel,
+  onBackToTemplates
+}) => {
+  const { createTask } = useTasks();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [jewelryFilters, setJewelryFilters] = useState({});
-  const [watchFilters, setWatchFilters] = useState({});
-  const [gemstoneFilters, setGemstoneFilters] = useState({});
-  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-
-  const { toast } = useToast();
-
-  useEffect(() => {
-    // Get current user
-    const getCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      console.log('Current user:', user);
-      setCurrentUser(user);
-      
-      if (!user) {
-        setError('You must be logged in to create tasks');
-      }
-    };
-    getCurrentUser();
-  }, []);
+  
+  // Form state
+  const [name, setName] = useState(template?.name || '');
+  const [itemType, setItemType] = useState<'watch' | 'jewelry' | 'gemstone'>(template?.itemType || 'jewelry');
+  const [maxPrice, setMaxPrice] = useState(template?.maxPrice?.toString() || '1000');
+  const [pollInterval, setPollInterval] = useState('300'); // Default 5 minutes
+  const [minSellerFeedback, setMinSellerFeedback] = useState('0');
+  const [excludeKeywords, setExcludeKeywords] = useState('');
+  
+  // New expanded listing format options
+  const [listingFormats, setListingFormats] = useState<string[]>(['Fixed Price (BIN)', 'Auction']);
+  
+  // Type-specific filters
+  const [watchFilters, setWatchFilters] = useState(template?.watchFilters || {});
+  const [jewelryFilters, setJewelryFilters] = useState(template?.jewelryFilters || {});
+  const [gemstoneFilters, setGemstoneFilters] = useState(template?.gemstoneFilters || {});
 
   useEffect(() => {
     if (template) {
-      setName(template.name || '');
-      setItemType(template.itemType || null);
+      setName(template.name);
+      setItemType(template.itemType);
+      setMaxPrice(template.maxPrice?.toString() || '1000');
+      setWatchFilters(template.watchFilters || {});
+      setJewelryFilters(template.jewelryFilters || {});
+      setGemstoneFilters(template.gemstoneFilters || {});
+      
+      // Set default listing formats based on template
+      if (template.listingFormats) {
+        setListingFormats(template.listingFormats);
+      }
     }
   }, [template]);
 
-  // Check if task name suggests gold/precious metals for interval recommendation
-  const isGoldRelated = name.toLowerCase().includes('gold') || 
-                       name.toLowerCase().includes('scrap') || 
-                       name.toLowerCase().includes('precious') ||
-                       name.toLowerCase().includes('silver') ||
-                       name.toLowerCase().includes('platinum');
+  const listingFormatOptions = [
+    { id: 'Fixed Price (BIN)', label: 'Fixed Price (BIN)' },
+    { id: 'Best Offer', label: 'Best Offer' },
+    { id: 'Auction', label: 'Auction' },
+    { id: 'Classified Ad', label: 'Classified Ad' },
+    { id: 'Accepts Offers', label: 'Accepts Offers' }
+  ];
 
-  const getRecommendedInterval = () => {
-    if (isGoldRelated) {
-      return 86400; // 24 hours for gold/precious metals
-    }
-    return 300; // 5 minutes for other items
-  };
-
-  const getIntervalLabel = (seconds: number) => {
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
-  };
-
-  const handleKeywordAdd = (keyword: string) => {
-    setExcludeKeywords([...excludeKeywords, keyword]);
-  };
-
-  const handleKeywordRemove = (index: number) => {
-    const newKeywords = [...excludeKeywords];
-    newKeywords.splice(index, 1);
-    setExcludeKeywords(newKeywords);
-  };
-
-  const handleListingFormatToggle = (format: string) => {
-    if (listingFormats.includes(format)) {
-      setListingFormats(listingFormats.filter(f => f !== format));
+  const handleListingFormatChange = (formatId: string, checked: boolean) => {
+    if (checked) {
+      setListingFormats(prev => [...prev, formatId]);
     } else {
-      setListingFormats([...listingFormats, format]);
+      setListingFormats(prev => prev.filter(f => f !== formatId));
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!name.trim()) {
+      toast.error('Please enter a task name');
+      return;
+    }
 
-    if (!currentUser) {
-      setError('You must be logged in to create tasks');
-      toast({
-        title: "Error",
-        description: "You must be logged in to create tasks",
-        variant: "destructive",
-      });
+    if (listingFormats.length === 0) {
+      toast.error('Please select at least one listing format');
+      return;
+    }
+
+    const intervalNum = parseInt(pollInterval);
+    if (intervalNum < 5 || intervalNum > 3600) {
+      toast.error('eBay Poll Interval must be between 5 and 3600 seconds');
       return;
     }
 
     setLoading(true);
-    setError(null);
-    
     try {
       const taskData = {
-        name,
-        item_type: itemType as 'jewelry' | 'watch' | 'gemstone',
-        max_price: maxPrice || null,
-        min_seller_feedback: minFeedback || 0,
-        poll_interval: pollInterval || 86400, // Default to 24 hours
-        exclude_keywords: excludeKeywords.filter(k => k.trim()),
-        listing_format: listingFormats.length > 0 ? listingFormats : null,
-        item_location: itemLocation || null,
-        date_from: dateFrom ? dateFrom.toISOString() : null,
-        date_to: dateTo ? dateTo.toISOString() : null,
-        price_delta_type: priceDeltaType,
-        price_delta_value: priceDeltaValue || null,
-        price_percentage: pricePercentage || null,
-        auction_alert: auctionAlert,
-        jewelry_filters: itemType === 'jewelry' ? {
-          ...jewelryFilters,
-          selected_subcategories: selectedSubcategories
-        } : null,
-        watch_filters: itemType === 'watch' ? {
-          ...watchFilters,
-          selected_subcategories: selectedSubcategories
-        } : null,
-        gemstone_filters: itemType === 'gemstone' ? {
-          ...gemstoneFilters,
-          selected_subcategories: selectedSubcategories
-        } : null,
-        user_id: currentUser.id,
-        status: 'active' as const
+        name: name.trim(),
+        item_type: itemType,
+        status: 'active' as const,
+        max_price: maxPrice ? parseFloat(maxPrice) : undefined,
+        poll_interval: intervalNum,
+        listing_format: listingFormats,
+        min_seller_feedback: minSellerFeedback ? parseInt(minSellerFeedback) : 0,
+        exclude_keywords: excludeKeywords ? excludeKeywords.split(',').map(k => k.trim()).filter(k => k) : [],
+        watch_filters: itemType === 'watch' ? watchFilters : undefined,
+        jewelry_filters: itemType === 'jewelry' ? jewelryFilters : undefined,
+        gemstone_filters: itemType === 'gemstone' ? gemstoneFilters : undefined,
       };
 
-      console.log('Creating task with data:', taskData);
-
-      const { data, error } = await supabase
-        .from('tasks')
-        .insert(taskData)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error creating task:', error);
-        throw error;
-      }
-
-      // Schedule the cron job if task is active
-      if (data.status === 'active') {
-        try {
-          console.log('Scheduling cron job for new task...');
-          const cronResponse = await supabase.functions.invoke('cron-manager', {
-            body: {
-              action: 'schedule',
-              taskId: data.id,
-              pollInterval: data.poll_interval || 86400
-            }
-          });
-
-          if (cronResponse.error) {
-            console.error('Failed to schedule cron job:', cronResponse.error);
-            // Don't fail the task creation, just log the error
-          } else {
-            console.log('Cron job scheduled successfully:', cronResponse.data);
-          }
-        } catch (cronError) {
-          console.error('Error scheduling cron job:', cronError);
-          // Don't fail the task creation, just log the error
-        }
-      }
-
-      console.log('Task created successfully:', data);
-      toast({
-        title: "Success",
-        description: "Task created successfully! The AI-powered task scheduler will start analyzing eBay listings and finding quality matches.",
-      });
+      await createTask(taskData);
+      toast.success(`Task "${name}" created successfully!`);
       onSuccess();
     } catch (error: any) {
-      console.error('Failed to create task:', error);
-      setError(error.message || 'Failed to create task');
-      toast({
-        title: "Error",
-        description: error.message || 'Failed to create task',
-        variant: "destructive",
-      });
+      console.error('Error creating task:', error);
+      toast.error('Failed to create task: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const renderTypeSpecificFilters = () => {
+    switch (itemType) {
+      case 'watch':
+        return (
+          <WatchFilters
+            filters={watchFilters}
+            onChange={setWatchFilters}
+          />
+        );
+      case 'jewelry':
+        return (
+          <JewelryFilters
+            filters={jewelryFilters}
+            onChange={setJewelryFilters}
+          />
+        );
+      case 'gemstone':
+        return (
+          <GemstoneFliters
+            filters={gemstoneFilters}
+            onChange={setGemstoneFilters}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* AI Integration Notice */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Brain className="h-5 w-5 text-blue-600" />
-              <Zap className="h-4 w-4 text-yellow-500" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-blue-800">AI-Powered Analysis Included</p>
-              <p className="text-xs text-blue-600">
-                Your task will automatically use AI to extract metal weights, assess quality, calculate profits, and filter out low-quality listings.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Basic Task Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <Card className="w-full max-w-4xl mx-auto">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          {onBackToTemplates && (
+            <Button variant="ghost" size="sm" onClick={onBackToTemplates}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
           <div>
-            <Label htmlFor="name">Task Name</Label>
-            <Input
-              id="name"
-              placeholder="e.g., Daily Gold Scrap Scanner"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+            <CardTitle>
+              {template ? `Create ${template.name}` : 'Create Custom Task'}
+            </CardTitle>
+            <CardDescription>
+              Configure your automated eBay search with AI analysis
+            </CardDescription>
           </div>
-
-          <div>
-            <Label htmlFor="itemType">Item Type</Label>
-            <Select onValueChange={setItemType} value={itemType || undefined}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select an item type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="jewelry">Jewelry</SelectItem>
-                <SelectItem value="watch">Watches</SelectItem>
-                <SelectItem value="gemstone">Gemstones</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Price and Feedback Criteria</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        </div>
+      </CardHeader>
+      
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Basic Settings */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="maxPrice">Maximum Price ($)</Label>
+            <div className="space-y-2">
+              <Label htmlFor="name">Task Name *</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Gold Jewelry Scanner"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="itemType">Item Type *</Label>
+              <Select value={itemType} onValueChange={(value: 'watch' | 'jewelry' | 'gemstone') => setItemType(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="jewelry">Jewelry</SelectItem>
+                  <SelectItem value="watch">Watch</SelectItem>
+                  <SelectItem value="gemstone">Gemstone</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maxPrice">Max Price ($)</Label>
               <Input
                 id="maxPrice"
                 type="number"
-                placeholder="e.g., 500"
-                value={maxPrice === null ? '' : maxPrice.toString()}
-                onChange={(e) => setMaxPrice(e.target.value === '' ? null : Number(e.target.value))}
+                value={maxPrice}
+                onChange={(e) => setMaxPrice(e.target.value)}
+                placeholder="1000"
+                min="1"
               />
             </div>
 
-            <div>
-              <Label htmlFor="minFeedback">Minimum Seller Feedback</Label>
+            <div className="space-y-2">
+              <Label htmlFor="pollInterval">eBay Poll Interval (seconds) *</Label>
+              <Input
+                id="pollInterval"
+                type="number"
+                value={pollInterval}
+                onChange={(e) => setPollInterval(e.target.value)}
+                placeholder="300"
+                min="5"
+                max="3600"
+                required
+              />
+              <p className="text-xs text-gray-500">
+                How often to search eBay (5 seconds to 1 hour). Note: Metal prices update separately on a daily schedule.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="minFeedback">Min Seller Feedback</Label>
               <Input
                 id="minFeedback"
                 type="number"
-                placeholder="e.g., 100"
-                value={minFeedback === null ? '' : minFeedback.toString()}
-                onChange={(e) => setMinFeedback(e.target.value === '' ? null : Number(e.target.value))}
+                value={minSellerFeedback}
+                onChange={(e) => setMinSellerFeedback(e.target.value)}
+                placeholder="0"
+                min="0"
               />
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Smart Filtering & Search Settings</CardTitle>
-          <p className="text-sm text-gray-600">AI will understand context and exclude items intelligently</p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="pollInterval" className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              Search Interval (seconds)
-            </Label>
-            
-            {/* Intelligent interval recommendation */}
-            {isGoldRelated && (
-              <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <Info className="h-4 w-4 text-green-600 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-green-800">Recommended: 24-hour polling</p>
-                    <p className="text-xs text-green-700">
-                      Gold/precious metal prices move gradually. Daily polling prevents API rate limiting 
-                      and is more efficient for precious metals monitoring.
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="mt-2"
-                      onClick={() => setPollInterval(86400)}
-                    >
-                      Use 24 hours (Recommended)
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <Input
-              id="pollInterval"
-              type="number"
-              placeholder="86400 (24 hours recommended for gold)"
-              value={pollInterval === null ? '' : pollInterval.toString()}
-              onChange={(e) => setPollInterval(e.target.value === '' ? null : Number(e.target.value))}
-            />
-            
-            {pollInterval && (
-              <p className="text-xs text-gray-500">
-                This task will run every {getIntervalLabel(pollInterval)}
-                {pollInterval < 300 && (
-                  <span className="text-orange-600 font-medium"> (Warning: Very frequent polling may cause API rate limiting)</span>
-                )}
-              </p>
-            )}
-
-            {/* Quick interval buttons */}
-            <div className="flex flex-wrap gap-2 mt-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setPollInterval(300)}
-              >
-                5 minutes
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setPollInterval(3600)}
-              >
-                1 hour
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={isGoldRelated ? "default" : "outline"}
-                onClick={() => setPollInterval(86400)}
-              >
-                24 hours {isGoldRelated && "(Recommended)"}
-              </Button>
-            </div>
-          </div>
-
-          <div>
-            <Label>Exclude Keywords (AI-powered context understanding)</Label>
-            <p className="text-xs text-gray-500 mb-2">
-              AI will understand context - e.g., "plated" will exclude gold-plated but not solid gold items
-            </p>
-            <div className="flex space-x-2">
+            <div className="space-y-2">
+              <Label htmlFor="excludeKeywords">Exclude Keywords</Label>
               <Input
-                type="text"
-                placeholder="Enter keyword to exclude"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const target = e.target as HTMLInputElement;
-                    if (target.value.trim()) {
-                      handleKeywordAdd(target.value.trim());
-                      target.value = '';
-                    }
-                  }
-                }}
+                id="excludeKeywords"
+                value={excludeKeywords}
+                onChange={(e) => setExcludeKeywords(e.target.value)}
+                placeholder="broken, damaged, repair"
               />
-              <Button
-                type="button"
-                size="sm"
-                onClick={(e) => {
-                  const input = (e.target as HTMLButtonElement).parentElement?.querySelector('input') as HTMLInputElement;
-                  if (input && input.value.trim()) {
-                    handleKeywordAdd(input.value.trim());
-                    input.value = '';
-                  }
-                }}
-              >
-                Add
-              </Button>
+              <p className="text-xs text-gray-500">
+                Comma-separated keywords to exclude from results
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {excludeKeywords.map((keyword, index) => (
-                <Button key={index} variant="secondary" size="sm" onClick={() => handleKeywordRemove(index)}>
-                  {keyword} ×
-                </Button>
+          </div>
+
+          {/* Listing Format Options */}
+          <div className="space-y-3">
+            <Label>Listing Formats *</Label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {listingFormatOptions.map((option) => (
+                <div key={option.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={option.id}
+                    checked={listingFormats.includes(option.id)}
+                    onCheckedChange={(checked) => 
+                      handleListingFormatChange(option.id, checked as boolean)
+                    }
+                  />
+                  <Label 
+                    htmlFor={option.id}
+                    className="text-sm font-normal cursor-pointer"
+                  >
+                    {option.label}
+                  </Label>
+                </div>
               ))}
             </div>
+            <p className="text-xs text-gray-500">
+              Select the types of listings you want to monitor
+            </p>
           </div>
 
-          <div>
-            <Label>Listing Formats</Label>
-            <div className="flex flex-wrap gap-2">
-              {['Auction', 'FixedPrice', 'StoreInventory'].map(format => (
-                <Button
-                  key={format}
-                  variant={listingFormats.includes(format) ? 'default' : 'outline'}
-                  size="sm"
-                  type="button"
-                  onClick={() => handleListingFormatToggle(format)}
-                >
-                  {format}
-                </Button>
-              ))}
-            </div>
+          {/* Type-specific Filters */}
+          {renderTypeSpecificFilters()}
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Create Task
+                </>
+              )}
+            </Button>
           </div>
-
-          <div className="flex items-center space-x-2">
-            <input
-              id="auctionAlert"
-              type="checkbox"
-              checked={auctionAlert}
-              onChange={(e) => setAuctionAlert(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <Label htmlFor="auctionAlert">Auction Alert</Label>
-          </div>
-        </CardContent>
-      </Card>
-
-      {itemType && (
-        <SubcategorySelector
-          itemType={itemType}
-          selectedSubcategories={selectedSubcategories}
-          onChange={setSelectedSubcategories}
-        />
-      )}
-
-      {itemType === 'jewelry' && (
-        <EnhancedJewelryFilters
-          filters={jewelryFilters}
-          onChange={setJewelryFilters}
-          selectedSubcategories={selectedSubcategories}
-        />
-      )}
-
-      {itemType === 'watch' && (
-        <EnhancedWatchFilters
-          filters={watchFilters}
-          onChange={setWatchFilters}
-          selectedSubcategories={selectedSubcategories}
-        />
-      )}
-
-      {itemType === 'gemstone' && (
-        <EnhancedGemstoneFilters
-          filters={gemstoneFilters}
-          onChange={setGemstoneFilters}
-          selectedSubcategories={selectedSubcategories}
-        />
-      )}
-
-      {!currentUser && (
-        <div className="text-orange-600 text-sm p-4 bg-orange-50 rounded">
-          ⚠️ You must be logged in to create tasks. Please sign in first.
-        </div>
-      )}
-
-      {error && (
-        <div className="text-red-600 text-sm p-4 bg-red-50 rounded">{error}</div>
-      )}
-
-      <div className="flex justify-between">
-        {onBackToTemplates && (
-          <Button type="button" variant="secondary" onClick={onBackToTemplates}>
-            Back to Templates
-          </Button>
-        )}
-        <div className="space-x-2">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={loading || !currentUser}>
-            {loading ? 'Creating...' : 'Create AI-Powered Task'}
-          </Button>
-        </div>
-      </div>
-    </form>
+        </form>
+      </CardContent>
+    </Card>
   );
 };

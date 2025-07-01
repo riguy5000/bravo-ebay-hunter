@@ -1,9 +1,10 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Play, Loader2, Zap, Clock, Settings, Bug, Search, Trash2, AlertTriangle, CheckCircle, Plus } from 'lucide-react';
+import { Play, Loader2, Zap, Clock, Settings, Bug, Search, Trash2, AlertTriangle, CheckCircle, Plus, DollarSign } from 'lucide-react';
 import { useTasks } from '@/hooks/useTasks';
 
 export const TaskSchedulerTest: React.FC = () => {
@@ -11,9 +12,43 @@ export const TaskSchedulerTest: React.FC = () => {
   const [isScheduling, setIsScheduling] = useState(false);
   const [isTestingEbay, setIsTestingEbay] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isUpdatingMetalPrices, setIsUpdatingMetalPrices] = useState(false);
   const [cleanupDone, setCleanupDone] = useState(false);
   const [ebayTestDone, setEbayTestDone] = useState(false);
+  const [metalPricesUpdated, setMetalPricesUpdated] = useState(false);
   const { tasks, refetch } = useTasks();
+
+  const updateMetalPrices = async () => {
+    setIsUpdatingMetalPrices(true);
+    setMetalPricesUpdated(false);
+    try {
+      console.log('Updating metal prices...');
+      
+      const { data, error } = await supabase.functions.invoke('metal-price-scheduler');
+
+      if (error) {
+        console.error('Metal price update error:', error);
+        toast.error('Failed to update metal prices: ' + error.message);
+        return;
+      }
+
+      console.log('Metal price update result:', data);
+      
+      if (data.success) {
+        const message = data.message || 'Metal prices updated successfully';
+        toast.success(`💰 ${message}`);
+        setMetalPricesUpdated(true);
+      } else {
+        toast.error('Metal price update failed: ' + (data.error || 'Unknown error'));
+      }
+      
+    } catch (error: any) {
+      console.error('Error updating metal prices:', error);
+      toast.error('Error updating metal prices: ' + error.message);
+    } finally {
+      setIsUpdatingMetalPrices(false);
+    }
+  };
 
   const cleanupOrphanedCronJobs = async () => {
     setIsCleaning(true);
@@ -35,6 +70,7 @@ export const TaskSchedulerTest: React.FC = () => {
         toast.success(`🚫 ALL CRON JOBS STOPPED! Cleaned ${data.cronJobsCleaned} jobs, reset ${data.tasksReset} tasks`);
         setCleanupDone(true);
         setEbayTestDone(false); // Reset eBay test status
+        setMetalPricesUpdated(false); // Reset metal prices status
         
         // Show important waiting message
         setTimeout(() => {
@@ -64,7 +100,7 @@ export const TaskSchedulerTest: React.FC = () => {
         body: {
           keywords: 'jewelry gold',
           maxPrice: 500,
-          listingType: ['Auction', 'FixedPrice'],
+          listingType: ['Auction', 'Fixed Price (BIN)'],
           minFeedback: 0
         }
       });
@@ -167,7 +203,7 @@ export const TaskSchedulerTest: React.FC = () => {
 
       for (const task of activeTasks) {
         try {
-          console.log(`Scheduling task: ${task.name}`);
+          console.log(`Scheduling eBay task: ${task.name}`);
           
           const { data, error } = await supabase.functions.invoke('cron-manager', {
             body: {
@@ -190,10 +226,28 @@ export const TaskSchedulerTest: React.FC = () => {
         }
       }
 
+      // Also schedule metal price updates
+      try {
+        console.log('Scheduling metal price updates...');
+        const { data, error } = await supabase.functions.invoke('cron-manager', {
+          body: {
+            action: 'schedule-metal-prices',
+            metalInterval: 86400 // Daily
+          }
+        });
+
+        if (!error) {
+          console.log('Metal price scheduler setup successfully:', data);
+          toast.info('🥇 Metal price scheduler also configured for daily updates');
+        }
+      } catch (error: any) {
+        console.error('Error scheduling metal prices:', error);
+      }
+
       await refetch();
 
       if (successCount > 0) {
-        toast.success(`✅ Successfully scheduled ${successCount} task(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
+        toast.success(`✅ Successfully scheduled ${successCount} eBay task(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
       } else {
         toast.error(`❌ Failed to schedule any tasks (${errorCount} errors)`);
       }
@@ -207,7 +261,6 @@ export const TaskSchedulerTest: React.FC = () => {
   };
 
   const activeTasks = tasks.filter(task => task.status === 'active');
-  const goldScrapTask = activeTasks.find(task => task.name.toLowerCase().includes('gold') && task.name.toLowerCase().includes('scrap'));
   const hasNoTasks = tasks.length === 0;
 
   return (
@@ -215,18 +268,56 @@ export const TaskSchedulerTest: React.FC = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Play className="h-5 w-5" />
-          Emergency System Repair
+          Dual Scheduler Control
         </CardTitle>
         <CardDescription>
-          STOP ALL cron jobs → Wait → Test APIs → Create new task
+          eBay polling & Metal prices run independently
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Metal Price Update Section */}
+        <div className="space-y-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+          <div className="flex items-center gap-2 text-sm text-yellow-800 mb-2">
+            {metalPricesUpdated ? <CheckCircle className="h-4 w-4 text-green-600" /> : <DollarSign className="h-4 w-4" />}
+            <span className="font-medium">💰 Metal Price Updates</span>
+          </div>
+          <Button 
+            onClick={updateMetalPrices} 
+            disabled={isUpdatingMetalPrices}
+            variant={metalPricesUpdated ? "secondary" : "default"}
+            className="w-full"
+            size="sm"
+          >
+            {isUpdatingMetalPrices ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Updating Prices...
+              </>
+            ) : metalPricesUpdated ? (
+              <>
+                <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                Prices Updated ✅
+              </>
+            ) : (
+              <>
+                <DollarSign className="h-4 w-4 mr-2" />
+                Update Metal Prices
+              </>
+            )}
+          </Button>
+          <p className="text-xs text-yellow-700">
+            {metalPricesUpdated ? 
+              '✅ Metal prices updated! Runs daily automatically.' :
+              'Updates gold/silver spot prices (separate from eBay polling)'
+            }
+          </p>
+        </div>
+
         {/* Step 1: CRITICAL - Stop All Cron Jobs */}
         <div className="space-y-2 p-3 bg-red-50 rounded-lg border border-red-200">
           <div className="flex items-center gap-2 text-sm text-red-800 mb-2">
             {cleanupDone ? <CheckCircle className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4" />}
-            <span className="font-medium">🚨 STEP 1: STOP ALL CRON JOBS</span>
+            <span className="font-medium">🚨 EMERGENCY: Stop All Jobs</span>
           </div>
           <Button 
             onClick={cleanupOrphanedCronJobs} 
@@ -247,45 +338,30 @@ export const TaskSchedulerTest: React.FC = () => {
             ) : (
               <>
                 <Trash2 className="h-4 w-4 mr-2" />
-                STOP ALL CRON JOBS NOW
+                STOP ALL CRON JOBS
               </>
             )}
           </Button>
           <p className="text-xs text-red-700 font-medium">
             {cleanupDone ? 
-              '✅ ALL cron jobs stopped! Wait 2-3 minutes then test eBay API.' : 
-              '⚠️ CRITICAL: Your Gold Scrap Scanner is running every 10 seconds and overwhelming the eBay API!'
+              '✅ Both eBay & metal price jobs stopped! Wait 2-3 min.' : 
+              '⚠️ CRITICAL: Stop runaway cron jobs now!'
             }
           </p>
         </div>
 
-        {/* Step 2: Wait Message */}
-        {cleanupDone && !ebayTestDone && (
-          <div className="space-y-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
-            <div className="flex items-center gap-2 text-sm text-orange-800 mb-2">
-              <Clock className="h-4 w-4" />
-              <span className="font-medium">⏳ STEP 2: WAIT 2-3 MINUTES</span>
-            </div>
-            <p className="text-sm text-orange-700">
-              eBay API rate limits are resetting. Wait 2-3 minutes before testing.
-            </p>
-            <p className="text-xs text-orange-600">
-              The cron job was calling eBay every 10 seconds - now it's stopped!
-            </p>
-          </div>
-        )}
-
-        {/* Step 3: Test eBay API */}
-        <div className="space-y-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-          <div className="flex items-center gap-2 text-sm text-yellow-800 mb-2">
+        {/* Step 2: Test eBay API */}
+        <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center gap-2 text-sm text-blue-800 mb-2">
             {ebayTestDone ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Search className="h-4 w-4" />}
-            <span className="font-medium">STEP 3: Test eBay API</span>
+            <span className="font-medium">Test eBay API</span>
           </div>
           <Button 
             onClick={testEbayAPI} 
             disabled={isTestingEbay || !cleanupDone || ebayTestDone}
             variant={ebayTestDone ? "secondary" : "default"}
             className="w-full"
+            size="sm"
           >
             {isTestingEbay ? (
               <>
@@ -300,53 +376,27 @@ export const TaskSchedulerTest: React.FC = () => {
             ) : (
               <>
                 <Search className="h-4 w-4 mr-2" />
-                Test eBay API Now
+                Test eBay API
               </>
             )}
           </Button>
-          <p className="text-xs text-yellow-700">
-            {ebayTestDone ? 
-              '🎉 eBay API is working! Rate limits cleared.' :
-              cleanupDone ? 
-                'Test if eBay API is working after cleanup' :
-                'Complete Step 1 first'
-            }
-          </p>
         </div>
 
-        {/* Step 4: Create New Task (if no tasks) */}
-        {hasNoTasks && ebayTestDone && (
-          <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
-            <div className="flex items-center gap-2 text-sm text-green-800 mb-2">
-              <Plus className="h-4 w-4" />
-              <span className="font-medium">STEP 4: Create New Task</span>
-            </div>
-            <p className="text-sm text-green-700 mb-2">
-              Click "Create Task" button to make a new Gold Scrap Scanner.
-            </p>
-            <p className="text-xs text-green-600 font-medium">
-              ⚠️ Set Poll Interval to 300 seconds (5 minutes) - NOT 10 seconds!
-            </p>
-          </div>
-        )}
-
         {/* System Status */}
-        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-          <div className="flex items-center gap-2 text-sm text-blue-800 mb-2">
+        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2 text-sm text-gray-800 mb-2">
             <Clock className="h-4 w-4" />
-            <span className="font-medium">System Status</span>
+            <span className="font-medium">Dual Scheduler Status</span>
           </div>
-          <ul className="text-xs text-blue-700 space-y-1">
-            <li>• Cron cleanup: {cleanupDone ? '✅ ALL STOPPED' : '❌ REQUIRED'}</li>
-            <li>• eBay API: {ebayTestDone ? '✅ Working' : cleanupDone ? '⏳ Wait 2-3 min' : '❌ Rate limited'}</li>
-            <li>• {tasks.length} total task(s) | {activeTasks.length} active</li>
-            {goldScrapTask && (
-              <li>• Gold Scanner: {cleanupDone ? '🚫 Cron stopped' : '🔥 Spamming APIs!'}</li>
-            )}
+          <ul className="text-xs text-gray-700 space-y-1">
+            <li>• eBay Polling: {ebayTestDone ? '✅ Ready' : cleanupDone ? '⏳ Testing' : '❌ Blocked'}</li>
+            <li>• Metal Prices: {metalPricesUpdated ? '✅ Updated' : '📊 Independent schedule'}</li>
+            <li>• Total tasks: {tasks.length} ({activeTasks.length} active)</li>
+            <li>• Separation: ✅ Independent queues</li>
           </ul>
         </div>
 
-        {/* Emergency Actions - Keep existing code */}
+        {/* Emergency Actions */}
         <div className="border-t pt-4 space-y-2">
           <p className="text-xs text-gray-500 text-center">Emergency Actions</p>
           
@@ -367,7 +417,7 @@ export const TaskSchedulerTest: React.FC = () => {
               ) : (
                 <>
                   <Play className="h-4 w-4 mr-2" />
-                  Run All Active Tasks
+                  Run All eBay Tasks
                 </>
               )}
             </Button>
@@ -376,7 +426,7 @@ export const TaskSchedulerTest: React.FC = () => {
           {/* Fix Scheduling Button */}
           <Button 
             onClick={fixCronScheduling} 
-            disabled={isScheduling || activeTasks.length === 0}
+            disabled={isScheduling}
             variant="secondary"
             className="w-full"
             size="sm"
@@ -389,7 +439,7 @@ export const TaskSchedulerTest: React.FC = () => {
             ) : (
               <>
                 <Settings className="h-4 w-4 mr-2" />
-                Fix Automatic Scheduling
+                Fix Dual Scheduling
               </>
             )}
           </Button>
