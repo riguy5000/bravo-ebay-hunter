@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -46,12 +47,49 @@ interface EbayApiKey {
   last_used?: string;
   status?: string;
   success_rate?: number;
+  oauth_token?: string;
+  token_expires_at?: string;
+}
+
+interface OAuthTokenResponse {
+  access_token: string;
+  expires_in: number;
+  token_type: string;
 }
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
+
+const getOAuthToken = async (appId: string, certId: string): Promise<string> => {
+  console.log(`Getting OAuth token for app ID: ${appId.substring(0, 10)}...`);
+  
+  const credentials = btoa(`${appId}:${certId}`);
+  
+  const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${credentials}`
+    },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      scope: 'https://api.ebay.com/oauth/api_scope'
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`OAuth token request failed: ${response.status} ${response.statusText} - ${errorText}`);
+    throw new Error(`OAuth authentication failed: ${response.status} ${response.statusText}`);
+  }
+
+  const tokenData: OAuthTokenResponse = await response.json();
+  console.log('OAuth token obtained successfully');
+  
+  return tokenData.access_token;
+};
 
 const getAvailableApiKeys = async (): Promise<EbayApiKey[]> => {
   try {
@@ -110,13 +148,12 @@ const selectApiKey = (keys: EbayApiKey[], strategy: string = 'round_robin'): Eba
     
     case 'round_robin':
     default:
-      // Simple round robin based on current time
       const index = Math.floor(Date.now() / 60000) % availableKeys.length;
       return availableKeys[index];
   }
 };
 
-const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateLimited: boolean) => {
+const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateLimited: boolean, isAuthError: boolean = false) => {
   try {
     const { data: settingsData, error: fetchError } = await supabase
       .from('settings')
@@ -129,11 +166,18 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
     const config = settingsData.value_json as { keys: EbayApiKey[], rotation_strategy: string };
     const updatedKeys = config.keys.map(key => {
       if (key.app_id === keyToUpdate.app_id) {
+        let newStatus = 'active';
+        if (isRateLimited) newStatus = 'rate_limited';
+        else if (isAuthError) newStatus = 'auth_error';
+        else if (!success) newStatus = 'error';
+
         return {
           ...key,
           last_used: new Date().toISOString(),
-          status: isRateLimited ? 'rate_limited' : (success ? 'active' : 'error'),
-          success_rate: success ? Math.min(100, (key.success_rate || 0) + 5) : Math.max(0, (key.success_rate || 100) - 10)
+          status: newStatus,
+          success_rate: success ? Math.min(100, (key.success_rate || 0) + 5) : Math.max(0, (key.success_rate || 100) - 10),
+          oauth_token: keyToUpdate.oauth_token,
+          token_expires_at: keyToUpdate.token_expires_at
         };
       }
       return key;
@@ -147,189 +191,172 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
         updated_at: new Date().toISOString()
       });
 
-    console.log(`Updated key "${keyToUpdate.label}" status:`, { success, isRateLimited });
+    console.log(`Updated key "${keyToUpdate.label}" status:`, { success, isRateLimited, isAuthError });
   } catch (error) {
     console.error('Error updating key usage:', error);
   }
 };
 
-const buildEbaySearchUrl = (params: SearchRequest, credentials: EbayApiKey): string => {
-  const baseUrl = 'https://svcs.ebay.com/services/search/FindingService/v1';
-
-  console.log('Using eBay App ID:', credentials.app_id ? credentials.app_id.substring(0, 10) + '...' : 'MISSING');
-
+const buildEbayBrowseUrl = (params: SearchRequest): string => {
+  const baseUrl = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
   const searchParams = new URLSearchParams({
-    'OPERATION-NAME': 'findItemsByKeywords',
-    'SERVICE-VERSION': '1.0.0',
-    'SECURITY-APPNAME': credentials.app_id,
-    'RESPONSE-DATA-FORMAT': 'JSON',
-    'REST-PAYLOAD': '',
-    'keywords': params.keywords,
-    'paginationInput.entriesPerPage': '10',
-    'sortOrder': params.sortOrder || 'PricePlusShipping'
+    q: params.keywords,
+    limit: '10'
   });
 
   // Add price filters
-  let filterIndex = 0;
-  if (params.maxPrice) {
-    searchParams.set(`itemFilter(${filterIndex}).name`, 'MaxPrice');
-    searchParams.set(`itemFilter(${filterIndex}).value`, params.maxPrice.toString());
-    filterIndex++;
-  }
-  
-  if (params.minPrice) {
-    searchParams.set(`itemFilter(${filterIndex}).name`, 'MinPrice');
-    searchParams.set(`itemFilter(${filterIndex}).value`, params.minPrice.toString());
-    filterIndex++;
+  if (params.maxPrice && params.minPrice) {
+    searchParams.set('filter', `price:[${params.minPrice}..${params.maxPrice}],priceCurrency:USD`);
+  } else if (params.maxPrice) {
+    searchParams.set('filter', `price:[..${params.maxPrice}],priceCurrency:USD`);
+  } else if (params.minPrice) {
+    searchParams.set('filter', `price:[${params.minPrice}..],priceCurrency:USD`);
   }
 
-  // Add listing type filter
-  if (params.listingType && params.listingType.length > 0) {
-    searchParams.set(`itemFilter(${filterIndex}).name`, 'ListingType');
-    params.listingType.forEach((type, idx) => {
-      searchParams.set(`itemFilter(${filterIndex}).value(${idx})`, type);
-    });
-    filterIndex++;
+  // Add category filter
+  if (params.categoryId) {
+    const existingFilter = searchParams.get('filter');
+    const categoryFilter = `categoryIds:${params.categoryId}`;
+    if (existingFilter) {
+      searchParams.set('filter', `${existingFilter},${categoryFilter}`);
+    } else {
+      searchParams.set('filter', categoryFilter);
+    }
   }
 
   // Add condition filter
   if (params.condition && params.condition.length > 0) {
-    searchParams.set(`itemFilter(${filterIndex}).name`, 'Condition');
-    params.condition.forEach((cond, idx) => {
-      searchParams.set(`itemFilter(${filterIndex}).value(${idx})`, cond);
-    });
-    filterIndex++;
+    const existingFilter = searchParams.get('filter');
+    const conditionFilter = `conditions:{${params.condition.join('|')}}`;
+    if (existingFilter) {
+      searchParams.set('filter', `${existingFilter},${conditionFilter}`);
+    } else {
+      searchParams.set('filter', conditionFilter);
+    }
   }
 
-  // Add feedback score filter
-  if (params.minFeedback) {
-    searchParams.set(`itemFilter(${filterIndex}).name`, 'FeedbackScoreMin');
-    searchParams.set(`itemFilter(${filterIndex}).value`, params.minFeedback.toString());
-    filterIndex++;
+  // Add sort order
+  if (params.sortOrder) {
+    const sortMapping: { [key: string]: string } = {
+      'BestMatch': 'newlyListed',
+      'PricePlusShipping': 'price',
+      'EndTimeSoonest': 'endingSoonest'
+    };
+    const browseSort = sortMapping[params.sortOrder] || 'newlyListed';
+    searchParams.set('sort', browseSort);
   }
 
   return `${baseUrl}?${searchParams.toString()}`;
 };
 
-const parseEbayResponse = (response: any): EbayItem[] => {
+const parseEbayBrowseResponse = (response: any): EbayItem[] => {
   const items: EbayItem[] = [];
   
   try {
-    console.log('Parsing eBay response...');
+    console.log('Parsing eBay Browse API response...');
     
-    const searchResult = response.findItemsByKeywordsResponse?.[0];
-    if (!searchResult) {
-      console.log('No findItemsByKeywordsResponse found in response');
+    if (!response.itemSummaries) {
+      console.log('No itemSummaries found in response');
       return items;
     }
 
-    const ack = searchResult.ack?.[0];
-    console.log('eBay API acknowledgment:', ack);
+    console.log(`Found ${response.itemSummaries.length} items in eBay response`);
 
-    if (ack === 'Failure') {
-      const errors = searchResult.errorMessage?.[0]?.error;
-      console.error('eBay API returned failure:', errors);
-      throw new Error(`eBay API Error: ${JSON.stringify(errors)}`);
-    }
-
-    const searchItems = searchResult?.searchResult?.[0]?.item;
-    
-    if (!searchItems) {
-      console.log('No search items found in response');
-      return items;
-    }
-
-    console.log(`Found ${searchItems.length} items in eBay response`);
-
-    for (const item of searchItems) {
-      const priceInfo = item.sellingStatus?.[0]?.currentPrice?.[0];
-      const price = parseFloat(priceInfo?.__value__ || '0');
+    for (const item of response.itemSummaries) {
+      const price = item.price?.value ? parseFloat(item.price.value) : 0;
       
       items.push({
-        itemId: item.itemId?.[0] || '',
-        title: item.title?.[0] || '',
+        itemId: item.itemId || '',
+        title: item.title || '',
         price: price,
-        currency: priceInfo?.['@currencyId'] || 'USD',
-        endTime: item.listingInfo?.[0]?.endTime?.[0],
-        listingUrl: item.viewItemURL?.[0] || '',
-        imageUrl: item.galleryURL?.[0],
-        condition: item.condition?.[0]?.conditionDisplayName?.[0],
+        currency: item.price?.currency || 'USD',
+        endTime: item.itemEndDate,
+        listingUrl: item.itemWebUrl || '',
+        imageUrl: item.image?.imageUrl,
+        condition: item.condition,
         sellerInfo: {
-          name: item.sellerInfo?.[0]?.sellerUserName?.[0] || '',
-          feedbackScore: parseInt(item.sellerInfo?.[0]?.feedbackScore?.[0] || '0'),
-          feedbackPercent: parseFloat(item.sellerInfo?.[0]?.positiveFeedbackPercent?.[0] || '0')
+          name: item.seller?.username || '',
+          feedbackScore: item.seller?.feedbackScore || 0,
+          feedbackPercent: item.seller?.feedbackPercentage || 0
         }
       });
     }
   } catch (error) {
-    console.error('Error parsing eBay response:', error);
+    console.error('Error parsing eBay Browse response:', error);
     throw error;
   }
   
   return items;
 };
 
-const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest): Promise<{ items: EbayItem[], success: boolean, rateLimited: boolean, errorType?: string }> => {
+const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest): Promise<{ items: EbayItem[], success: boolean, rateLimited: boolean, authError: boolean, errorType?: string }> => {
   try {
-    const searchUrl = buildEbaySearchUrl(searchParams, apiKey);
     console.log(`Trying API key "${apiKey.label}" for eBay search...`);
 
-    // Wait a minimum of 1 second between requests
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Get OAuth token
+    let accessToken: string;
+    try {
+      accessToken = await getOAuthToken(apiKey.app_id, apiKey.cert_id);
+    } catch (error: any) {
+      console.error(`OAuth failed for "${apiKey.label}":`, error.message);
+      await updateKeyUsage(apiKey, false, false, true);
+      return { items: [], success: false, rateLimited: false, authError: true, errorType: 'oauth_error' };
+    }
+
+    const searchUrl = buildEbayBrowseUrl(searchParams);
+    console.log(`Making Browse API request for "${apiKey.label}"`);
 
     const response = await fetch(searchUrl, {
       method: 'GET',
       headers: {
-        'User-Agent': 'eBaySearchBot/1.0',
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate'
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
       }
     });
 
-    console.log(`eBay API response status for "${apiKey.label}":`, response.status, response.statusText);
+    console.log(`eBay Browse API response status for "${apiKey.label}":`, response.status, response.statusText);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`eBay API error response for "${apiKey.label}":`, errorText);
+      console.error(`eBay Browse API error response for "${apiKey.label}":`, errorText);
       
-      // Check for specific eBay rate limiting errors
-      const isRateLimited = response.status === 500 && (
-        errorText.includes('exceeded the number of times') ||
-        errorText.includes('RateLimiter') ||
-        errorText.includes('call limit')
-      );
+      // Check for rate limiting (HTTP 429 or specific error codes)
+      const isRateLimited = response.status === 429 || 
+        errorText.includes('rate limit') ||
+        errorText.includes('quota exceeded');
       
       // Check for authentication errors
-      const isAuthError = response.status === 401 || 
-        errorText.includes('Invalid application ID') ||
-        errorText.includes('Authentication failed');
+      const isAuthError = response.status === 401 || response.status === 403 ||
+        errorText.includes('Invalid access token') ||
+        errorText.includes('token expired');
       
       if (isRateLimited) {
-        await updateKeyUsage(apiKey, false, true);
+        await updateKeyUsage(apiKey, false, true, false);
         console.log(`API key "${apiKey.label}" hit eBay rate limit`);
-        return { items: [], success: false, rateLimited: true, errorType: 'rate_limit' };
+        return { items: [], success: false, rateLimited: true, authError: false, errorType: 'rate_limit' };
       }
       
       if (isAuthError) {
-        await updateKeyUsage(apiKey, false, false);
+        await updateKeyUsage(apiKey, false, false, true);
         console.log(`API key "${apiKey.label}" has authentication issues`);
-        return { items: [], success: false, rateLimited: false, errorType: 'auth_error' };
+        return { items: [], success: false, rateLimited: false, authError: true, errorType: 'auth_error' };
       }
       
-      await updateKeyUsage(apiKey, false, false);
-      throw new Error(`eBay API error: ${response.status} ${response.statusText} - ${errorText}`);
+      await updateKeyUsage(apiKey, false, false, false);
+      throw new Error(`eBay Browse API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    const items = parseEbayResponse(data);
+    const items = parseEbayBrowseResponse(data);
     
-    await updateKeyUsage(apiKey, true, false);
+    await updateKeyUsage(apiKey, true, false, false);
     console.log(`Successfully used API key "${apiKey.label}" - found ${items.length} items`);
     
-    return { items, success: true, rateLimited: false };
+    return { items, success: true, rateLimited: false, authError: false };
   } catch (error: any) {
     console.error(`Error with API key "${apiKey.label}":`, error);
-    await updateKeyUsage(apiKey, false, false);
+    await updateKeyUsage(apiKey, false, false, false);
     throw error;
   }
 };
@@ -359,13 +386,17 @@ const handler = async (req: Request): Promise<Response> => {
       let status = 200;
       
       if (result.success) {
-        message = `✅ Test successful! Found ${result.items.length} items`;
+        message = `✅ Test successful! Found ${result.items.length} items using eBay Browse API`;
         status = 200;
       } else if (result.rateLimited) {
         message = `⏳ API key is rate limited by eBay. Daily limits reset at midnight Pacific Time. Try again later or add more API key sets.`;
         status = 429;
-      } else if (result.errorType === 'auth_error') {
-        message = `🔒 Authentication failed. Please verify your eBay API credentials (App ID, Dev ID, Cert ID) are correct and active.`;
+      } else if (result.authError) {
+        if (result.errorType === 'oauth_error') {
+          message = `🔒 OAuth authentication failed. Please verify your eBay Client ID (App ID) and Client Secret (Cert ID) are correct and active in production environment.`;
+        } else {
+          message = `🔒 Authentication failed. Please verify your eBay API credentials are correct and active.`;
+        }
         status = 401;
       } else {
         message = `❌ Test failed. Check your API key configuration.`;
@@ -376,19 +407,26 @@ const handler = async (req: Request): Promise<Response> => {
         success: result.success, 
         items: result.items,
         rateLimited: result.rateLimited,
+        authError: result.authError,
         totalResults: result.items.length,
         message,
         keyUsed: 'Test Key Set',
         errorType: result.errorType,
+        apiVersion: 'Browse API v1 (OAuth)',
         troubleshooting: result.rateLimited ? {
           issue: 'eBay API Rate Limit',
           solution: 'Add more eBay API key sets from different developer accounts',
           resetTime: 'Midnight Pacific Time (daily reset)',
           recommendation: 'Each eBay developer account gets separate daily limits'
-        } : result.errorType === 'auth_error' ? {
-          issue: 'Authentication Error',
+        } : result.authError ? {
+          issue: 'OAuth Authentication Error',
           solution: 'Verify API credentials in eBay Developer Console',
-          checkList: ['App ID is correct', 'Dev ID matches', 'Cert ID is active', 'Keys are for correct environment (sandbox/production)']
+          checkList: [
+            'Client ID (App ID) is correct',
+            'Client Secret (Cert ID) is correct', 
+            'Keys are for Production environment',
+            'Browse API is enabled in your eBay app settings'
+          ]
         } : null
       }), {
         status,
@@ -433,7 +471,6 @@ const handler = async (req: Request): Promise<Response> => {
         throw new Error('No API keys available for use');
       }
 
-      // Mark this key as tried
       triedKeys.add(selectedKey.app_id);
 
       try {
@@ -445,9 +482,10 @@ const handler = async (req: Request): Promise<Response> => {
             success: true, 
             items: result.items,
             totalResults: result.items.length,
-            message: `Successfully found ${result.items.length} items`,
+            message: `Successfully found ${result.items.length} items using eBay Browse API`,
             keyUsed: selectedKey.label,
-            apiStatus: 'healthy'
+            apiStatus: 'healthy',
+            apiVersion: 'Browse API v1 (OAuth)'
           }), {
             status: 200,
             headers: { 'Content-Type': 'application/json', ...corsHeaders },
@@ -460,7 +498,7 @@ const handler = async (req: Request): Promise<Response> => {
           continue;
         }
         
-        if (result.errorType === 'auth_error') {
+        if (result.authError) {
           authErrorCount++;
           console.log(`API key "${selectedKey.label}" has authentication issues, trying next key...`);
           continue;
@@ -482,17 +520,13 @@ const handler = async (req: Request): Promise<Response> => {
         items: [],
         message: '⏳ All your eBay API keys have hit their daily limits. Limits reset at midnight Pacific Time.',
         recommendation: 'Add more API key sets from different eBay developer accounts to increase capacity.',
+        apiVersion: 'Browse API v1 (OAuth)',
         troubleshooting: {
           issue: 'All API Keys Rate Limited',
           solution: 'Add API keys from different eBay developer accounts',
           resetTime: 'Midnight Pacific Time (daily reset)',
           currentKeys: apiKeys.length,
           suggestion: 'Each developer account gets separate daily limits'
-        },
-        debug: {
-          timestamp: new Date().toISOString(),
-          totalKeys: apiKeys.length,
-          rateLimitedKeys: rateLimitedCount
         }
       }), {
         status: 429,
@@ -505,19 +539,20 @@ const handler = async (req: Request): Promise<Response> => {
         success: false, 
         error: `${authErrorCount} of ${apiKeys.length} API keys have authentication issues.`,
         items: [],
-        message: '🔒 Some API keys have authentication problems. Please verify your credentials.',
+        message: '🔒 Some API keys have OAuth authentication problems. Please verify your credentials.',
         recommendation: 'Check your eBay API credentials in Settings > eBay API Keys.',
+        apiVersion: 'Browse API v1 (OAuth)',
         troubleshooting: {
-          issue: 'Authentication Errors',
+          issue: 'OAuth Authentication Errors',
           solution: 'Verify API credentials in eBay Developer Console',
           affectedKeys: authErrorCount,
           totalKeys: apiKeys.length,
-          checkList: ['App ID is correct', 'Dev ID matches', 'Cert ID is active', 'Keys are for correct environment']
-        },
-        debug: {
-          timestamp: new Date().toISOString(),
-          authErrors: authErrorCount,
-          totalKeys: apiKeys.length
+          checkList: [
+            'Client ID (App ID) is correct',
+            'Client Secret (Cert ID) is correct',
+            'Keys are for Production environment',
+            'Browse API is enabled in your eBay app settings'
+          ]
         }
       }), {
         status: 401,
@@ -540,6 +575,7 @@ const handler = async (req: Request): Promise<Response> => {
         recommendation: error.message.includes('No eBay API keys') ? 
           'Configure eBay API keys in Settings > eBay API Keys.' :
           'Check eBay API configuration and network connectivity.',
+        apiVersion: 'Browse API v1 (OAuth)',
         debug: {
           timestamp: new Date().toISOString(),
           errorType: error.constructor.name,
