@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,7 +12,7 @@ import {
   Diamond
 } from 'lucide-react';
 
-interface TaskTemplate {
+export interface TaskTemplate {
   id: string;
   name: string;
   description: string;
@@ -21,6 +20,13 @@ interface TaskTemplate {
   category: 'jewelry' | 'watch' | 'gemstone';
   config: any;
   badges: string[];
+  // Add missing properties that TaskForm expects
+  itemType: 'watch' | 'jewelry' | 'gemstone';
+  maxPrice?: number;
+  listingFormats?: string[];
+  watchFilters?: any;
+  jewelryFilters?: any;
+  gemstoneFilters?: any;
 }
 
 const TASK_TEMPLATES: TaskTemplate[] = [
@@ -30,6 +36,17 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: 'Automatically find undervalued gold jewelry with no stones for scrap value arbitrage',
     icon: <Gem className="h-5 w-5" />,
     category: 'jewelry',
+    itemType: 'jewelry',
+    maxPrice: 1000,
+    listingFormats: ['Best Offer'],
+    jewelryFilters: {
+      condition: 'Pre-owned',
+      metal: 'Yellow Gold',
+      main_stone: 'None',
+      jewelry_type: 'Ring',
+      weight_min: 2.0,
+      setting_style: '',
+    },
     badges: ['Fast 5s polls', 'Best Offer only', 'Melt value calc', 'No stones filter'],
     config: {
       item_type: 'jewelry',
@@ -37,15 +54,15 @@ const TASK_TEMPLATES: TaskTemplate[] = [
       poll_interval: 5,
       listing_format: ['best_offer'],
       price_delta_type: 'percent',
-      price_delta_value: 5, // 5% below melt
+      price_delta_value: 5,
       exclude_keywords: ['plated', 'filled', 'tone', 'hollow', 'gold-field', 'goldfield', 'GF', 'cartier', 'van cleef', 'tiffany', 'bulgari', 'hermes', 'diamond', 'ruby', 'sapphire', 'emerald'],
       jewelry_filters: {
         condition: 'Pre-owned',
         metal: 'Yellow Gold',
         main_stone: 'None',
         jewelry_type: 'Ring',
-        weight_min: 2.0, // Minimum 2g for decent scrap value
-        setting_style: '', // Allow any setting since we want scrap
+        weight_min: 2.0,
+        setting_style: '',
       }
     }
   },
@@ -55,6 +72,21 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: 'Find luxury watches below market value using Chrono24 price references',
     icon: <Watch className="h-5 w-5" />,
     category: 'watch',
+    itemType: 'watch',
+    maxPrice: 5000,
+    listingFormats: ['Fixed Price (BIN)', 'Best Offer'],
+    watchFilters: {
+      condition: 'Pre-owned',
+      brand: 'Rolex',
+      type: 'Luxury',
+      movement: 'Automatic',
+      case_material: 'Stainless Steel',
+      chrono24_reference: 'low',
+      reference_margin: 15,
+      case_size_min: 36,
+      case_size_max: 44,
+      country_manufacture: 'Switzerland'
+    },
     badges: ['Chrono24 pricing', 'Pre-owned focus', 'Auction alerts', 'Swiss brands'],
     config: {
       item_type: 'watch',
@@ -62,12 +94,12 @@ const TASK_TEMPLATES: TaskTemplate[] = [
       poll_interval: 30,
       listing_format: ['buy_it_now', 'best_offer'],
       price_delta_type: 'percent',
-      price_delta_value: 15, // 15% below Chrono24 low
+      price_delta_value: 15,
       auction_alert: true,
       exclude_keywords: ['replica', 'homage', 'parts', 'repair', 'broken'],
       watch_filters: {
         condition: 'Pre-owned',
-        brand: 'Rolex', // Start with Rolex as default
+        brand: 'Rolex',
         type: 'Luxury',
         movement: 'Automatic',
         case_material: 'Stainless Steel',
@@ -85,6 +117,21 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: 'Search for certified diamonds below market price using GIA/AGS references',
     icon: <Diamond className="h-5 w-5" />,
     category: 'gemstone',
+    itemType: 'gemstone',
+    maxPrice: 10000,
+    listingFormats: ['Fixed Price (BIN)', 'Best Offer', 'Auction'],
+    gemstoneFilters: {
+      condition: 'New',
+      stone_type: 'Diamond',
+      creation: 'Natural',
+      certification: 'GIA',
+      clarity_diamond: 'VS1',
+      color_diamond: 'G',
+      cut_grade: 'Excellent',
+      carat_min: 0.5,
+      carat_max: 3.0,
+      shape: 'Round'
+    },
     badges: ['GIA certified', 'Natural only', 'Investment grade', 'Price comparison'],
     config: {
       item_type: 'gemstone',
@@ -92,7 +139,7 @@ const TASK_TEMPLATES: TaskTemplate[] = [
       poll_interval: 60,
       listing_format: ['buy_it_now', 'best_offer', 'auction'],
       price_delta_type: 'percent',
-      price_delta_value: 20, // 20% below market
+      price_delta_value: 20,
       auction_alert: true,
       exclude_keywords: ['lab', 'synthetic', 'simulated', 'moissanite', 'cz'],
       gemstone_filters: {
@@ -115,6 +162,18 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: 'Search for undervalued vintage and antique jewelry pieces',
     icon: <Gem className="h-5 w-5" />,
     category: 'jewelry',
+    itemType: 'jewelry',
+    maxPrice: 2000,
+    listingFormats: ['Fixed Price (BIN)', 'Best Offer', 'Auction'],
+    jewelryFilters: {
+      condition: 'Pre-owned',
+      style: 'Vintage-Inspired',
+      metal: 'Yellow Gold',
+      metal_purity: '14k',
+      jewelry_type: 'Ring',
+      main_stone: 'Diamond',
+      setting_style: 'Prong'
+    },
     badges: ['Estate pieces', 'Vintage focus', 'Designer brands', 'Art Deco'],
     config: {
       item_type: 'jewelry',
@@ -142,6 +201,20 @@ const TASK_TEMPLATES: TaskTemplate[] = [
     description: 'Find natural colored gemstones with good investment potential',
     icon: <Gem className="h-5 w-5" />,
     category: 'gemstone',
+    itemType: 'gemstone',
+    maxPrice: 5000,
+    listingFormats: ['Fixed Price (BIN)', 'Best Offer'],
+    gemstoneFilters: {
+      condition: 'New',
+      stone_type: 'Sapphire',
+      creation: 'Natural',
+      treatment: 'Untreated',
+      origin: 'Sri Lanka',
+      clarity_colored: 'Eye-Clean',
+      carat_min: 1.0,
+      carat_max: 5.0,
+      shape: 'Oval'
+    },
     badges: ['Natural stones', 'Untreated focus', 'Ceylon/Burma', 'Collector grade'],
     config: {
       item_type: 'gemstone',
