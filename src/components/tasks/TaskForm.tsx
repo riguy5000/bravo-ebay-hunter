@@ -12,6 +12,10 @@ import { useTasks } from '@/hooks/useTasks';
 import { WatchFilters } from './WatchFilters';
 import { JewelryFilters } from './JewelryFilters';
 import { GemstoneFliters } from './GemstoneFliters';
+import { SubcategorySelector } from './SubcategorySelector';
+import { EnhancedWatchFilters } from './EnhancedWatchFilters';
+import { EnhancedJewelryFilters } from './EnhancedJewelryFilters';
+import { EnhancedGemstoneFilters } from './EnhancedGemstoneFilters';
 import type { TaskTemplate } from './TaskTemplates';
 
 interface TaskFormProps {
@@ -40,6 +44,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   
   // New expanded listing format options
   const [listingFormats, setListingFormats] = useState<string[]>(['Fixed Price (BIN)', 'Auction']);
+  
+  // Subcategory selection
+  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
   
   // Type-specific filters
   const [watchFilters, setWatchFilters] = useState(template?.watchFilters || {});
@@ -125,23 +132,44 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   };
 
   const renderTypeSpecificFilters = () => {
+    // Use enhanced filters if subcategories are selected, otherwise use basic filters
+    const useEnhancedFilters = selectedSubcategories.length > 0;
+
     switch (itemType) {
       case 'watch':
-        return (
+        return useEnhancedFilters ? (
+          <EnhancedWatchFilters
+            filters={watchFilters}
+            onChange={setWatchFilters}
+            selectedSubcategories={selectedSubcategories}
+          />
+        ) : (
           <WatchFilters
             filters={watchFilters}
             onChange={setWatchFilters}
           />
         );
       case 'jewelry':
-        return (
+        return useEnhancedFilters ? (
+          <EnhancedJewelryFilters
+            filters={jewelryFilters}
+            onChange={setJewelryFilters}
+            selectedSubcategories={selectedSubcategories}
+          />
+        ) : (
           <JewelryFilters
             filters={jewelryFilters}
             onChange={setJewelryFilters}
           />
         );
       case 'gemstone':
-        return (
+        return useEnhancedFilters ? (
+          <EnhancedGemstoneFilters
+            filters={gemstoneFilters}
+            onChange={setGemstoneFilters}
+            selectedSubcategories={selectedSubcategories}
+          />
+        ) : (
           <GemstoneFliters
             filters={gemstoneFilters}
             onChange={setGemstoneFilters}
@@ -282,6 +310,13 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               Select the types of listings you want to monitor
             </p>
           </div>
+
+          {/* Subcategory Selection */}
+          <SubcategorySelector
+            itemType={itemType}
+            selectedSubcategories={selectedSubcategories}
+            onChange={setSelectedSubcategories}
+          />
 
           {/* Type-specific Filters */}
           {renderTypeSpecificFilters()}
