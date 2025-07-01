@@ -218,7 +218,7 @@ const processTask = async (task: Task) => {
       dateTo: task.date_to
     };
 
-    console.log('Search params:', searchParams);
+    console.log('Search params:', JSON.stringify(searchParams, null, 2));
 
     // Call the eBay search function
     const searchResponse = await supabase.functions.invoke('ebay-search', {
@@ -226,8 +226,18 @@ const processTask = async (task: Task) => {
     });
 
     if (searchResponse.error) {
-      console.error('Error calling eBay search:', searchResponse.error);
-      return;
+      console.error('❌ Error calling eBay search:', searchResponse.error);
+      console.error('Error details:', JSON.stringify(searchResponse.error, null, 2));
+      
+      // Update task last_run even on error to prevent constant retries
+      await supabase
+        .from('tasks')
+        .update({ 
+          last_run: new Date().toISOString(),
+        })
+        .eq('id', task.id);
+        
+      throw new Error(`eBay search failed: ${searchResponse.error.message || 'Unknown error'}`);
     }
 
     const { items } = searchResponse.data;
@@ -235,6 +245,13 @@ const processTask = async (task: Task) => {
 
     if (!items || items.length === 0) {
       console.log(`📭 No items found for task ${task.name}`);
+      
+      // Update task last_run even when no items found
+      await supabase
+        .from('tasks')
+        .update({ last_run: new Date().toISOString() })
+        .eq('id', task.id);
+        
       return;
     }
 
@@ -301,16 +318,33 @@ const processTask = async (task: Task) => {
       }
     }
 
-    // Update task last_run timestamp
-    await supabase
+    // Update task last_run timestamp - CRITICAL for showing task is working
+    const { error: updateError } = await supabase
       .from('tasks')
       .update({ last_run: new Date().toISOString() })
       .eq('id', task.id);
+
+    if (updateError) {
+      console.error('❌ Error updating task last_run:', updateError);
+    } else {
+      console.log(`✅ Updated last_run for task ${task.name}`);
+    }
 
     console.log(`🎯 Task ${task.name} completed: ${newMatches} new matches, ${excludedItems} excluded, ${analyzedItems} analyzed`);
 
   } catch (error) {
     console.error(`❌ Error processing task ${task.id}:`, error);
+    console.error('Error stack:', error.stack);
+    
+    // Still update last_run to prevent endless retries of failed tasks
+    try {
+      await supabase
+        .from('tasks')
+        .update({ last_run: new Date().toISOString() })
+        .eq('id', task.id);
+    } catch (updateError) {
+      console.error('❌ Failed to update last_run after error:', updateError);
+    }
   }
 };
 
@@ -381,20 +415,31 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Process each task
     let processedCount = 0;
+    let successCount = 0;
+    let errorCount = 0;
+    
     for (const task of tasks) {
       console.log(`\n--- Processing Task: ${task.name} ---`);
-      await processTask(task);
+      try {
+        await processTask(task);
+        successCount++;
+      } catch (error) {
+        console.error(`❌ Task ${task.name} failed:`, error);
+        errorCount++;
+      }
       processedCount++;
     }
 
     const message = specificTaskId 
       ? `Individual task scheduler completed for task ${specificTaskId}`
-      : `Batch task scheduler completed`;
+      : `Batch task scheduler completed: ${successCount} successful, ${errorCount} failed`;
 
     return new Response(JSON.stringify({ 
       success: true,
       message,
       tasksProcessed: processedCount,
+      successfulTasks: successCount,
+      failedTasks: errorCount,
       totalTasks: tasks.length,
       taskId: specificTaskId || null
     }), {
@@ -404,10 +449,14 @@ const handler = async (req: Request): Promise<Response> => {
 
   } catch (error: any) {
     console.error('💥 Error in task scheduler:', error);
+    console.error('Error stack:', error.stack);
+    
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error.message 
+        error: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString()
       }),
       {
         status: 500,

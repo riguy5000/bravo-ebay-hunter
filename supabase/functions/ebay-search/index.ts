@@ -43,10 +43,16 @@ const buildEbaySearchUrl = (params: SearchRequest): string => {
   const baseUrl = 'https://svcs.ebay.com/services/search/FindingService/v1';
   const appId = Deno.env.get('EBAY_APP_ID');
   
+  if (!appId) {
+    throw new Error('EBAY_APP_ID environment variable is not set');
+  }
+
+  console.log('Using eBay App ID:', appId ? appId.substring(0, 10) + '...' : 'MISSING');
+
   const searchParams = new URLSearchParams({
     'OPERATION-NAME': 'findItemsByKeywords',
     'SERVICE-VERSION': '1.0.0',
-    'SECURITY-APPNAME': appId || '',
+    'SECURITY-APPNAME': appId,
     'RESPONSE-DATA-FORMAT': 'JSON',
     'REST-PAYLOAD': '',
     'keywords': params.keywords,
@@ -100,10 +106,31 @@ const parseEbayResponse = (response: any): EbayItem[] => {
   const items: EbayItem[] = [];
   
   try {
+    console.log('Raw eBay response structure:', JSON.stringify(response, null, 2));
+    
     const searchResult = response.findItemsByKeywordsResponse?.[0];
+    if (!searchResult) {
+      console.log('No findItemsByKeywordsResponse found in response');
+      return items;
+    }
+
+    const ack = searchResult.ack?.[0];
+    console.log('eBay API acknowledgment:', ack);
+
+    if (ack === 'Failure') {
+      const errors = searchResult.errorMessage?.[0]?.error;
+      console.error('eBay API returned failure:', errors);
+      throw new Error(`eBay API Error: ${JSON.stringify(errors)}`);
+    }
+
     const searchItems = searchResult?.searchResult?.[0]?.item;
     
-    if (!searchItems) return items;
+    if (!searchItems) {
+      console.log('No search items found in response');
+      return items;
+    }
+
+    console.log(`Found ${searchItems.length} items in eBay response`);
 
     for (const item of searchItems) {
       const priceInfo = item.sellingStatus?.[0]?.currentPrice?.[0];
@@ -127,6 +154,7 @@ const parseEbayResponse = (response: any): EbayItem[] => {
     }
   } catch (error) {
     console.error('Error parsing eBay response:', error);
+    throw error;
   }
   
   return items;
@@ -139,7 +167,13 @@ const handler = async (req: Request): Promise<Response> => {
 
   try {
     const searchParams: SearchRequest = await req.json();
-    console.log('Searching eBay with params:', searchParams);
+    console.log('eBay search request params:', searchParams);
+
+    // Validate required environment variables
+    const appId = Deno.env.get('EBAY_APP_ID');
+    if (!appId) {
+      throw new Error('EBAY_APP_ID environment variable is not configured');
+    }
 
     const searchUrl = buildEbaySearchUrl(searchParams);
     console.log('eBay API URL:', searchUrl);
@@ -147,19 +181,26 @@ const handler = async (req: Request): Promise<Response> => {
     const response = await fetch(searchUrl, {
       method: 'GET',
       headers: {
-        'User-Agent': 'eBaySearchBot/1.0'
+        'User-Agent': 'eBaySearchBot/1.0',
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate'
       }
     });
 
+    console.log('eBay API response status:', response.status, response.statusText);
+    console.log('eBay API response headers:', Object.fromEntries(response.headers.entries()));
+
     if (!response.ok) {
-      throw new Error(`eBay API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('eBay API error response:', errorText);
+      throw new Error(`eBay API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('eBay API response received');
+    console.log('eBay API response received, parsing items...');
 
     const items = parseEbayResponse(data);
-    console.log(`Parsed ${items.length} items from eBay`);
+    console.log(`Successfully parsed ${items.length} items from eBay`);
 
     return new Response(JSON.stringify({ 
       success: true, 
@@ -175,11 +216,18 @@ const handler = async (req: Request): Promise<Response> => {
 
   } catch (error: any) {
     console.error('Error in eBay search function:', error);
+    console.error('Error stack:', error.stack);
+    
     return new Response(
       JSON.stringify({ 
         success: false, 
         error: error.message,
-        items: []
+        items: [],
+        debug: {
+          timestamp: new Date().toISOString(),
+          errorType: error.constructor.name,
+          stack: error.stack
+        }
       }),
       {
         status: 500,

@@ -4,13 +4,50 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Play, Loader2, Zap, Clock, Settings } from 'lucide-react';
+import { Play, Loader2, Zap, Clock, Settings, Bug, Search } from 'lucide-react';
 import { useTasks } from '@/hooks/useTasks';
 
 export const TaskSchedulerTest: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
+  const [isTestingEbay, setIsTestingEbay] = useState(false);
   const { tasks, refetch } = useTasks();
+
+  const testEbayAPI = async () => {
+    setIsTestingEbay(true);
+    try {
+      console.log('Testing eBay API directly...');
+      
+      const { data, error } = await supabase.functions.invoke('ebay-search', {
+        body: {
+          keywords: 'jewelry gold',
+          maxPrice: 500,
+          listingType: ['Auction', 'FixedPrice'],
+          minFeedback: 0
+        }
+      });
+
+      if (error) {
+        console.error('eBay API test error:', error);
+        toast.error('eBay API test failed: ' + error.message);
+        return;
+      }
+
+      console.log('eBay API test response:', data);
+      
+      if (data.success && data.items) {
+        toast.success(`eBay API test successful! Found ${data.items.length} items`);
+      } else {
+        toast.error('eBay API test failed: ' + (data.error || 'Unknown error'));
+      }
+      
+    } catch (error: any) {
+      console.error('Error testing eBay API:', error);
+      toast.error('Error testing eBay API: ' + error.message);
+    } finally {
+      setIsTestingEbay(false);
+    }
+  };
 
   const runTaskScheduler = async () => {
     setIsRunning(true);
@@ -28,7 +65,10 @@ export const TaskSchedulerTest: React.FC = () => {
       }
 
       console.log('Task scheduler response:', data);
-      toast.success(`Manual task scheduler completed: ${data.message}`);
+      toast.success(`Task scheduler completed: ${data.message}`);
+      
+      // Refresh tasks to see updated last_run
+      await refetch();
       
     } catch (error: any) {
       console.error('Error invoking task scheduler:', error);
@@ -55,6 +95,9 @@ export const TaskSchedulerTest: React.FC = () => {
 
       console.log('Task scheduler response:', data);
       toast.success(`Task "${taskName}" test completed: ${data.message}`);
+      
+      // Refresh tasks to see updated last_run
+      await refetch();
       
     } catch (error: any) {
       console.error('Error testing specific task:', error);
@@ -124,20 +167,42 @@ export const TaskSchedulerTest: React.FC = () => {
   };
 
   const activeTasks = tasks.filter(task => task.status === 'active');
-  const newNewNewTask = tasks.find(task => task.name.toLowerCase().includes('new new new'));
+  const goldScrapTask = activeTasks.find(task => task.name.toLowerCase().includes('gold') && task.name.toLowerCase().includes('scrap'));
 
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Play className="h-5 w-5" />
-          Task Scheduler Test
+          Task Scheduler Debug
         </CardTitle>
         <CardDescription>
-          Test and fix task scheduling functionality
+          Test and debug task scheduling functionality
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* eBay API Test */}
+        <div className="space-y-2">
+          <Button 
+            onClick={testEbayAPI} 
+            disabled={isTestingEbay}
+            variant="outline"
+            className="w-full"
+          >
+            {isTestingEbay ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Testing eBay API...
+              </>
+            ) : (
+              <>
+                <Search className="h-4 w-4 mr-2" />
+                Test eBay API Connection
+              </>
+            )}
+          </Button>
+        </div>
+
         {/* Manual Test Buttons */}
         <div className="space-y-2">
           <Button 
@@ -158,9 +223,9 @@ export const TaskSchedulerTest: React.FC = () => {
             )}
           </Button>
 
-          {newNewNewTask && (
+          {goldScrapTask && (
             <Button 
-              onClick={() => testSpecificTask(newNewNewTask.id, newNewNewTask.name)} 
+              onClick={() => testSpecificTask(goldScrapTask.id, goldScrapTask.name)} 
               disabled={isRunning}
               variant="outline"
               className="w-full"
@@ -173,7 +238,7 @@ export const TaskSchedulerTest: React.FC = () => {
               ) : (
                 <>
                   <Zap className="h-4 w-4 mr-2" />
-                  Test "new new new" Task
+                  Test Gold Scrap Scanner
                 </>
               )}
             </Button>
@@ -218,10 +283,27 @@ export const TaskSchedulerTest: React.FC = () => {
             <li>• {activeTasks.length} active task(s) found</li>
             <li>• {activeTasks.filter(t => t.cron_job_id).length} task(s) scheduled</li>
             <li>• {activeTasks.filter(t => !t.cron_job_id).length} task(s) need scheduling</li>
-            {newNewNewTask && (
-              <li>• "new new new" task: {newNewNewTask.cron_job_id ? 'Scheduled ✓' : 'Not Scheduled ✗'}</li>
+            {goldScrapTask && (
+              <li>• Gold Scrap Scanner: {goldScrapTask.cron_job_id ? 'Scheduled ✓' : 'Not Scheduled ✗'}</li>
+            )}
+            {goldScrapTask && goldScrapTask.last_run && (
+              <li>• Last run: {new Date(goldScrapTask.last_run).toLocaleString()}</li>
             )}
           </ul>
+        </div>
+
+        {/* Debug Info */}
+        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+          <div className="flex items-center gap-2 text-sm text-yellow-800 mb-2">
+            <Bug className="h-4 w-4" />
+            <span className="font-medium">Debug Steps</span>
+          </div>
+          <ol className="text-xs text-yellow-700 space-y-1 list-decimal list-inside">
+            <li>First test eBay API connection</li>
+            <li>Then test your specific task</li>
+            <li>Check browser console for detailed logs</li>
+            <li>Verify last_run timestamp updates</li>
+          </ol>
         </div>
       </CardContent>
     </Card>
