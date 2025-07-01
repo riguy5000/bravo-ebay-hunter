@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -32,6 +33,7 @@ interface Task {
   watch_filters?: any;
   jewelry_filters?: any;
   gemstone_filters?: any;
+  last_run?: string;
   created_at: string;
   updated_at: string;
 }
@@ -107,7 +109,7 @@ const analyzeItemWithAI = async (task: Task, item: any) => {
 };
 
 const shouldExcludeItem = (task: Task, item: any, aiAnalysis: any): { exclude: boolean; reason?: string } => {
-  // Basic keyword exclusion (existing logic)
+  // Basic keyword exclusion
   if (task.exclude_keywords && task.exclude_keywords.length > 0) {
     const titleLower = item.title.toLowerCase();
     const hasExcludedKeyword = task.exclude_keywords.some(keyword => 
@@ -120,17 +122,14 @@ const shouldExcludeItem = (task: Task, item: any, aiAnalysis: any): { exclude: b
 
   // AI-based exclusion
   if (aiAnalysis) {
-    // Exclude low quality items
     if (aiAnalysis.qualityScore < 30) {
       return { exclude: true, reason: `Low quality score: ${aiAnalysis.qualityScore}` };
     }
 
-    // Exclude items with high risk flags
     if (aiAnalysis.riskFlags && aiAnalysis.riskFlags.length > 2) {
       return { exclude: true, reason: `Multiple risk flags: ${aiAnalysis.riskFlags.join(', ')}` };
     }
 
-    // Exclude poor deals (jewelry with negative scrap profit)
     if (task.item_type === 'jewelry' && aiAnalysis.extractedData?.profit_scrap < -50) {
       return { exclude: true, reason: 'Negative scrap value profit' };
     }
@@ -206,7 +205,7 @@ const createMatchRecord = (task: Task, item: any, aiAnalysis?: any) => {
 };
 
 const processTask = async (task: Task) => {
-  console.log(`Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}`);
+  console.log(`🔄 Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}, Interval: ${task.poll_interval}s`);
   
   try {
     const searchParams = {
@@ -232,10 +231,10 @@ const processTask = async (task: Task) => {
     }
 
     const { items } = searchResponse.data;
-    console.log(`Found ${items?.length || 0} items for task ${task.name}`);
+    console.log(`📦 Found ${items?.length || 0} items for task ${task.name}`);
 
     if (!items || items.length === 0) {
-      console.log(`No items found for task ${task.name}`);
+      console.log(`📭 No items found for task ${task.name}`);
       return;
     }
 
@@ -250,15 +249,28 @@ const processTask = async (task: Task) => {
       
       // Skip if price is too high
       if (task.max_price && item.price > task.max_price) {
-        console.log(`Skipping item ${item.itemId} - price too high: $${item.price}`);
+        console.log(`💰 Skipping item ${item.itemId} - price too high: $${item.price}`);
         excludedItems++;
         continue;
       }
 
       // Skip if seller feedback is too low
       if (task.min_seller_feedback && item.sellerInfo?.feedbackScore < task.min_seller_feedback) {
-        console.log(`Skipping item ${item.itemId} - feedback too low: ${item.sellerInfo?.feedbackScore}`);
+        console.log(`⭐ Skipping item ${item.itemId} - feedback too low: ${item.sellerInfo?.feedbackScore}`);
         excludedItems++;
+        continue;
+      }
+
+      // Check if we already have this item (duplicate prevention)
+      const { data: existingMatch } = await supabase
+        .from(tableName)
+        .select('id')
+        .eq('ebay_listing_id', item.itemId)
+        .eq('task_id', task.id)
+        .single();
+
+      if (existingMatch) {
+        console.log(`🔄 Item ${item.itemId} already exists, skipping`);
         continue;
       }
 
@@ -273,19 +285,6 @@ const processTask = async (task: Task) => {
         continue;
       }
 
-      // Check if we already have this item
-      const { data: existingMatch } = await supabase
-        .from(tableName)
-        .select('id')
-        .eq('ebay_listing_id', item.itemId)
-        .eq('task_id', task.id)
-        .single();
-
-      if (existingMatch) {
-        console.log(`Item ${item.itemId} already exists, skipping`);
-        continue;
-      }
-
       // Create new match record with AI analysis data
       const matchData = createMatchRecord(task, item, aiAnalysis);
 
@@ -294,7 +293,7 @@ const processTask = async (task: Task) => {
         .insert(matchData);
 
       if (insertError) {
-        console.error('Error inserting match:', insertError);
+        console.error('❌ Error inserting match:', insertError);
       } else {
         const aiInfo = aiAnalysis ? `(AI: ${aiAnalysis.qualityScore}/100, Deal: ${aiAnalysis.dealScore}/100)` : '';
         console.log(`✅ Created ${task.item_type} match: ${item.title} - $${item.price} ${aiInfo}`);
@@ -302,10 +301,16 @@ const processTask = async (task: Task) => {
       }
     }
 
-    console.log(`✅ Task ${task.name} processed: ${newMatches} new matches, ${excludedItems} excluded, ${analyzedItems} analyzed`);
+    // Update task last_run timestamp
+    await supabase
+      .from('tasks')
+      .update({ last_run: new Date().toISOString() })
+      .eq('id', task.id);
+
+    console.log(`🎯 Task ${task.name} completed: ${newMatches} new matches, ${excludedItems} excluded, ${analyzedItems} analyzed`);
 
   } catch (error) {
-    console.error(`Error processing task ${task.id}:`, error);
+    console.error(`❌ Error processing task ${task.id}:`, error);
   }
 };
 
@@ -317,30 +322,60 @@ const handler = async (req: Request): Promise<Response> => {
   try {
     console.log('🚀 Task scheduler with AI analysis started');
 
-    // Get all active tasks
-    const { data: tasks, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('status', 'active');
+    const requestBody = await req.json().catch(() => ({}));
+    const specificTaskId = requestBody.taskId;
 
-    if (error) {
-      console.error('Error fetching tasks:', error);
-      throw error;
+    let tasks;
+    
+    if (specificTaskId) {
+      // Process specific task (called by cron job)
+      console.log(`🎯 Processing specific task: ${specificTaskId}`);
+      const { data: taskData, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', specificTaskId)
+        .eq('status', 'active')
+        .single();
+
+      if (error || !taskData) {
+        console.log(`⚠️ Task ${specificTaskId} not found or not active`);
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: 'Task not found or not active',
+          taskId: specificTaskId
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      tasks = [taskData];
+    } else {
+      // Process all active tasks (manual trigger)
+      console.log('🔄 Processing all active tasks');
+      const { data: allTasks, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('status', 'active');
+
+      if (error) {
+        console.error('Error fetching tasks:', error);
+        throw error;
+      }
+
+      tasks = allTasks || [];
     }
 
-    console.log(`Found ${tasks?.length || 0} active tasks`);
+    console.log(`📋 Found ${tasks.length} active task(s) to process`);
 
-    if (!tasks || tasks.length === 0) {
+    if (tasks.length === 0) {
       return new Response(JSON.stringify({ 
         success: true, 
         message: 'No active tasks to process',
         tasksProcessed: 0
       }), {
         status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
 
@@ -349,31 +384,26 @@ const handler = async (req: Request): Promise<Response> => {
     for (const task of tasks) {
       console.log(`\n--- Processing Task: ${task.name} ---`);
       await processTask(task);
-      
-      // Update the task's updated_at timestamp
-      await supabase
-        .from('tasks')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', task.id);
-      
       processedCount++;
     }
 
+    const message = specificTaskId 
+      ? `Individual task scheduler completed for task ${specificTaskId}`
+      : `Batch task scheduler completed`;
+
     return new Response(JSON.stringify({ 
       success: true,
-      message: `Task scheduler with AI analysis completed`,
+      message,
       tasksProcessed: processedCount,
-      totalTasks: tasks.length
+      totalTasks: tasks.length,
+      taskId: specificTaskId || null
     }), {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders,
-      },
+      headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
 
   } catch (error: any) {
-    console.error('Error in task scheduler:', error);
+    console.error('💥 Error in task scheduler:', error);
     return new Response(
       JSON.stringify({ 
         success: false, 
@@ -381,10 +411,7 @@ const handler = async (req: Request): Promise<Response> => {
       }),
       {
         status: 500,
-        headers: { 
-          'Content-Type': 'application/json', 
-          ...corsHeaders 
-        },
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
       }
     );
   }

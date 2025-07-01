@@ -587,6 +587,7 @@ export type Database = {
         Row: {
           auction_alert: boolean | null
           created_at: string
+          cron_job_id: number | null
           date_from: string | null
           date_to: string | null
           exclude_keywords: string[] | null
@@ -595,6 +596,7 @@ export type Database = {
           item_location: string | null
           item_type: Database["public"]["Enums"]["item_type"]
           jewelry_filters: Json | null
+          last_run: string | null
           listing_format: string[] | null
           max_price: number | null
           min_seller_feedback: number | null
@@ -611,6 +613,7 @@ export type Database = {
         Insert: {
           auction_alert?: boolean | null
           created_at?: string
+          cron_job_id?: number | null
           date_from?: string | null
           date_to?: string | null
           exclude_keywords?: string[] | null
@@ -619,6 +622,7 @@ export type Database = {
           item_location?: string | null
           item_type: Database["public"]["Enums"]["item_type"]
           jewelry_filters?: Json | null
+          last_run?: string | null
           listing_format?: string[] | null
           max_price?: number | null
           min_seller_feedback?: number | null
@@ -635,6 +639,7 @@ export type Database = {
         Update: {
           auction_alert?: boolean | null
           created_at?: string
+          cron_job_id?: number | null
           date_from?: string | null
           date_to?: string | null
           exclude_keywords?: string[] | null
@@ -643,6 +648,7 @@ export type Database = {
           item_location?: string | null
           item_type?: Database["public"]["Enums"]["item_type"]
           jewelry_filters?: Json | null
+          last_run?: string | null
           listing_format?: string[] | null
           max_price?: number | null
           min_seller_feedback?: number | null
@@ -708,7 +714,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      schedule_task_cron: {
+        Args: { task_id_param: string; poll_interval_param: number }
+        Returns: number
+      }
+      unschedule_task_cron: {
+        Args: { task_id_param: string }
+        Returns: undefined
+      }
     }
     Enums: {
       item_type: "watch" | "jewelry" | "gemstone"

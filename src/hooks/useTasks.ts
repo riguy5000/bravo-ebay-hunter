@@ -25,6 +25,9 @@ export interface Task {
   date_from?: string;
   date_to?: string;
   item_location?: string;
+  // Automatic scheduling fields
+  last_run?: string;
+  cron_job_id?: number;
   created_at: string;
   updated_at: string;
 }
