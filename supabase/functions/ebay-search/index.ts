@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -270,7 +269,7 @@ const parseEbayResponse = (response: any): EbayItem[] => {
   return items;
 };
 
-const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest): Promise<{ items: EbayItem[], success: boolean, rateLimited: boolean }> => {
+const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest): Promise<{ items: EbayItem[], success: boolean, rateLimited: boolean, errorType?: string }> => {
   try {
     const searchUrl = buildEbaySearchUrl(searchParams, apiKey);
     console.log(`Trying API key "${apiKey.label}" for eBay search...`);
@@ -293,11 +292,28 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
       const errorText = await response.text();
       console.error(`eBay API error response for "${apiKey.label}":`, errorText);
       
-      const isRateLimited = response.status === 500 && errorText.includes('exceeded the number of times');
+      // Check for specific eBay rate limiting errors
+      const isRateLimited = response.status === 500 && (
+        errorText.includes('exceeded the number of times') ||
+        errorText.includes('RateLimiter') ||
+        errorText.includes('call limit')
+      );
+      
+      // Check for authentication errors
+      const isAuthError = response.status === 401 || 
+        errorText.includes('Invalid application ID') ||
+        errorText.includes('Authentication failed');
       
       if (isRateLimited) {
         await updateKeyUsage(apiKey, false, true);
-        return { items: [], success: false, rateLimited: true };
+        console.log(`API key "${apiKey.label}" hit eBay rate limit`);
+        return { items: [], success: false, rateLimited: true, errorType: 'rate_limit' };
+      }
+      
+      if (isAuthError) {
+        await updateKeyUsage(apiKey, false, false);
+        console.log(`API key "${apiKey.label}" has authentication issues`);
+        return { items: [], success: false, rateLimited: false, errorType: 'auth_error' };
       }
       
       await updateKeyUsage(apiKey, false, false);
@@ -339,15 +355,43 @@ const handler = async (req: Request): Promise<Response> => {
       
       const result = await tryApiKeyRequest(testKey, searchParams);
       
+      let message = '';
+      let status = 200;
+      
+      if (result.success) {
+        message = `✅ Test successful! Found ${result.items.length} items`;
+        status = 200;
+      } else if (result.rateLimited) {
+        message = `⏳ API key is rate limited by eBay. Daily limits reset at midnight Pacific Time. Try again later or add more API key sets.`;
+        status = 429;
+      } else if (result.errorType === 'auth_error') {
+        message = `🔒 Authentication failed. Please verify your eBay API credentials (App ID, Dev ID, Cert ID) are correct and active.`;
+        status = 401;
+      } else {
+        message = `❌ Test failed. Check your API key configuration.`;
+        status = 500;
+      }
+      
       return new Response(JSON.stringify({ 
         success: result.success, 
         items: result.items,
         rateLimited: result.rateLimited,
         totalResults: result.items.length,
-        message: result.success ? `Test successful! Found ${result.items.length} items` : 'Test failed',
-        keyUsed: 'Test Key Set'
+        message,
+        keyUsed: 'Test Key Set',
+        errorType: result.errorType,
+        troubleshooting: result.rateLimited ? {
+          issue: 'eBay API Rate Limit',
+          solution: 'Add more eBay API key sets from different developer accounts',
+          resetTime: 'Midnight Pacific Time (daily reset)',
+          recommendation: 'Each eBay developer account gets separate daily limits'
+        } : result.errorType === 'auth_error' ? {
+          issue: 'Authentication Error',
+          solution: 'Verify API credentials in eBay Developer Console',
+          checkList: ['App ID is correct', 'Dev ID matches', 'Cert ID is active', 'Keys are for correct environment (sandbox/production)']
+        } : null
       }), {
-        status: result.success ? 200 : (result.rateLimited ? 429 : 500),
+        status,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
@@ -373,6 +417,7 @@ const handler = async (req: Request): Promise<Response> => {
     // Try API keys until one works
     let lastError: any = null;
     let rateLimitedCount = 0;
+    let authErrorCount = 0;
     const triedKeys = new Set<string>();
 
     for (let attempt = 0; attempt < apiKeys.length; attempt++) {
@@ -415,6 +460,12 @@ const handler = async (req: Request): Promise<Response> => {
           continue;
         }
         
+        if (result.errorType === 'auth_error') {
+          authErrorCount++;
+          console.log(`API key "${selectedKey.label}" has authentication issues, trying next key...`);
+          continue;
+        }
+        
       } catch (error: any) {
         console.error(`Failed with API key "${selectedKey.label}":`, error);
         lastError = error;
@@ -422,14 +473,22 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // All keys failed
+    // All keys failed - provide specific error messages
     if (rateLimitedCount === apiKeys.length) {
       return new Response(JSON.stringify({ 
         success: false, 
-        error: 'All eBay API keys are currently rate limited. Please wait for rate limits to reset.',
+        error: 'All eBay API keys are currently rate limited.',
         rateLimited: true,
         items: [],
-        recommendation: 'Add more API keys in Settings > eBay API Keys to increase capacity.',
+        message: '⏳ All your eBay API keys have hit their daily limits. Limits reset at midnight Pacific Time.',
+        recommendation: 'Add more API key sets from different eBay developer accounts to increase capacity.',
+        troubleshooting: {
+          issue: 'All API Keys Rate Limited',
+          solution: 'Add API keys from different eBay developer accounts',
+          resetTime: 'Midnight Pacific Time (daily reset)',
+          currentKeys: apiKeys.length,
+          suggestion: 'Each developer account gets separate daily limits'
+        },
         debug: {
           timestamp: new Date().toISOString(),
           totalKeys: apiKeys.length,
@@ -437,6 +496,31 @@ const handler = async (req: Request): Promise<Response> => {
         }
       }), {
         status: 429,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+
+    if (authErrorCount > 0) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: `${authErrorCount} of ${apiKeys.length} API keys have authentication issues.`,
+        items: [],
+        message: '🔒 Some API keys have authentication problems. Please verify your credentials.',
+        recommendation: 'Check your eBay API credentials in Settings > eBay API Keys.',
+        troubleshooting: {
+          issue: 'Authentication Errors',
+          solution: 'Verify API credentials in eBay Developer Console',
+          affectedKeys: authErrorCount,
+          totalKeys: apiKeys.length,
+          checkList: ['App ID is correct', 'Dev ID matches', 'Cert ID is active', 'Keys are for correct environment']
+        },
+        debug: {
+          timestamp: new Date().toISOString(),
+          authErrors: authErrorCount,
+          totalKeys: apiKeys.length
+        }
+      }), {
+        status: 401,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
@@ -452,6 +536,7 @@ const handler = async (req: Request): Promise<Response> => {
         success: false, 
         error: error.message,
         items: [],
+        message: '❌ ' + error.message,
         recommendation: error.message.includes('No eBay API keys') ? 
           'Configure eBay API keys in Settings > eBay API Keys.' :
           'Check eBay API configuration and network connectivity.',
