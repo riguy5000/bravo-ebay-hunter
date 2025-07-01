@@ -152,6 +152,30 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
         throw error;
       }
 
+      // Schedule the cron job if task is active
+      if (data.status === 'active') {
+        try {
+          console.log('Scheduling cron job for new task...');
+          const cronResponse = await supabase.functions.invoke('cron-manager', {
+            body: {
+              action: 'schedule',
+              taskId: data.id,
+              pollInterval: data.poll_interval || 300
+            }
+          });
+
+          if (cronResponse.error) {
+            console.error('Failed to schedule cron job:', cronResponse.error);
+            // Don't fail the task creation, just log the error
+          } else {
+            console.log('Cron job scheduled successfully:', cronResponse.data);
+          }
+        } catch (cronError) {
+          console.error('Error scheduling cron job:', cronError);
+          // Don't fail the task creation, just log the error
+        }
+      }
+
       console.log('Task created successfully:', data);
       toast({
         title: "Success",
