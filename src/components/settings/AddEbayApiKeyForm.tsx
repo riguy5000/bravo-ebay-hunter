@@ -17,15 +17,16 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
   const { settings, updateSetting } = useSettings();
   const [formData, setFormData] = useState({
     label: '',
-    key: '',
-    request_interval: 60
+    app_id: '',
+    dev_id: '',
+    cert_id: ''
   });
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.label.trim() || !formData.key.trim()) {
+    if (!formData.label.trim() || !formData.app_id.trim() || !formData.dev_id.trim() || !formData.cert_id.trim()) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -34,17 +35,22 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
     
     try {
       const currentKeys = settings.ebay_keys?.keys || [];
-      const existingKey = currentKeys.find(k => k.key === formData.key.trim());
+      const existingKey = currentKeys.find(k => 
+        k.app_id === formData.app_id.trim() || 
+        k.dev_id === formData.dev_id.trim() || 
+        k.cert_id === formData.cert_id.trim()
+      );
       
       if (existingKey) {
-        toast.error('This API key is already configured');
+        toast.error('One or more of these credentials are already configured');
         return;
       }
 
       const newKey = {
         label: formData.label.trim(),
-        key: formData.key.trim(),
-        request_interval: formData.request_interval,
+        app_id: formData.app_id.trim(),
+        dev_id: formData.dev_id.trim(),
+        cert_id: formData.cert_id.trim(),
         status: 'unknown' as const,
         last_used: null,
         success_rate: null
@@ -57,11 +63,11 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
 
       await updateSetting('ebay_keys', updatedEbayKeys);
       
-      toast.success(`API key "${formData.label}" added successfully!`);
+      toast.success(`API key set "${formData.label}" added successfully!`);
       onSuccess();
     } catch (error: any) {
-      console.error('Error adding API key:', error);
-      toast.error('Failed to add API key: ' + error.message);
+      console.error('Error adding API key set:', error);
+      toast.error('Failed to add API key set: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -72,9 +78,9 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Add New eBay API Key</CardTitle>
+            <CardTitle>Add New eBay API Key Set</CardTitle>
             <CardDescription>
-              Add another eBay API key to increase your rate limit capacity
+              Add a complete set of eBay API credentials to increase your rate limit capacity
             </CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -88,7 +94,7 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
             <Label htmlFor="label">Label *</Label>
             <Input
               id="label"
-              placeholder="e.g., Primary API Key, Backup Key 1"
+              placeholder="e.g., Primary Keys, Backup Keys 1"
               value={formData.label}
               onChange={(e) => setFormData(prev => ({ ...prev, label: e.target.value }))}
               required
@@ -96,28 +102,42 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
           </div>
 
           <div>
-            <Label htmlFor="apiKey">eBay API Key (App ID) *</Label>
+            <Label htmlFor="appId">eBay App ID (Client ID) *</Label>
             <Input
-              id="apiKey"
+              id="appId"
               placeholder="Your eBay App ID"
-              value={formData.key}
-              onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+              value={formData.app_id}
+              onChange={(e) => setFormData(prev => ({ ...prev, app_id: e.target.value }))}
               required
             />
           </div>
 
           <div>
-            <Label htmlFor="interval">Request Interval (seconds)</Label>
+            <Label htmlFor="devId">eBay Dev ID (Developer ID) *</Label>
             <Input
-              id="interval"
-              type="number"
-              min="1"
-              max="86400"
-              value={formData.request_interval}
-              onChange={(e) => setFormData(prev => ({ ...prev, request_interval: parseInt(e.target.value) || 60 }))}
+              id="devId"
+              placeholder="Your eBay Dev ID"
+              value={formData.dev_id}
+              onChange={(e) => setFormData(prev => ({ ...prev, dev_id: e.target.value }))}
+              required
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Minimum time between requests for this key (helps avoid rate limiting)
+          </div>
+
+          <div>
+            <Label htmlFor="certId">eBay Cert ID (Certificate ID) *</Label>
+            <Input
+              id="certId"
+              placeholder="Your eBay Cert ID"
+              value={formData.cert_id}
+              onChange={(e) => setFormData(prev => ({ ...prev, cert_id: e.target.value }))}
+              required
+            />
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm text-blue-800 font-medium mb-2">Where to find your eBay credentials:</p>
+            <p className="text-xs text-blue-700">
+              Go to your eBay Developer Dashboard → My Account → Keys & Certificates
             </p>
           </div>
 
@@ -126,7 +146,7 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Adding...' : 'Add API Key'}
+              {saving ? 'Adding...' : 'Add API Key Set'}
             </Button>
           </div>
         </form>

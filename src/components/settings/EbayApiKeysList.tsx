@@ -9,8 +9,9 @@ import { supabase } from '@/integrations/supabase/client';
 
 interface EbayApiKey {
   label: string;
-  key: string;
-  request_interval: number;
+  app_id: string;
+  dev_id: string;
+  cert_id: string;
   last_used?: string;
   status?: 'active' | 'rate_limited' | 'error' | 'unknown';
   success_rate?: number;
@@ -24,7 +25,7 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys }) => {
   const [testingKeys, setTestingKeys] = useState<Set<string>>(new Set());
 
   const testApiKey = async (apiKey: EbayApiKey) => {
-    setTestingKeys(prev => new Set([...prev, apiKey.key]));
+    setTestingKeys(prev => new Set([...prev, apiKey.app_id]));
     
     try {
       const { data, error } = await supabase.functions.invoke('ebay-search', {
@@ -32,26 +33,30 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys }) => {
           keywords: 'test jewelry',
           maxPrice: 50,
           minFeedback: 0,
-          testKey: apiKey.key // Pass specific key for testing
+          testKey: {
+            app_id: apiKey.app_id,
+            dev_id: apiKey.dev_id,
+            cert_id: apiKey.cert_id
+          }
         }
       });
 
       if (error) throw error;
 
       if (data.success) {
-        toast.success(`API Key "${apiKey.label}" is working! Found ${data.items?.length || 0} items.`);
+        toast.success(`API Key Set "${apiKey.label}" is working! Found ${data.items?.length || 0} items.`);
       } else if (data.rateLimited) {
-        toast.warning(`API Key "${apiKey.label}" is rate limited. Try again later.`);
+        toast.warning(`API Key Set "${apiKey.label}" is rate limited. Try again later.`);
       } else {
-        toast.error(`API Key "${apiKey.label}" test failed: ${data.error}`);
+        toast.error(`API Key Set "${apiKey.label}" test failed: ${data.error}`);
       }
     } catch (error: any) {
       console.error('API key test error:', error);
-      toast.error(`Failed to test API key "${apiKey.label}": ${error.message}`);
+      toast.error(`Failed to test API key set "${apiKey.label}": ${error.message}`);
     } finally {
       setTestingKeys(prev => {
         const newSet = new Set(prev);
-        newSet.delete(apiKey.key);
+        newSet.delete(apiKey.app_id);
         return newSet;
       });
     }
@@ -70,21 +75,22 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys }) => {
     }
   };
 
-  const maskApiKey = (key: string) => {
-    if (key.length <= 8) return key;
-    return key.substring(0, 4) + '••••••••' + key.substring(key.length - 4);
+  const maskCredential = (credential: string) => {
+    if (credential.length <= 8) return credential;
+    return credential.substring(0, 4) + '••••••••' + credential.substring(credential.length - 4);
   };
 
   return (
     <div>
-      <h3 className="text-lg font-medium mb-4">Configured API Keys ({keys.length})</h3>
+      <h3 className="text-lg font-medium mb-4">Configured API Key Sets ({keys.length})</h3>
       
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Label</TableHead>
-            <TableHead>API Key</TableHead>
-            <TableHead>Interval (sec)</TableHead>
+            <TableHead>App ID</TableHead>
+            <TableHead>Dev ID</TableHead>
+            <TableHead>Cert ID</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Success Rate</TableHead>
             <TableHead>Last Used</TableHead>
@@ -95,8 +101,9 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys }) => {
           {keys.map((apiKey, index) => (
             <TableRow key={index}>
               <TableCell className="font-medium">{apiKey.label}</TableCell>
-              <TableCell className="font-mono text-sm">{maskApiKey(apiKey.key)}</TableCell>
-              <TableCell>{apiKey.request_interval}s</TableCell>
+              <TableCell className="font-mono text-sm">{maskCredential(apiKey.app_id)}</TableCell>
+              <TableCell className="font-mono text-sm">{maskCredential(apiKey.dev_id)}</TableCell>
+              <TableCell className="font-mono text-sm">{maskCredential(apiKey.cert_id)}</TableCell>
               <TableCell>{getStatusBadge(apiKey.status)}</TableCell>
               <TableCell>
                 {apiKey.success_rate !== undefined 
@@ -116,10 +123,10 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys }) => {
                     size="sm"
                     variant="outline"
                     onClick={() => testApiKey(apiKey)}
-                    disabled={testingKeys.has(apiKey.key)}
+                    disabled={testingKeys.has(apiKey.app_id)}
                   >
                     <TestTube className="h-4 w-4" />
-                    {testingKeys.has(apiKey.key) ? 'Testing...' : 'Test'}
+                    {testingKeys.has(apiKey.app_id) ? 'Testing...' : 'Test'}
                   </Button>
                   <Button size="sm" variant="ghost">
                     <Edit className="h-4 w-4" />

@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -15,7 +16,11 @@ interface SearchRequest {
   listingType?: string[];
   minFeedback?: number;
   sortOrder?: string;
-  testKey?: string; // For testing specific keys
+  testKey?: {
+    app_id: string;
+    dev_id: string;
+    cert_id: string;
+  };
 }
 
 interface EbayItem {
@@ -36,8 +41,9 @@ interface EbayItem {
 
 interface EbayApiKey {
   label: string;
-  key: string;
-  request_interval: number;
+  app_id: string;
+  dev_id: string;
+  cert_id: string;
   last_used?: string;
   status?: string;
   success_rate?: number;
@@ -57,13 +63,17 @@ const getAvailableApiKeys = async (): Promise<EbayApiKey[]> => {
       .single();
 
     if (error || !data) {
-      console.log('No eBay keys configuration found, falling back to environment variable');
-      const fallbackKey = Deno.env.get('EBAY_APP_ID');
-      if (fallbackKey) {
+      console.log('No eBay keys configuration found, falling back to environment variables');
+      const fallbackAppId = Deno.env.get('EBAY_APP_ID');
+      const fallbackDevId = Deno.env.get('EBAY_DEV_ID');
+      const fallbackCertId = Deno.env.get('EBAY_CERT_ID');
+      
+      if (fallbackAppId && fallbackDevId && fallbackCertId) {
         return [{
-          label: 'Environment Key',
-          key: fallbackKey,
-          request_interval: 60,
+          label: 'Environment Keys',
+          app_id: fallbackAppId,
+          dev_id: fallbackDevId,
+          cert_id: fallbackCertId,
           status: 'unknown'
         }];
       }
@@ -119,7 +129,7 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
 
     const config = settingsData.value_json as { keys: EbayApiKey[], rotation_strategy: string };
     const updatedKeys = config.keys.map(key => {
-      if (key.key === keyToUpdate.key) {
+      if (key.app_id === keyToUpdate.app_id) {
         return {
           ...key,
           last_used: new Date().toISOString(),
@@ -144,15 +154,15 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
   }
 };
 
-const buildEbaySearchUrl = (params: SearchRequest, appId: string): string => {
+const buildEbaySearchUrl = (params: SearchRequest, credentials: EbayApiKey): string => {
   const baseUrl = 'https://svcs.ebay.com/services/search/FindingService/v1';
 
-  console.log('Using eBay App ID:', appId ? appId.substring(0, 10) + '...' : 'MISSING');
+  console.log('Using eBay App ID:', credentials.app_id ? credentials.app_id.substring(0, 10) + '...' : 'MISSING');
 
   const searchParams = new URLSearchParams({
     'OPERATION-NAME': 'findItemsByKeywords',
     'SERVICE-VERSION': '1.0.0',
-    'SECURITY-APPNAME': appId,
+    'SECURITY-APPNAME': credentials.app_id,
     'RESPONSE-DATA-FORMAT': 'JSON',
     'REST-PAYLOAD': '',
     'keywords': params.keywords,
@@ -262,10 +272,11 @@ const parseEbayResponse = (response: any): EbayItem[] => {
 
 const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest): Promise<{ items: EbayItem[], success: boolean, rateLimited: boolean }> => {
   try {
-    const searchUrl = buildEbaySearchUrl(searchParams, apiKey.key);
+    const searchUrl = buildEbaySearchUrl(searchParams, apiKey);
     console.log(`Trying API key "${apiKey.label}" for eBay search...`);
 
-    await new Promise(resolve => setTimeout(resolve, Math.max(1000, apiKey.request_interval * 1000)));
+    // Wait a minimum of 1 second between requests
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     const response = await fetch(searchUrl, {
       method: 'GET',
@@ -318,11 +329,12 @@ const handler = async (req: Request): Promise<Response> => {
 
     // If testing a specific key, use only that key
     if (searchParams.testKey) {
-      console.log('Testing specific API key:', searchParams.testKey.substring(0, 10) + '...');
+      console.log('Testing specific API key set:', searchParams.testKey.app_id.substring(0, 10) + '...');
       const testKey: EbayApiKey = {
-        label: 'Test Key',
-        key: searchParams.testKey,
-        request_interval: 3
+        label: 'Test Key Set',
+        app_id: searchParams.testKey.app_id,
+        dev_id: searchParams.testKey.dev_id,
+        cert_id: searchParams.testKey.cert_id
       };
       
       const result = await tryApiKeyRequest(testKey, searchParams);
@@ -333,7 +345,7 @@ const handler = async (req: Request): Promise<Response> => {
         rateLimited: result.rateLimited,
         totalResults: result.items.length,
         message: result.success ? `Test successful! Found ${result.items.length} items` : 'Test failed',
-        keyUsed: 'Test Key'
+        keyUsed: 'Test Key Set'
       }), {
         status: result.success ? 200 : (result.rateLimited ? 429 : 500),
         headers: { 'Content-Type': 'application/json', ...corsHeaders },

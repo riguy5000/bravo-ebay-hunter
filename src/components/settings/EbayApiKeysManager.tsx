@@ -27,20 +27,20 @@ export const EbayApiKeysManager = () => {
             <div>
               <CardTitle>eBay API Keys Management</CardTitle>
               <CardDescription>
-                Manage multiple eBay API keys to avoid rate limiting and increase API capacity
+                Manage multiple eBay API key sets to avoid rate limiting and increase API capacity
               </CardDescription>
             </div>
             <Button onClick={() => setShowAddForm(true)} className="flex items-center gap-2">
               <Plus className="h-4 w-4" />
-              Add API Key
+              Add API Key Set
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           {ebayKeys.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              <p>No eBay API keys configured yet.</p>
-              <p className="text-sm">Add your first API key to get started.</p>
+              <p>No eBay API key sets configured yet.</p>
+              <p className="text-sm">Add your first API key set to get started.</p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -62,11 +62,11 @@ export const EbayApiKeysManager = () => {
 
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="p-4">
-          <h4 className="font-medium text-blue-800 mb-2">How Multiple API Keys Work</h4>
+          <h4 className="font-medium text-blue-800 mb-2">How Multiple API Key Sets Work</h4>
           <ul className="text-sm text-blue-700 space-y-1">
-            <li>• Each eBay API key has its own daily rate limit</li>
-            <li>• System automatically rotates between available keys</li>
-            <li>• When one key hits rate limit, system switches to next available key</li>
+            <li>• Each eBay API key set (App ID + Dev ID + Cert ID) has its own daily rate limit</li>
+            <li>• System automatically rotates between available key sets</li>
+            <li>• When one set hits rate limit, system switches to next available set</li>
             <li>• Significantly increases your total API capacity</li>
             <li>• Prevents system downtime due to rate limiting</li>
           </ul>

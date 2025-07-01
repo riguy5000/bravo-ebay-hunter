@@ -12,8 +12,12 @@ interface PreciousMetalApiSettings {
 interface EbayKeysSettings {
   keys: Array<{
     label: string;
-    key: string;
-    request_interval: number;
+    app_id: string;
+    dev_id: string;
+    cert_id: string;
+    status?: 'active' | 'rate_limited' | 'error' | 'unknown';
+    last_used?: string;
+    success_rate?: number;
   }>;
   rotation_strategy: string;
 }
