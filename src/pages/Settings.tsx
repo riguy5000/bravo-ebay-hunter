@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ApiConfiguration } from '@/components/settings/ApiConfiguration';
 import { UserPreferences } from '@/components/settings/UserPreferences';
 import { DataImport } from '@/components/settings/DataImport';
+import { EbayApiKeysManager } from '@/components/settings/EbayApiKeysManager';
 
 const Settings = () => {
   return (
@@ -16,12 +17,17 @@ const Settings = () => {
       <Tabs defaultValue="api" className="w-full">
         <TabsList>
           <TabsTrigger value="api">API Configuration</TabsTrigger>
+          <TabsTrigger value="ebay-keys">eBay API Keys</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
           <TabsTrigger value="import">Import Data</TabsTrigger>
         </TabsList>
         
         <TabsContent value="api">
           <ApiConfiguration />
+        </TabsContent>
+        
+        <TabsContent value="ebay-keys">
+          <EbayApiKeysManager />
         </TabsContent>
         
         <TabsContent value="preferences">
