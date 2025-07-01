@@ -10,7 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { CalendarIcon, Brain, Zap } from "lucide-react"
+import { CalendarIcon, Brain, Zap, Clock, Info } from "lucide-react"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
@@ -32,7 +32,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
   const [itemType, setItemType] = useState<string | null>(null);
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const [minFeedback, setMinFeedback] = useState<number | null>(null);
-  const [pollInterval, setPollInterval] = useState<number | null>(300);
+  const [pollInterval, setPollInterval] = useState<number | null>(86400); // Default to 24 hours
   const [excludeKeywords, setExcludeKeywords] = useState<string[]>([]);
   const [listingFormats, setListingFormats] = useState<string[]>([]);
   const [itemLocation, setItemLocation] = useState<string | null>(null);
@@ -72,6 +72,27 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
       setItemType(template.itemType || null);
     }
   }, [template]);
+
+  // Check if task name suggests gold/precious metals for interval recommendation
+  const isGoldRelated = name.toLowerCase().includes('gold') || 
+                       name.toLowerCase().includes('scrap') || 
+                       name.toLowerCase().includes('precious') ||
+                       name.toLowerCase().includes('silver') ||
+                       name.toLowerCase().includes('platinum');
+
+  const getRecommendedInterval = () => {
+    if (isGoldRelated) {
+      return 86400; // 24 hours for gold/precious metals
+    }
+    return 300; // 5 minutes for other items
+  };
+
+  const getIntervalLabel = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+    return `${Math.floor(seconds / 86400)}d`;
+  };
 
   const handleKeywordAdd = (keyword: string) => {
     setExcludeKeywords([...excludeKeywords, keyword]);
@@ -113,7 +134,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
         item_type: itemType as 'jewelry' | 'watch' | 'gemstone',
         max_price: maxPrice || null,
         min_seller_feedback: minFeedback || 0,
-        poll_interval: pollInterval || 300,
+        poll_interval: pollInterval || 86400, // Default to 24 hours
         exclude_keywords: excludeKeywords.filter(k => k.trim()),
         listing_format: listingFormats.length > 0 ? listingFormats : null,
         item_location: itemLocation || null,
@@ -160,7 +181,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
             body: {
               action: 'schedule',
               taskId: data.id,
-              pollInterval: data.poll_interval || 300
+              pollInterval: data.poll_interval || 86400
             }
           });
 
@@ -224,7 +245,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
             <Label htmlFor="name">Task Name</Label>
             <Input
               id="name"
-              placeholder="e.g., Gold Ring Search"
+              placeholder="e.g., Daily Gold Scrap Scanner"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -285,14 +306,80 @@ export const TaskForm: React.FC<TaskFormProps> = ({ template, onSuccess, onCance
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="pollInterval">Search Interval (seconds)</Label>
+            <Label htmlFor="pollInterval" className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Search Interval (seconds)
+            </Label>
+            
+            {/* Intelligent interval recommendation */}
+            {isGoldRelated && (
+              <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <Info className="h-4 w-4 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-green-800">Recommended: 24-hour polling</p>
+                    <p className="text-xs text-green-700">
+                      Gold/precious metal prices move gradually. Daily polling prevents API rate limiting 
+                      and is more efficient for precious metals monitoring.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => setPollInterval(86400)}
+                    >
+                      Use 24 hours (Recommended)
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <Input
               id="pollInterval"
               type="number"
-              placeholder="e.g., 300"
+              placeholder="86400 (24 hours recommended for gold)"
               value={pollInterval === null ? '' : pollInterval.toString()}
               onChange={(e) => setPollInterval(e.target.value === '' ? null : Number(e.target.value))}
             />
+            
+            {pollInterval && (
+              <p className="text-xs text-gray-500">
+                This task will run every {getIntervalLabel(pollInterval)}
+                {pollInterval < 300 && (
+                  <span className="text-orange-600 font-medium"> (Warning: Very frequent polling may cause API rate limiting)</span>
+                )}
+              </p>
+            )}
+
+            {/* Quick interval buttons */}
+            <div className="flex flex-wrap gap-2 mt-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setPollInterval(300)}
+              >
+                5 minutes
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setPollInterval(3600)}
+              >
+                1 hour
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={isGoldRelated ? "default" : "outline"}
+                onClick={() => setPollInterval(86400)}
+              >
+                24 hours {isGoldRelated && "(Recommended)"}
+              </Button>
+            </div>
           </div>
 
           <div>
