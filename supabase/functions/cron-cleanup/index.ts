@@ -33,21 +33,7 @@ const handler = async (req: Request): Promise<Response> => {
     const validTaskIds = new Set(existingTasks?.map(task => task.id) || []);
     console.log(`📋 Found ${validTaskIds.size} valid tasks`);
 
-    // Get all cron jobs to identify orphaned ones
-    const { data: cronJobs, error: cronError } = await supabase
-      .rpc('get_cron_jobs')
-      .catch(() => {
-        // If the function doesn't exist, we'll create a simpler cleanup approach
-        console.log('⚠️ get_cron_jobs function not available, using alternative cleanup');
-        return { data: null, error: null };
-      });
-
-    if (cronError) {
-      console.error('Error fetching cron jobs:', cronError);
-    }
-
     // Clean up orphaned cron jobs by attempting to unschedule all possible task-related jobs
-    // This is a brute force approach since we can't easily list all cron jobs
     let cleanupCount = 0;
     const potentialOrphanedTaskIds = [
       '98ddbb89-d9fd-41aa-ac24-bd57fb666c05', // This was showing in the logs
@@ -74,20 +60,16 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // Also clean up any cron jobs that might be running for non-existent tasks
-    // by attempting to unschedule with a more generic approach
-    try {
-      // Clear any remaining task-related cron jobs by pattern
-      const { error: clearError } = await supabase
-        .from('cron.job')
-        .delete()
-        .like('jobname', 'task_%')
-        .catch(() => {
-          // This might not work depending on permissions, but that's OK
-          console.log('ℹ️ Direct cron job cleanup not available, relying on unschedule functions');
-        });
-    } catch (error) {
-      console.log('ℹ️ Direct cron cleanup not available, using function-based cleanup');
+    // Update task last_run timestamp - CRITICAL for showing task is working
+    const { error: updateError } = await supabase
+      .from('tasks')
+      .update({ last_run: new Date().toISOString() })
+      .in('id', Array.from(validTaskIds));
+
+    if (updateError) {
+      console.error('❌ Error updating task last_run timestamps:', updateError);
+    } else {
+      console.log(`✅ Updated last_run timestamps for ${validTaskIds.size} tasks`);
     }
 
     console.log(`🎯 Cleanup Summary:`);

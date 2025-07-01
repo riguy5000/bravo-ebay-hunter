@@ -56,7 +56,7 @@ const buildEbaySearchUrl = (params: SearchRequest): string => {
     'RESPONSE-DATA-FORMAT': 'JSON',
     'REST-PAYLOAD': '',
     'keywords': params.keywords,
-    'paginationInput.entriesPerPage': '100',
+    'paginationInput.entriesPerPage': '25', // Reduced from 100 to avoid rate limits
     'sortOrder': params.sortOrder || 'PricePlusShipping'
   });
 
@@ -106,7 +106,7 @@ const parseEbayResponse = (response: any): EbayItem[] => {
   const items: EbayItem[] = [];
   
   try {
-    console.log('Raw eBay response structure:', JSON.stringify(response, null, 2));
+    console.log('Parsing eBay response...');
     
     const searchResult = response.findItemsByKeywordsResponse?.[0];
     if (!searchResult) {
@@ -176,7 +176,10 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     const searchUrl = buildEbaySearchUrl(searchParams);
-    console.log('eBay API URL:', searchUrl);
+    console.log('eBay API URL (truncated):', searchUrl.substring(0, 200) + '...');
+
+    // Add delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     const response = await fetch(searchUrl, {
       method: 'GET',
@@ -188,11 +191,29 @@ const handler = async (req: Request): Promise<Response> => {
     });
 
     console.log('eBay API response status:', response.status, response.statusText);
-    console.log('eBay API response headers:', Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('eBay API error response:', errorText);
+      
+      // Handle rate limiting specifically
+      if (response.status === 500 && errorText.includes('exceeded the number of times')) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'eBay API rate limit exceeded. Please wait a few minutes before trying again.',
+          rateLimited: true,
+          items: [],
+          debug: {
+            timestamp: new Date().toISOString(),
+            status: response.status,
+            statusText: response.statusText
+          }
+        }), {
+          status: 429, // Use proper rate limit status code
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+      
       throw new Error(`eBay API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
@@ -205,7 +226,8 @@ const handler = async (req: Request): Promise<Response> => {
     return new Response(JSON.stringify({ 
       success: true, 
       items: items,
-      totalResults: items.length 
+      totalResults: items.length,
+      message: `Found ${items.length} items successfully`
     }), {
       status: 200,
       headers: {

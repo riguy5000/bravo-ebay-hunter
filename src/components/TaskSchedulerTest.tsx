@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Play, Loader2, Zap, Clock, Settings, Bug, Search, Trash2, AlertTriangle } from 'lucide-react';
+import { Play, Loader2, Zap, Clock, Settings, Bug, Search, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useTasks } from '@/hooks/useTasks';
 
 export const TaskSchedulerTest: React.FC = () => {
@@ -12,6 +12,8 @@ export const TaskSchedulerTest: React.FC = () => {
   const [isScheduling, setIsScheduling] = useState(false);
   const [isTestingEbay, setIsTestingEbay] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanupDone, setCleanupDone] = useState(false);
+  const [ebayTestDone, setEbayTestDone] = useState(false);
   const { tasks, refetch } = useTasks();
 
   const cleanupOrphanedCronJobs = async () => {
@@ -28,9 +30,9 @@ export const TaskSchedulerTest: React.FC = () => {
       }
 
       console.log('Cron cleanup result:', data);
-      toast.success(`Cleanup completed! Found ${data.validTasks} valid tasks, cleaned ${data.orphanedJobsCleanedUp} orphaned cron jobs`);
+      toast.success(`✅ Cleanup completed! Found ${data.validTasks} valid tasks, cleaned ${data.orphanedJobsCleanedUp} orphaned cron jobs`);
       
-      // Refresh tasks after cleanup
+      setCleanupDone(true);
       await refetch();
       
     } catch (error: any) {
@@ -64,7 +66,10 @@ export const TaskSchedulerTest: React.FC = () => {
       console.log('eBay API test response:', data);
       
       if (data.success && data.items) {
-        toast.success(`eBay API test successful! Found ${data.items.length} items`);
+        toast.success(`✅ eBay API test successful! Found ${data.items.length} items`);
+        setEbayTestDone(true);
+      } else if (data.rateLimited) {
+        toast.warning('⏰ eBay API rate limited. Wait a few minutes then try again.');
       } else {
         toast.error('eBay API test failed: ' + (data.error || 'Unknown error'));
       }
@@ -93,9 +98,8 @@ export const TaskSchedulerTest: React.FC = () => {
       }
 
       console.log('Task scheduler response:', data);
-      toast.success(`Task scheduler completed: ${data.message}`);
+      toast.success(`✅ Task scheduler completed: ${data.message}`);
       
-      // Refresh tasks to see updated last_run
       await refetch();
       
     } catch (error: any) {
@@ -122,9 +126,8 @@ export const TaskSchedulerTest: React.FC = () => {
       }
 
       console.log('Task scheduler response:', data);
-      toast.success(`Task "${taskName}" test completed: ${data.message}`);
+      toast.success(`✅ Task "${taskName}" test completed: ${data.message}`);
       
-      // Refresh tasks to see updated last_run
       await refetch();
       
     } catch (error: any) {
@@ -140,7 +143,6 @@ export const TaskSchedulerTest: React.FC = () => {
     try {
       console.log('Fixing cron scheduling for active tasks...');
       
-      // Get all active tasks
       const activeTasks = tasks.filter(task => task.status === 'active');
       
       if (activeTasks.length === 0) {
@@ -151,7 +153,6 @@ export const TaskSchedulerTest: React.FC = () => {
       let successCount = 0;
       let errorCount = 0;
 
-      // Schedule each active task
       for (const task of activeTasks) {
         try {
           console.log(`Scheduling task: ${task.name}`);
@@ -177,13 +178,12 @@ export const TaskSchedulerTest: React.FC = () => {
         }
       }
 
-      // Refresh tasks to see updated cron_job_id values
       await refetch();
 
       if (successCount > 0) {
-        toast.success(`Successfully scheduled ${successCount} task(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
+        toast.success(`✅ Successfully scheduled ${successCount} task(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
       } else {
-        toast.error(`Failed to schedule any tasks (${errorCount} errors)`);
+        toast.error(`❌ Failed to schedule any tasks (${errorCount} errors)`);
       }
       
     } catch (error: any) {
@@ -203,88 +203,124 @@ export const TaskSchedulerTest: React.FC = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Play className="h-5 w-5" />
-          Task Scheduler Debug
+          System Diagnostic & Repair
         </CardTitle>
         <CardDescription>
-          Debug and fix task scheduling issues
+          Fix all system issues step by step
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Cleanup Section - Show this first if there are issues */}
-        {(hasNoTasks || !goldScrapTask) && (
-          <div className="space-y-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-            <div className="flex items-center gap-2 text-sm text-yellow-800 mb-2">
-              <AlertTriangle className="h-4 w-4" />
-              <span className="font-medium">Setup Required</span>
-            </div>
-            <Button 
-              onClick={cleanupOrphanedCronJobs} 
-              disabled={isCleaning}
-              variant="outline"
-              className="w-full"
-            >
-              {isCleaning ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Cleaning up...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  1. Clean Up Orphaned Jobs
-                </>
-              )}
-            </Button>
-            <p className="text-xs text-yellow-700">
-              {hasNoTasks 
-                ? 'No tasks found. Clean up first, then create a new Gold Scrap Scanner task.'
-                : 'Clean up orphaned cron jobs that may be causing rate limiting.'}
-            </p>
+        {/* Step 1: Cleanup */}
+        <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center gap-2 text-sm text-blue-800 mb-2">
+            {cleanupDone ? <CheckCircle className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4" />}
+            <span className="font-medium">Step 1: System Cleanup</span>
           </div>
-        )}
+          <Button 
+            onClick={cleanupOrphanedCronJobs} 
+            disabled={isCleaning || cleanupDone}
+            variant={cleanupDone ? "secondary" : "default"}
+            className="w-full"
+          >
+            {isCleaning ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Cleaning...
+              </>
+            ) : cleanupDone ? (
+              <>
+                <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                Cleanup Complete
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Clean Up System
+              </>
+            )}
+          </Button>
+          <p className="text-xs text-blue-700">
+            {cleanupDone ? 'System cleanup completed successfully!' : 'Remove orphaned processes and fix rate limiting issues'}
+          </p>
+        </div>
 
-        {/* eBay API Test */}
-        <div className="space-y-2">
+        {/* Step 2: eBay API Test */}
+        <div className="space-y-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+          <div className="flex items-center gap-2 text-sm text-yellow-800 mb-2">
+            {ebayTestDone ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Search className="h-4 w-4" />}
+            <span className="font-medium">Step 2: eBay API Test</span>
+          </div>
           <Button 
             onClick={testEbayAPI} 
-            disabled={isTestingEbay}
-            variant="outline"
+            disabled={isTestingEbay || (!cleanupDone) || ebayTestDone}
+            variant={ebayTestDone ? "secondary" : "default"}
             className="w-full"
           >
             {isTestingEbay ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Testing eBay API...
+                Testing API...
+              </>
+            ) : ebayTestDone ? (
+              <>
+                <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                API Test Passed
               </>
             ) : (
               <>
                 <Search className="h-4 w-4 mr-2" />
-                2. Test eBay API Connection
+                Test eBay API
               </>
             )}
           </Button>
+          <p className="text-xs text-yellow-700">
+            {ebayTestDone ? 'eBay API is working correctly!' : 'Verify eBay connection after cleanup'}
+          </p>
         </div>
 
-        {/* Task Testing - Only show if we have tasks */}
+        {/* Step 3: Create Task (Manual) */}
+        {hasNoTasks && (
+          <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
+            <div className="flex items-center gap-2 text-sm text-green-800 mb-2">
+              <Settings className="h-4 w-4" />
+              <span className="font-medium">Step 3: Create Task</span>
+            </div>
+            <p className="text-sm text-green-700 mb-2">
+              Click "Create Task" above to make a new Gold Scrap Scanner task.
+            </p>
+            <p className="text-xs text-green-600">
+              ✓ Use these settings: Item Type = Jewelry, Max Price = $500, Keywords = "gold scrap"
+            </p>
+          </div>
+        )}
+
+        {/* Step 4: Test Task */}
         {goldScrapTask && (
-          <div className="space-y-2">
+          <div className="space-y-2 p-3 bg-purple-50 rounded-lg border border-purple-200">
+            <div className="flex items-center gap-2 text-sm text-purple-800 mb-2">
+              <Zap className="h-4 w-4" />
+              <span className="font-medium">Step 4: Test Gold Scanner</span>
+            </div>
             <Button 
               onClick={() => testSpecificTask(goldScrapTask.id, goldScrapTask.name)} 
-              disabled={isRunning}
+              disabled={isRunning || !ebayTestDone}
               className="w-full"
             >
               {isRunning ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Testing...
+                  Testing Scanner...
                 </>
               ) : (
                 <>
                   <Zap className="h-4 w-4 mr-2" />
-                  3. Test Gold Scrap Scanner
+                  Test Gold Scrap Scanner
                 </>
               )}
             </Button>
+            <p className="text-xs text-purple-700">
+              Test your Gold Scrap Scanner task functionality
+            </p>
           </div>
         )}
 
@@ -344,40 +380,25 @@ export const TaskSchedulerTest: React.FC = () => {
         <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
           <div className="flex items-center gap-2 text-sm text-blue-800 mb-2">
             <Clock className="h-4 w-4" />
-            <span className="font-medium">Current Status</span>
+            <span className="font-medium">System Status</span>
           </div>
           <ul className="text-xs text-blue-700 space-y-1">
             <li>• {tasks.length} total task(s) found</li>
             <li>• {activeTasks.length} active task(s)</li>
             <li>• {activeTasks.filter(t => t.cron_job_id).length} task(s) scheduled</li>
-            <li>• {activeTasks.filter(t => !t.cron_job_id).length} task(s) need scheduling</li>
+            <li>• System cleanup: {cleanupDone ? '✅ Complete' : '⏳ Pending'}</li>
+            <li>• eBay API: {ebayTestDone ? '✅ Working' : '⏳ Not tested'}</li>
             {goldScrapTask ? (
               <>
-                <li>• Gold Scrap Scanner: {goldScrapTask.cron_job_id ? 'Scheduled ✓' : 'Not Scheduled ✗'}</li>
+                <li>• Gold Scanner: {goldScrapTask.cron_job_id ? '✅ Scheduled' : '⏳ Not scheduled'}</li>
                 {goldScrapTask.last_run && (
                   <li>• Last run: {new Date(goldScrapTask.last_run).toLocaleString()}</li>
                 )}
               </>
             ) : (
-              <li>• No Gold Scrap Scanner task found</li>
+              <li>• Gold Scanner: {hasNoTasks ? '❌ Create new task' : '❌ Not found'}</li>
             )}
           </ul>
-        </div>
-
-        {/* Step-by-step Instructions */}
-        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-          <div className="flex items-center gap-2 text-sm text-green-800 mb-2">
-            <Bug className="h-4 w-4" />
-            <span className="font-medium">Setup Steps</span>
-          </div>
-          <ol className="text-xs text-green-700 space-y-1 list-decimal list-inside">
-            <li>Clean up orphaned cron jobs first</li>
-            <li>Test eBay API connection</li>
-            {!goldScrapTask && <li>Go to Tasks page and create new Gold Scrap Scanner</li>}
-            <li>Test your specific task functionality</li>
-            <li>Check browser console for detailed logs</li>
-            <li>Verify last_run timestamp updates</li>
-          </ol>
         </div>
       </CardContent>
     </Card>
