@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -73,38 +72,85 @@ export const useMatches = () => {
   const [jewelryMatches, setJewelryMatches] = useState<JewelryMatch[]>([]);
   const [gemstoneMatches, setGemstoneMatches] = useState<GemstoneMatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const itemsPerPage = 25; // Increased from default pagination
 
   useEffect(() => {
     if (user) {
       fetchMatches();
     }
-  }, [user]);
+  }, [user, page]);
 
-  const fetchMatches = async () => {
+  const fetchMatches = async (resetData = false) => {
     if (!user) return;
 
     try {
       setLoading(true);
       
-      // Fetch all match types in parallel
+      // Calculate offset for pagination
+      const offset = resetData ? 0 : (page - 1) * itemsPerPage;
+      
+      // Fetch all match types in parallel with pagination
       const [watchData, jewelryData, gemstoneData] = await Promise.all([
-        supabase.from('matches_watch').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-        supabase.from('matches_jewelry').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-        supabase.from('matches_gemstone').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+        supabase
+          .from('matches_watch')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + itemsPerPage - 1),
+        supabase
+          .from('matches_jewelry')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + itemsPerPage - 1),
+        supabase
+          .from('matches_gemstone')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + itemsPerPage - 1)
       ]);
 
       if (watchData.error) console.error('Error fetching watch matches:', watchData.error);
       if (jewelryData.error) console.error('Error fetching jewelry matches:', jewelryData.error);
       if (gemstoneData.error) console.error('Error fetching gemstone matches:', gemstoneData.error);
 
-      setWatchMatches(watchData.data || []);
-      setJewelryMatches(jewelryData.data || []);
-      setGemstoneMatches(gemstoneData.data || []);
+      const newWatchMatches = watchData.data || [];
+      const newJewelryMatches = jewelryData.data || [];
+      const newGemstoneMatches = gemstoneData.data || [];
+
+      if (resetData || page === 1) {
+        setWatchMatches(newWatchMatches);
+        setJewelryMatches(newJewelryMatches);
+        setGemstoneMatches(newGemstoneMatches);
+      } else {
+        setWatchMatches(prev => [...prev, ...newWatchMatches]);
+        setJewelryMatches(prev => [...prev, ...newJewelryMatches]);
+        setGemstoneMatches(prev => [...prev, ...newGemstoneMatches]);
+      }
+
+      // Check if there are more items to load
+      const totalNewItems = newWatchMatches.length + newJewelryMatches.length + newGemstoneMatches.length;
+      setHasMore(totalNewItems === itemsPerPage * 3); // Rough estimation
+      
     } catch (error) {
       console.error('Error in fetchMatches:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadMore = () => {
+    if (hasMore && !loading) {
+      setPage(prev => prev + 1);
+    }
+  };
+
+  const refetch = () => {
+    setPage(1);
+    fetchMatches(true);
   };
 
   const updateWatchMatch = async (id: string, updates: Partial<WatchMatch>) => {
@@ -169,9 +215,11 @@ export const useMatches = () => {
     jewelryMatches,
     gemstoneMatches,
     loading,
+    hasMore,
+    loadMore,
     updateWatchMatch,
     updateJewelryMatch,
     updateGemstoneMatch,
-    refetch: fetchMatches,
+    refetch,
   };
 };

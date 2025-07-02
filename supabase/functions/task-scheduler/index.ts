@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -208,19 +207,25 @@ const processTask = async (task: Task) => {
   console.log(`🔄 Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}, Interval: ${task.poll_interval}s`);
   
   try {
+    // Build comprehensive search parameters with all task filters
     const searchParams = {
       keywords: buildSearchKeywords(task),
       maxPrice: task.max_price,
-      listingType: task.listing_format || ['Auction', 'FixedPrice'],
+      listingType: task.listing_format || ['Auction', 'Fixed Price (BIN)'], // CRITICAL: Pass listing formats
       minFeedback: task.min_seller_feedback || 0,
       itemLocation: task.item_location,
       dateFrom: task.date_from,
-      dateTo: task.date_to
+      dateTo: task.date_to,
+      itemType: task.item_type, // CRITICAL: Pass item type
+      typeSpecificFilters: task.item_type === 'watch' ? task.watch_filters :
+                          task.item_type === 'jewelry' ? task.jewelry_filters :
+                          task.item_type === 'gemstone' ? task.gemstone_filters : null,
+      condition: getConditionsFromFilters(task) // Helper to extract conditions
     };
 
-    console.log('Search params:', JSON.stringify(searchParams, null, 2));
+    console.log('🎯 Search params with filters:', JSON.stringify(searchParams, null, 2));
 
-    // Call the eBay search function
+    // Call the eBay search function with enhanced parameters
     const searchResponse = await supabase.functions.invoke('ebay-search', {
       body: searchParams
     });
@@ -260,22 +265,50 @@ const processTask = async (task: Task) => {
     let analyzedItems = 0;
     let excludedItems = 0;
     
-    // Process each item with AI analysis
-    for (const item of items.slice(0, 10)) { // Limit to first 10 items
+    // Process MORE items - increased from 10 to 25
+    for (const item of items.slice(0, 25)) {
       analyzedItems++;
+      
+      // Enhanced filtering with better logging
+      console.log(`🔍 Processing item: ${item.title}`);
+      console.log(`💰 Price: $${item.price}, Format: ${item.listingType || 'Unknown'}`);
       
       // Skip if price is too high
       if (task.max_price && item.price > task.max_price) {
-        console.log(`💰 Skipping item ${item.itemId} - price too high: $${item.price}`);
+        console.log(`💰 Skipping item ${item.itemId} - price too high: $${item.price} > $${task.max_price}`);
         excludedItems++;
         continue;
       }
 
       // Skip if seller feedback is too low
       if (task.min_seller_feedback && item.sellerInfo?.feedbackScore < task.min_seller_feedback) {
-        console.log(`⭐ Skipping item ${item.itemId} - feedback too low: ${item.sellerInfo?.feedbackScore}`);
+        console.log(`⭐ Skipping item ${item.itemId} - feedback too low: ${item.sellerInfo?.feedbackScore} < ${task.min_seller_feedback}`);
         excludedItems++;
         continue;
+      }
+
+      // Validate listing format matches task preferences
+      if (task.listing_format && task.listing_format.length > 0) {
+        const itemFormat = item.listingType || 'Unknown';
+        const formatMatches = task.listing_format.some(preferredFormat => {
+          // More flexible matching logic
+          if (preferredFormat === 'Fixed Price (BIN)' && (itemFormat.includes('Fixed') || itemFormat.includes('Buy'))) {
+            return true;
+          }
+          if (preferredFormat === 'Best Offer' && itemFormat.includes('Offer')) {
+            return true;
+          }
+          if (preferredFormat === 'Auction' && itemFormat.includes('Auction')) {
+            return true;
+          }
+          return itemFormat.includes(preferredFormat);
+        });
+
+        if (!formatMatches) {
+          console.log(`🏷️ Skipping item ${item.itemId} - format mismatch: ${itemFormat} not in ${task.listing_format.join(', ')}`);
+          excludedItems++;
+          continue;
+        }
       }
 
       // Check if we already have this item (duplicate prevention)
@@ -294,7 +327,7 @@ const processTask = async (task: Task) => {
       // AI Analysis
       const aiAnalysis = await analyzeItemWithAI(task, item);
       
-      // Smart exclusion logic
+      // Smart exclusion logic with enhanced logging
       const exclusionCheck = shouldExcludeItem(task, item, aiAnalysis);
       if (exclusionCheck.exclude) {
         console.log(`🚫 Excluding item: ${exclusionCheck.reason} - ${item.title}`);
@@ -302,7 +335,7 @@ const processTask = async (task: Task) => {
         continue;
       }
 
-      // Create new match record with AI analysis data
+      // Create new match record with AI analysis data and proper listing format
       const matchData = createMatchRecord(task, item, aiAnalysis);
 
       const { error: insertError } = await supabase
@@ -313,7 +346,8 @@ const processTask = async (task: Task) => {
         console.error('❌ Error inserting match:', insertError);
       } else {
         const aiInfo = aiAnalysis ? `(AI: ${aiAnalysis.qualityScore}/100, Deal: ${aiAnalysis.dealScore}/100)` : '';
-        console.log(`✅ Created ${task.item_type} match: ${item.title} - $${item.price} ${aiInfo}`);
+        const formatInfo = item.listingType ? `[${item.listingType}]` : '';
+        console.log(`✅ Created ${task.item_type} match: ${item.title} - $${item.price} ${formatInfo} ${aiInfo}`);
         newMatches++;
       }
     }
@@ -331,6 +365,7 @@ const processTask = async (task: Task) => {
     }
 
     console.log(`🎯 Task ${task.name} completed: ${newMatches} new matches, ${excludedItems} excluded, ${analyzedItems} analyzed`);
+    console.log(`📊 Filter effectiveness: ${((analyzedItems - excludedItems) / analyzedItems * 100).toFixed(1)}% items passed filters`);
 
   } catch (error) {
     console.error(`❌ Error processing task ${task.id}:`, error);
@@ -346,6 +381,31 @@ const processTask = async (task: Task) => {
       console.error('❌ Failed to update last_run after error:', updateError);
     }
   }
+};
+
+// Helper function to extract conditions from task filters
+const getConditionsFromFilters = (task: Task): string[] => {
+  const conditions: string[] = [];
+  
+  switch (task.item_type) {
+    case 'jewelry':
+      if (task.jewelry_filters?.conditions) {
+        conditions.push(...task.jewelry_filters.conditions);
+      }
+      break;
+    case 'watch':
+      if (task.watch_filters?.conditions) {
+        conditions.push(...task.watch_filters.conditions);
+      }
+      break;
+    case 'gemstone':
+      if (task.gemstone_filters?.conditions) {
+        conditions.push(...task.gemstone_filters.conditions);
+      }
+      break;
+  }
+  
+  return conditions;
 };
 
 const handler = async (req: Request): Promise<Response> => {
