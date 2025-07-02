@@ -11,17 +11,22 @@ import { AspectDataViewer } from '@/components/tasks/AspectDataViewer';
 import { TestDataPopulator } from '@/components/TestDataPopulator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useTasks, type Task } from '@/hooks/useTasks';
 
 const Tasks = () => {
+  const { tasks } = useTasks();
   const [showCreateFlow, setShowCreateFlow] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<TaskTemplate | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
+  const editingTask = editingTaskId ? tasks.find(t => t.id === editingTaskId) : null;
+
   const handleCreateSuccess = () => {
     setShowCreateFlow(false);
     setSelectedTemplate(null);
     setShowCustomForm(false);
+    setEditingTaskId(null);
   };
 
   const handleSelectTemplate = (template: TaskTemplate) => {
@@ -41,6 +46,15 @@ const Tasks = () => {
 
   const handleEditTask = (taskId: string) => {
     setEditingTaskId(taskId);
+    setShowCreateFlow(true);
+    setShowCustomForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    setShowCreateFlow(false);
+    setSelectedTemplate(null);
+    setShowCustomForm(false);
+    setEditingTaskId(null);
   };
 
   const renderCreateFlow = () => {
@@ -48,9 +62,10 @@ const Tasks = () => {
       return (
         <TaskForm 
           template={selectedTemplate}
+          editingTask={editingTask}
           onSuccess={handleCreateSuccess}
-          onCancel={() => setShowCreateFlow(false)}
-          onBackToTemplates={selectedTemplate ? handleBackToTemplates : undefined}
+          onCancel={handleCancelEdit}
+          onBackToTemplates={selectedTemplate && !editingTask ? handleBackToTemplates : undefined}
         />
       );
     }
@@ -61,6 +76,16 @@ const Tasks = () => {
         onCustomTask={handleCustomTask}
       />
     );
+  };
+
+  const getDialogTitle = () => {
+    if (editingTask) {
+      return `Edit Task: ${editingTask.name}`;
+    }
+    if (showCustomForm) {
+      return selectedTemplate ? `Create ${selectedTemplate.name}` : 'Create Custom Task';
+    }
+    return 'Create New Search Task';
   };
 
   return (
@@ -106,10 +131,7 @@ const Tasks = () => {
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {showCustomForm 
-                ? (selectedTemplate ? `Create ${selectedTemplate.name}` : 'Create Custom Task')
-                : 'Create New Search Task'
-              }
+              {getDialogTitle()}
             </DialogTitle>
           </DialogHeader>
           {renderCreateFlow()}

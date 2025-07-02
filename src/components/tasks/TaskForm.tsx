@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowLeft, Save } from 'lucide-react';
 import { toast } from 'sonner';
-import { useTasks } from '@/hooks/useTasks';
+import { useTasks, type Task } from '@/hooks/useTasks';
 import { WatchFilters } from './WatchFilters';
 import { JewelryFilters } from './JewelryFilters';
 import { GemstoneFliters } from './GemstoneFliters';
@@ -20,6 +20,7 @@ import type { TaskTemplate } from './TaskTemplates';
 
 interface TaskFormProps {
   template?: TaskTemplate | null;
+  editingTask?: Task | null;
   onSuccess: () => void;
   onCancel: () => void;
   onBackToTemplates?: () => void;
@@ -27,31 +28,50 @@ interface TaskFormProps {
 
 export const TaskForm: React.FC<TaskFormProps> = ({
   template,
+  editingTask,
   onSuccess,
   onCancel,
   onBackToTemplates
 }) => {
-  const { createTask } = useTasks();
+  const { createTask, updateTask } = useTasks();
   const [loading, setLoading] = useState(false);
   
   // Form state
-  const [name, setName] = useState(template?.name || '');
-  const [itemType, setItemType] = useState<'watch' | 'jewelry' | 'gemstone'>(template?.itemType || 'jewelry');
-  const [maxPrice, setMaxPrice] = useState(template?.maxPrice?.toString() || '1000');
-  const [pollInterval, setPollInterval] = useState('300'); // Default 5 minutes
-  const [minSellerFeedback, setMinSellerFeedback] = useState('0');
-  const [excludeKeywords, setExcludeKeywords] = useState('');
+  const [name, setName] = useState(template?.name || editingTask?.name || '');
+  const [itemType, setItemType] = useState<'watch' | 'jewelry' | 'gemstone'>(
+    template?.itemType || editingTask?.item_type || 'jewelry'
+  );
+  const [maxPrice, setMaxPrice] = useState(
+    template?.maxPrice?.toString() || editingTask?.max_price?.toString() || '1000'
+  );
+  const [pollInterval, setPollInterval] = useState(
+    editingTask?.poll_interval?.toString() || '300'
+  );
+  const [minSellerFeedback, setMinSellerFeedback] = useState(
+    editingTask?.min_seller_feedback?.toString() || '0'
+  );
+  const [excludeKeywords, setExcludeKeywords] = useState(
+    editingTask?.exclude_keywords?.join(', ') || ''
+  );
   
   // New expanded listing format options
-  const [listingFormats, setListingFormats] = useState<string[]>(['Fixed Price (BIN)', 'Auction']);
+  const [listingFormats, setListingFormats] = useState<string[]>(
+    template?.listingFormats || editingTask?.listing_format || ['Fixed Price (BIN)', 'Auction']
+  );
   
   // Subcategory selection
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
   
   // Type-specific filters
-  const [watchFilters, setWatchFilters] = useState(template?.watchFilters || {});
-  const [jewelryFilters, setJewelryFilters] = useState(template?.jewelryFilters || {});
-  const [gemstoneFilters, setGemstoneFilters] = useState(template?.gemstoneFilters || {});
+  const [watchFilters, setWatchFilters] = useState(
+    template?.watchFilters || editingTask?.watch_filters || {}
+  );
+  const [jewelryFilters, setJewelryFilters] = useState(
+    template?.jewelryFilters || editingTask?.jewelry_filters || {}
+  );
+  const [gemstoneFilters, setGemstoneFilters] = useState(
+    template?.gemstoneFilters || editingTask?.gemstone_filters || {}
+  );
 
   useEffect(() => {
     if (template) {
@@ -66,8 +86,19 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       if (template.listingFormats) {
         setListingFormats(template.listingFormats);
       }
+    } else if (editingTask) {
+      setName(editingTask.name);
+      setItemType(editingTask.item_type);
+      setMaxPrice(editingTask.max_price?.toString() || '1000');
+      setPollInterval(editingTask.poll_interval?.toString() || '300');
+      setMinSellerFeedback(editingTask.min_seller_feedback?.toString() || '0');
+      setExcludeKeywords(editingTask.exclude_keywords?.join(', ') || '');
+      setListingFormats(editingTask.listing_format || ['Fixed Price (BIN)', 'Auction']);
+      setWatchFilters(editingTask.watch_filters || {});
+      setJewelryFilters(editingTask.jewelry_filters || {});
+      setGemstoneFilters(editingTask.gemstone_filters || {});
     }
-  }, [template]);
+  }, [template, editingTask]);
 
   const listingFormatOptions = [
     { id: 'Fixed Price (BIN)', label: 'Fixed Price (BIN)' },
@@ -109,7 +140,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       const taskData = {
         name: name.trim(),
         item_type: itemType,
-        status: 'active' as const,
+        status: (editingTask?.status || 'active') as const,
         max_price: maxPrice ? parseFloat(maxPrice) : undefined,
         poll_interval: intervalNum,
         listing_format: listingFormats,
@@ -120,12 +151,18 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         gemstone_filters: itemType === 'gemstone' ? gemstoneFilters : undefined,
       };
 
-      await createTask(taskData);
-      toast.success(`Task "${name}" created successfully!`);
+      if (editingTask) {
+        await updateTask(editingTask.id, taskData);
+        toast.success(`Task "${name}" updated successfully!`);
+      } else {
+        await createTask(taskData);
+        toast.success(`Task "${name}" created successfully!`);
+      }
+      
       onSuccess();
     } catch (error: any) {
-      console.error('Error creating task:', error);
-      toast.error('Failed to create task: ' + error.message);
+      console.error('Error saving task:', error);
+      toast.error('Failed to save task: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -180,6 +217,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
     }
   };
 
+  const isEditing = !!editingTask;
+
   return (
     <Card className="w-full max-w-4xl mx-auto">
       <CardHeader>
@@ -191,10 +230,18 @@ export const TaskForm: React.FC<TaskFormProps> = ({
           )}
           <div>
             <CardTitle>
-              {template ? `Create ${template.name}` : 'Create Custom Task'}
+              {isEditing 
+                ? `Edit Task: ${editingTask.name}`
+                : template 
+                ? `Create ${template.name}` 
+                : 'Create Custom Task'
+              }
             </CardTitle>
             <CardDescription>
-              Configure your automated eBay search with AI analysis
+              {isEditing 
+                ? 'Update your automated eBay search configuration'
+                : 'Configure your automated eBay search with AI analysis'
+              }
             </CardDescription>
           </div>
         </div>
@@ -330,12 +377,12 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               {loading ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                  Creating...
+                  {isEditing ? 'Updating...' : 'Creating...'}
                 </>
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
-                  Create Task
+                  {isEditing ? 'Update Task' : 'Create Task'}
                 </>
               )}
             </Button>
