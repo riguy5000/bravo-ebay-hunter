@@ -204,28 +204,32 @@ const createMatchRecord = (task: Task, item: any, aiAnalysis?: any) => {
 };
 
 const processTask = async (task: Task) => {
-  console.log(`🔄 Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}, Interval: ${task.poll_interval}s`);
+  console.log(`🔄 Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}, Interval: ${task.poll_interval}s - UNLIMITED MODE`);
   
   try {
-    // Build comprehensive search parameters with all task filters
+    // Calculate date filter for continuous monitoring
+    const lastRunDate = task.last_run ? new Date(task.last_run) : new Date(Date.now() - 24 * 60 * 60 * 1000); // Default to 24 hours ago
+    const dateFrom = lastRunDate.toISOString();
+    
+    // Build comprehensive search parameters with date filtering
     const searchParams = {
       keywords: buildSearchKeywords(task),
       maxPrice: task.max_price,
-      listingType: task.listing_format || ['Auction', 'Fixed Price (BIN)'], // CRITICAL: Pass listing formats
+      listingType: task.listing_format || ['Auction', 'Fixed Price (BIN)'],
       minFeedback: task.min_seller_feedback || 0,
       itemLocation: task.item_location,
-      dateFrom: task.date_from,
+      dateFrom: dateFrom, // CRITICAL: Only get new items since last run
       dateTo: task.date_to,
-      itemType: task.item_type, // CRITICAL: Pass item type
+      itemType: task.item_type,
       typeSpecificFilters: task.item_type === 'watch' ? task.watch_filters :
                           task.item_type === 'jewelry' ? task.jewelry_filters :
                           task.item_type === 'gemstone' ? task.gemstone_filters : null,
-      condition: getConditionsFromFilters(task) // Helper to extract conditions
+      condition: getConditionsFromFilters(task)
     };
 
-    console.log('🎯 Search params with filters:', JSON.stringify(searchParams, null, 2));
+    console.log('🎯 Search params (UNLIMITED with date filter):', JSON.stringify(searchParams, null, 2));
 
-    // Call the eBay search function with enhanced parameters
+    // Call the eBay search function
     const searchResponse = await supabase.functions.invoke('ebay-search', {
       body: searchParams
     });
@@ -234,7 +238,7 @@ const processTask = async (task: Task) => {
       console.error('❌ Error calling eBay search:', searchResponse.error);
       console.error('Error details:', JSON.stringify(searchResponse.error, null, 2));
       
-      // Update task last_run even on error to prevent constant retries
+      // Update task last_run even on error
       await supabase
         .from('tasks')
         .update({ 
@@ -246,12 +250,12 @@ const processTask = async (task: Task) => {
     }
 
     const { items } = searchResponse.data;
-    console.log(`📦 Found ${items?.length || 0} items for task ${task.name}`);
+    console.log(`📦 Found ${items?.length || 0} NEW items for task ${task.name} (since ${dateFrom})`);
 
     if (!items || items.length === 0) {
-      console.log(`📭 No items found for task ${task.name}`);
+      console.log(`📭 No new items found for task ${task.name}`);
       
-      // Update task last_run even when no items found
+      // Update task last_run
       await supabase
         .from('tasks')
         .update({ last_run: new Date().toISOString() })
@@ -265,12 +269,12 @@ const processTask = async (task: Task) => {
     let analyzedItems = 0;
     let excludedItems = 0;
     
-    // Process MORE items - increased from 10 to 25
-    for (const item of items.slice(0, 25)) {
+    // Process ALL items - NO LIMITS
+    console.log(`🚀 Processing ALL ${items.length} items (NO LIMITS)`);
+    for (const item of items) {
       analyzedItems++;
       
-      // Enhanced filtering with better logging
-      console.log(`🔍 Processing item: ${item.title}`);
+      console.log(`🔍 Processing item ${analyzedItems}/${items.length}: ${item.title}`);
       console.log(`💰 Price: $${item.price}, Format: ${item.listingType || 'Unknown'}`);
       
       // Skip if price is too high
@@ -291,7 +295,6 @@ const processTask = async (task: Task) => {
       if (task.listing_format && task.listing_format.length > 0) {
         const itemFormat = item.listingType || 'Unknown';
         const formatMatches = task.listing_format.some(preferredFormat => {
-          // More flexible matching logic
           if (preferredFormat === 'Fixed Price (BIN)' && (itemFormat.includes('Fixed') || itemFormat.includes('Buy'))) {
             return true;
           }
@@ -311,7 +314,7 @@ const processTask = async (task: Task) => {
         }
       }
 
-      // Check if we already have this item (duplicate prevention)
+      // Check for duplicates
       const { data: existingMatch } = await supabase
         .from(tableName)
         .select('id')
@@ -327,7 +330,7 @@ const processTask = async (task: Task) => {
       // AI Analysis
       const aiAnalysis = await analyzeItemWithAI(task, item);
       
-      // Smart exclusion logic with enhanced logging
+      // Smart exclusion logic
       const exclusionCheck = shouldExcludeItem(task, item, aiAnalysis);
       if (exclusionCheck.exclude) {
         console.log(`🚫 Excluding item: ${exclusionCheck.reason} - ${item.title}`);
@@ -335,7 +338,7 @@ const processTask = async (task: Task) => {
         continue;
       }
 
-      // Create new match record with AI analysis data and proper listing format
+      // Create new match record
       const matchData = createMatchRecord(task, item, aiAnalysis);
 
       const { error: insertError } = await supabase
@@ -352,7 +355,7 @@ const processTask = async (task: Task) => {
       }
     }
 
-    // Update task last_run timestamp - CRITICAL for showing task is working
+    // Update task last_run timestamp
     const { error: updateError } = await supabase
       .from('tasks')
       .update({ last_run: new Date().toISOString() })
@@ -364,14 +367,14 @@ const processTask = async (task: Task) => {
       console.log(`✅ Updated last_run for task ${task.name}`);
     }
 
-    console.log(`🎯 Task ${task.name} completed: ${newMatches} new matches, ${excludedItems} excluded, ${analyzedItems} analyzed`);
-    console.log(`📊 Filter effectiveness: ${((analyzedItems - excludedItems) / analyzedItems * 100).toFixed(1)}% items passed filters`);
+    console.log(`🎯 Task ${task.name} completed (UNLIMITED): ${newMatches} new matches, ${excludedItems} excluded, ${analyzedItems} analyzed`);
+    console.log(`📊 Processing: ${analyzedItems} items processed, ${newMatches} new matches created`);
 
   } catch (error) {
     console.error(`❌ Error processing task ${task.id}:`, error);
     console.error('Error stack:', error.stack);
     
-    // Still update last_run to prevent endless retries of failed tasks
+    // Still update last_run to prevent endless retries
     try {
       await supabase
         .from('tasks')

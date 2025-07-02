@@ -203,7 +203,7 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
   const baseUrl = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
   const searchParams = new URLSearchParams({
     q: params.keywords,
-    limit: '50' // Increased from 10 to 50
+    limit: '200' // Increased from 50 to 200 (eBay's maximum per request)
   });
 
   let filters: string[] = [];
@@ -215,6 +215,12 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     filters.push(`price:[..${params.maxPrice}],priceCurrency:USD`);
   } else if (params.minPrice) {
     filters.push(`price:[${params.minPrice}..],priceCurrency:USD`);
+  }
+
+  // Add date filtering for continuous monitoring - NEW
+  if (params.dateFrom) {
+    const fromDate = new Date(params.dateFrom).toISOString().split('T')[0];
+    filters.push(`itemStartTime:[${fromDate}T00:00:00.000Z..]`);
   }
 
   // Add category filter based on item type
@@ -289,19 +295,11 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     searchParams.set('filter', filters.join(','));
   }
 
-  // Add sort order
-  if (params.sortOrder) {
-    const sortMapping: { [key: string]: string } = {
-      'BestMatch': 'newlyListed',
-      'PricePlusShipping': 'price',
-      'EndTimeSoonest': 'endingSoonest'
-    };
-    const browseSort = sortMapping[params.sortOrder] || 'newlyListed';
-    searchParams.set('sort', browseSort);
-  }
+  // Add sort order - prioritize newly listed items for continuous monitoring
+  searchParams.set('sort', 'newlyListed');
 
   const finalUrl = `${baseUrl}?${searchParams.toString()}`;
-  console.log('🔍 eBay Search URL:', finalUrl);
+  console.log('🔍 eBay Search URL (NO LIMITS):', finalUrl);
   console.log('🎯 Applied filters:', filters);
   
   return finalUrl;

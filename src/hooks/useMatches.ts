@@ -74,7 +74,7 @@ export const useMatches = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const itemsPerPage = 25; // Increased from default pagination
+  const itemsPerPage = 50; // Increased from 25 to 50 for better UX
 
   useEffect(() => {
     if (user) {
@@ -91,7 +91,7 @@ export const useMatches = () => {
       // Calculate offset for pagination
       const offset = resetData ? 0 : (page - 1) * itemsPerPage;
       
-      // Fetch all match types in parallel with pagination
+      // Fetch all match types in parallel with increased pagination
       const [watchData, jewelryData, gemstoneData] = await Promise.all([
         supabase
           .from('matches_watch')
@@ -133,7 +133,7 @@ export const useMatches = () => {
 
       // Check if there are more items to load
       const totalNewItems = newWatchMatches.length + newJewelryMatches.length + newGemstoneMatches.length;
-      setHasMore(totalNewItems === itemsPerPage * 3); // Rough estimation
+      setHasMore(totalNewItems === itemsPerPage * 3); // More accurate estimation
       
     } catch (error) {
       console.error('Error in fetchMatches:', error);

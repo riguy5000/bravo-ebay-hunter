@@ -154,7 +154,9 @@ const Matches = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">AI-Analyzed Matches</h1>
-          <p className="text-gray-600">Review your search results with AI quality scoring and profit analysis</p>
+          <p className="text-gray-600">
+            Continuous monitoring - displaying {totalMatches} matches found{hasMore ? ' (loading more available)' : ' (all loaded)'}
+          </p>
         </div>
         <Button onClick={refetch} variant="outline" size="sm">
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -174,7 +176,10 @@ const Matches = () => {
           <Card>
             <CardHeader>
               <CardTitle>All AI-Analyzed Matches</CardTitle>
-              <CardDescription>Found listings matching your criteria with AI quality assessment ({totalMatches} total)</CardDescription>
+              <CardDescription>
+                Continuous monitoring results - {totalMatches} matches found and growing
+                {hasMore && ' (more available)'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {totalMatches > 0 ? (
@@ -194,9 +199,15 @@ const Matches = () => {
                       </Button>
                     </div>
                   )}
+                  
+                  {!hasMore && totalMatches > 0 && (
+                    <div className="text-center pt-4 text-sm text-gray-500">
+                      All {totalMatches} matches displayed. Tasks continue monitoring for new items.
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="text-sm text-gray-500">No matches found yet. Create a task to start finding opportunities!</div>
+                <div className="text-sm text-gray-500">No matches found yet. Create a task to start continuous monitoring!</div>
               )}
             </CardContent>
           </Card>
@@ -206,7 +217,9 @@ const Matches = () => {
           <Card>
             <CardHeader>
               <CardTitle>Watch Matches</CardTitle>
-              <CardDescription>Luxury watches and timepieces with AI analysis ({watchMatches.length} found)</CardDescription>
+              <CardDescription>
+                Luxury watches and timepieces - {watchMatches.length} matches from continuous monitoring
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {watchMatches.length > 0 ? (
@@ -225,7 +238,7 @@ const Matches = () => {
                   )}
                 </div>
               ) : (
-                <div className="text-sm text-gray-500">No watch matches found yet</div>
+                <div className="text-sm text-gray-500">No watch matches found yet from continuous monitoring</div>
               )}
             </CardContent>
           </Card>
@@ -235,7 +248,9 @@ const Matches = () => {
           <Card>
             <CardHeader>
               <CardTitle>Jewelry Matches</CardTitle>
-              <CardDescription>Gold jewelry and precious metal items with profit analysis ({jewelryMatches.length} found)</CardDescription>
+              <CardDescription>
+                Gold jewelry and precious metals - {jewelryMatches.length} matches with profit analysis
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {jewelryMatches.length > 0 ? (
@@ -254,7 +269,7 @@ const Matches = () => {
                   )}
                 </div>
               ) : (
-                <div className="text-sm text-gray-500">No jewelry matches found yet</div>
+                <div className="text-sm text-gray-500">No jewelry matches found yet from continuous monitoring</div>
               )}
             </CardContent>
           </Card>
@@ -264,7 +279,9 @@ const Matches = () => {
           <Card>
             <CardHeader>
               <CardTitle>Gemstone Matches</CardTitle>
-              <CardDescription>Loose diamonds and precious stones with market analysis ({gemstoneMatches.length} found)</CardDescription>
+              <CardDescription>
+                Loose diamonds and precious stones - {gemstoneMatches.length} matches with market analysis
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {gemstoneMatches.length > 0 ? (
@@ -283,7 +300,7 @@ const Matches = () => {
                   )}
                 </div>
               ) : (
-                <div className="text-sm text-gray-500">No gemstone matches found yet</div>
+                <div className="text-sm text-gray-500">No gemstone matches found yet from continuous monitoring</div>
               )}
             </CardContent>
           </Card>
