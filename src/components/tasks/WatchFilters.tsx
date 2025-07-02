@@ -27,7 +27,7 @@ export const WatchFilters: React.FC<WatchFiltersProps> = ({ filters, onChange })
   ];
 
   const conditions = [
-    'New', 'Excellent', 'Very Good', 'Good', 'Fair', 'Parts/Repair'
+    'New', 'Pre-owned', 'For parts or not working'
   ];
 
   return (
@@ -39,7 +39,7 @@ export const WatchFilters: React.FC<WatchFiltersProps> = ({ filters, onChange })
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="brand">Brand</Label>
-            <Select onValueChange={(value) => handleChange('brand', value)}>
+            <Select value={filters.brand || ''} onValueChange={(value) => handleChange('brand', value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select brand" />
               </SelectTrigger>
@@ -55,7 +55,7 @@ export const WatchFilters: React.FC<WatchFiltersProps> = ({ filters, onChange })
 
           <div>
             <Label htmlFor="watch_type">Watch Type</Label>
-            <Select onValueChange={(value) => handleChange('watch_type', value)}>
+            <Select value={filters.watch_type || ''} onValueChange={(value) => handleChange('watch_type', value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
@@ -81,13 +81,13 @@ export const WatchFilters: React.FC<WatchFiltersProps> = ({ filters, onChange })
 
           <div>
             <Label htmlFor="condition">Condition</Label>
-            <Select onValueChange={(value) => handleChange('condition', value)}>
+            <Select value={filters.condition || ''} onValueChange={(value) => handleChange('condition', value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select condition" />
               </SelectTrigger>
               <SelectContent>
                 {conditions.map((condition) => (
-                  <SelectItem key={condition} value={condition.toLowerCase()}>
+                  <SelectItem key={condition} value={condition}>
                     {condition}
                   </SelectItem>
                 ))}
@@ -129,7 +129,7 @@ export const WatchFilters: React.FC<WatchFiltersProps> = ({ filters, onChange })
 
           <div>
             <Label htmlFor="movement">Movement</Label>
-            <Select onValueChange={(value) => handleChange('movement', value)}>
+            <Select value={filters.movement || ''} onValueChange={(value) => handleChange('movement', value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select movement" />
               </SelectTrigger>

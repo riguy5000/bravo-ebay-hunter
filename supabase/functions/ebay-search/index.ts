@@ -203,7 +203,7 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
   const baseUrl = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
   const searchParams = new URLSearchParams({
     q: params.keywords,
-    limit: '200' // Increased from 50 to 200 (eBay's maximum per request)
+    limit: '200'
   });
 
   let filters: string[] = [];
@@ -217,7 +217,7 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     filters.push(`price:[${params.minPrice}..],priceCurrency:USD`);
   }
 
-  // Add date filtering for continuous monitoring - NEW
+  // Add date filtering for continuous monitoring
   if (params.dateFrom) {
     const fromDate = new Date(params.dateFrom).toISOString().split('T')[0];
     filters.push(`itemStartTime:[${fromDate}T00:00:00.000Z..]`);
@@ -226,9 +226,9 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
   // Add category filter based on item type
   if (params.itemType) {
     const categoryMapping = {
-      'jewelry': '281', // Jewelry & Watches category
-      'watch': '14324', // Watches category
-      'gemstone': '164694' // Loose Diamonds & Gemstones
+      'jewelry': '281',
+      'watch': '14324',
+      'gemstone': '164694'
     };
     const categoryId = categoryMapping[params.itemType];
     if (categoryId) {
@@ -236,49 +236,64 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     }
   }
 
-  // Add condition filter
+  // Add condition filter - FIXED MAPPING
   if (params.condition && params.condition.length > 0) {
+    console.log('🔧 Processing condition filters:', params.condition);
+    
     const conditionMapping: { [key: string]: string } = {
       'New': 'NEW',
       'Pre-owned': 'USED_EXCELLENT|USED_VERY_GOOD|USED_GOOD|USED_ACCEPTABLE',
-      'For parts or not working': 'FOR_PARTS_OR_NOT_WORKING'
+      'For parts or not working': 'FOR_PARTS_OR_NOT_WORKING',
+      // Add lowercase variants for backward compatibility
+      'new': 'NEW',
+      'pre-owned': 'USED_EXCELLENT|USED_VERY_GOOD|USED_GOOD|USED_ACCEPTABLE',
+      'for parts or not working': 'FOR_PARTS_OR_NOT_WORKING'
     };
     
     const mappedConditions = params.condition
-      .map(c => conditionMapping[c] || c)
+      .map(c => {
+        const mapped = conditionMapping[c];
+        if (!mapped) {
+          console.warn(`⚠️ Unknown condition: ${c}`);
+          return null;
+        }
+        console.log(`✅ Mapped condition "${c}" -> "${mapped}"`);
+        return mapped;
+      })
+      .filter(Boolean)
       .join('|');
     
     if (mappedConditions) {
       filters.push(`conditions:{${mappedConditions}}`);
+      console.log(`🎯 Applied condition filter: conditions:{${mappedConditions}}`);
     }
   }
 
-  // Add listing type/format filters - CRITICAL FIX
+  // Add listing type/format filters
   if (params.listingType && params.listingType.length > 0) {
     const listingTypeMapping: { [key: string]: string } = {
       'Fixed Price (BIN)': 'FIXED_PRICE',
-      'Best Offer': 'FIXED_PRICE', // Best offer items are also fixed price with negotiation
+      'Best Offer': 'FIXED_PRICE',
       'Auction': 'AUCTION',
       'Classified Ad': 'CLASSIFIED_AD',
-      'Accepts Offers': 'FIXED_PRICE' // These are fixed price with offer capability
+      'Accepts Offers': 'FIXED_PRICE'
     };
 
     const mappedTypes = params.listingType
       .map(type => listingTypeMapping[type])
       .filter(Boolean)
-      .filter((value, index, self) => self.indexOf(value) === index); // Remove duplicates
+      .filter((value, index, self) => self.indexOf(value) === index);
 
     if (mappedTypes.length > 0) {
       filters.push(`buyingOptions:{${mappedTypes.join('|')}}`);
     }
 
-    // Special handling for Best Offer and Accepts Offers
     const needsOfferFilter = params.listingType.some(type => 
       type === 'Best Offer' || type === 'Accepts Offers'
     );
     
     if (needsOfferFilter) {
-      filters.push('itemLocationCountry:US'); // Add this to help filter, eBay doesn't have direct "accepts offers" filter
+      filters.push('itemLocationCountry:US');
     }
   }
 
@@ -295,11 +310,10 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     searchParams.set('filter', filters.join(','));
   }
 
-  // Add sort order - prioritize newly listed items for continuous monitoring
   searchParams.set('sort', 'newlyListed');
 
   const finalUrl = `${baseUrl}?${searchParams.toString()}`;
-  console.log('🔍 eBay Search URL (NO LIMITS):', finalUrl);
+  console.log('🔍 eBay Search URL:', finalUrl);
   console.log('🎯 Applied filters:', filters);
   
   return finalUrl;
@@ -312,7 +326,6 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
 
   switch (itemType) {
     case 'jewelry':
-      // Metal type filter
       if (filters.metal && filters.metal.length > 0) {
         const metalValues = filters.metal
           .map((m: string) => encodeURIComponent(m))
@@ -320,11 +333,9 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
         aspectFilters.push(`aspects:Metal:${metalValues}`);
       }
 
-      // Main stone filter - CRITICAL FIX for "No Stone" issue
       if (filters.main_stones && filters.main_stones.length > 0) {
         const stoneValues = filters.main_stones
           .map((stone: string) => {
-            // Map "No Stone" to eBay's actual value
             if (stone === 'No Stone') {
               return 'No%20Main%20Stone';
             }
@@ -334,7 +345,6 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
         aspectFilters.push(`aspects:Main%20Stone:${stoneValues}`);
       }
 
-      // Brand filter
       if (filters.brands && filters.brands.length > 0) {
         const brandValues = filters.brands
           .map((b: string) => encodeURIComponent(b))
@@ -342,7 +352,6 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
         aspectFilters.push(`aspects:Brand:${brandValues}`);
       }
 
-      // Category/type filter
       if (filters.categories && filters.categories.length > 0) {
         const categoryValues = filters.categories
           .map((c: string) => encodeURIComponent(c))
@@ -352,7 +361,6 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
       break;
 
     case 'watch':
-      // Brand filter
       if (filters.brands && filters.brands.length > 0) {
         const brandValues = filters.brands
           .map((b: string) => encodeURIComponent(b))
@@ -360,7 +368,6 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
         aspectFilters.push(`aspects:Brand:${brandValues}`);
       }
 
-      // Movement filter
       if (filters.movement && filters.movement.length > 0) {
         const movementValues = filters.movement
           .map((m: string) => encodeURIComponent(m))
@@ -368,7 +375,6 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
         aspectFilters.push(`aspects:Movement:${movementValues}`);
       }
 
-      // Case material filter
       if (filters.case_material && filters.case_material.length > 0) {
         const materialValues = filters.case_material
           .map((m: string) => encodeURIComponent(m))
@@ -378,7 +384,6 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
       break;
 
     case 'gemstone':
-      // Stone type filter
       if (filters.stone_types && filters.stone_types.length > 0) {
         const stoneValues = filters.stone_types
           .map((s: string) => encodeURIComponent(s))
@@ -386,7 +391,6 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
         aspectFilters.push(`aspects:Stone%20Type:${stoneValues}`);
       }
 
-      // Cut filter
       if (filters.cuts && filters.cuts.length > 0) {
         const cutValues = filters.cuts
           .map((c: string) => encodeURIComponent(c))
@@ -416,12 +420,10 @@ const parseEbayBrowseResponse = (response: any): EbayItem[] => {
     for (const item of response.itemSummaries) {
       const price = item.price?.value ? parseFloat(item.price.value) : 0;
       
-      // Better listing format detection
       let listingFormat = 'Unknown';
       if (item.buyingOptions) {
         if (item.buyingOptions.includes('FIXED_PRICE')) {
           listingFormat = 'Fixed Price';
-          // Check if it accepts best offers
           if (item.buyingOptions.includes('BEST_OFFER') || item.itemAffiliateWebUrl?.includes('bo=true')) {
             listingFormat = 'Best Offer';
           }
@@ -441,7 +443,7 @@ const parseEbayBrowseResponse = (response: any): EbayItem[] => {
         listingUrl: item.itemWebUrl || '',
         imageUrl: item.image?.imageUrl,
         condition: item.condition,
-        listingType: listingFormat, // Add this field
+        listingType: listingFormat,
         sellerInfo: {
           name: item.seller?.username || '',
           feedbackScore: item.seller?.feedbackScore || 0,
@@ -540,7 +542,6 @@ const handler = async (req: Request): Promise<Response> => {
     const searchParams: SearchRequest = await req.json();
     console.log('🔍 eBay search request params:', JSON.stringify(searchParams, null, 2));
 
-    // If testing a specific key, use only that key
     if (searchParams.testKey) {
       console.log('🧪 Testing specific API key set:', searchParams.testKey.app_id.substring(0, 10) + '...');
       const testKey: EbayApiKey = {
@@ -586,7 +587,8 @@ const handler = async (req: Request): Promise<Response> => {
         appliedFilters: {
           listingType: searchParams.listingType,
           itemType: searchParams.itemType,
-          typeSpecificFilters: searchParams.typeSpecificFilters
+          typeSpecificFilters: searchParams.typeSpecificFilters,
+          condition: searchParams.condition
         },
         troubleshooting: result.rateLimited ? {
           issue: 'eBay API Rate Limit',
@@ -609,7 +611,6 @@ const handler = async (req: Request): Promise<Response> => {
       });
     }
 
-    // Get all available API keys
     const apiKeys = await getAvailableApiKeys();
     
     if (apiKeys.length === 0) {
@@ -618,7 +619,6 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`🔑 Found ${apiKeys.length} configured API keys`);
 
-    // Get rotation strategy
     const { data: settingsData } = await supabase
       .from('settings')
       .select('value_json')
@@ -627,7 +627,6 @@ const handler = async (req: Request): Promise<Response> => {
     
     const rotationStrategy = settingsData?.value_json?.rotation_strategy || 'round_robin';
 
-    // Try API keys until one works
     let lastError: any = null;
     let rateLimitedCount = 0;
     let authErrorCount = 0;
@@ -693,7 +692,6 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // All keys failed - provide specific error messages
     if (rateLimitedCount === apiKeys.length) {
       return new Response(JSON.stringify({ 
         success: false, 
