@@ -140,7 +140,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       const taskData = {
         name: name.trim(),
         item_type: itemType,
-        status: (editingTask?.status || 'active') as const,
+        status: editingTask?.status || 'active',
         max_price: maxPrice ? parseFloat(maxPrice) : undefined,
         poll_interval: intervalNum,
         listing_format: listingFormats,
