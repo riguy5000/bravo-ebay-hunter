@@ -22,8 +22,6 @@ export const useGoldPrices = () => {
   const [prices, setPrices] = useState<GoldPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [apiStatus, setApiStatus] = useState<string>('unknown');
-  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
 
   const fetchPrices = async () => {
     try {
@@ -41,8 +39,6 @@ export const useGoldPrices = () => {
       }
 
       setPrices(data.prices || []);
-      setApiStatus(data.apiStatus || 'unknown');
-      setLastUpdate(data.lastUpdate || new Date().toISOString());
     } catch (err: any) {
       console.error('Error fetching gold prices:', err);
       setError(err.message || 'Failed to fetch gold prices');
@@ -54,34 +50,16 @@ export const useGoldPrices = () => {
   useEffect(() => {
     fetchPrices();
     
-    // Set up real-time subscription to metal_prices table
-    const channel = supabase
-      .channel('metal-prices-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'metal_prices'
-        },
-        (payload) => {
-          console.log('Metal prices updated in database:', payload);
-          fetchPrices();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // Refresh prices every 5 minutes
+    const interval = setInterval(fetchPrices, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   return {
     prices,
     loading,
     error,
-    apiStatus,
-    lastUpdate,
     refetch: fetchPrices,
   };
 };
