@@ -237,18 +237,14 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     }
   }
 
-  // Handle condition filters - use aspect-based filtering for specific item types
+  // Handle condition filters - FIXED to use aspect-based filtering for jewelry/watch/gemstone
   const useAspectConditions = params.itemType && ['jewelry', 'watch', 'gemstone'].includes(params.itemType);
   
   if (params.condition && params.condition.length > 0) {
     console.log('🔧 Processing condition filters:', params.condition);
     console.log('🎯 Item type:', params.itemType, 'Use aspect conditions:', useAspectConditions);
     
-    if (useAspectConditions) {
-      // For jewelry, watches, and gemstones - use aspect-based condition filtering
-      console.log('✨ Using aspect-based condition filtering');
-      // This will be handled in buildAspectFilters function
-    } else {
+    if (!useAspectConditions) {
       // For other categories - use global condition filtering
       console.log('🌐 Using global condition filtering');
       const conditionMapping: { [key: string]: string } = {
@@ -279,6 +275,7 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
         console.log(`🎯 Applied global condition filter: conditions:{${mappedConditions}}`);
       }
     }
+    // Note: Aspect-based conditions will be handled in buildAspectFilters
   }
 
   // Add listing type/format filters
@@ -337,16 +334,26 @@ const buildAspectFilters = (itemType: string, filters: any, conditions?: string[
   console.log(`🔧 Building aspect filters for ${itemType}:`, JSON.stringify(filters, null, 2));
   console.log(`🎭 Processing conditions for ${itemType}:`, conditions);
 
-  // Add condition filters using aspect-based filtering for jewelry, watches, and gemstones
+  // FIXED: Add condition filters using aspect-based filtering for jewelry, watches, and gemstones
   if (conditions && conditions.length > 0 && ['jewelry', 'watch', 'gemstone'].includes(itemType)) {
     console.log(`🎯 Adding aspect-based condition filters for ${itemType}`);
     
-    // For these item types, use the exact condition values as aspects
+    // Map UI condition values to eBay aspect values
+    const conditionMapping: { [key: string]: string } = {
+      'New': 'New',
+      'Pre-owned': 'Pre-owned', 
+      'For parts or not working': 'For parts or not working',
+      // Handle variations
+      'new': 'New',
+      'pre-owned': 'Pre-owned',
+      'for parts or not working': 'For parts or not working'
+    };
+    
     const conditionValues = conditions
       .map((condition: string) => {
-        console.log(`🔄 Processing condition: "${condition}"`);
-        // Use the condition value exactly as provided by the UI
-        return encodeURIComponent(condition);
+        const mappedCondition = conditionMapping[condition] || condition;
+        console.log(`🔄 Processing condition: "${condition}" -> "${mappedCondition}"`);
+        return encodeURIComponent(mappedCondition);
       })
       .join('|');
     
