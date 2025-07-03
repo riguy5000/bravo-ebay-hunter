@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -224,11 +223,16 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     filters.push(`itemStartTime:[${fromDate}T00:00:00.000Z..]`);
   }
 
-  // Add category filter based on item type
-  if (params.itemType) {
+  // UPDATED: Use specific leaf category IDs instead of broad category mapping
+  if (params.itemType === 'jewelry' && params.typeSpecificFilters?.leafCategoryId) {
+    // Use the specific leaf category ID from the jewelry filter selection
+    filters.push(`categoryIds:${params.typeSpecificFilters.leafCategoryId}`);
+    console.log(`🎯 Using specific jewelry leaf category: ${params.typeSpecificFilters.leafCategoryId}`);
+  } else if (params.itemType) {
+    // Fallback to broad categories for non-jewelry or when no specific category is selected
     const categoryMapping = {
       'jewelry': '281',
-      'watch': '14324',
+      'watch': '14324', 
       'gemstone': '164694'
     };
     const categoryId = categoryMapping[params.itemType];
@@ -394,13 +398,23 @@ const buildAspectFilters = (itemType: string, filters: any, conditions?: string[
         console.log(`✅ Added brand filter: aspects:Brand:${brandValues}`);
       }
 
-      if (filters.categories && filters.categories.length > 0) {
-        const categoryValues = filters.categories
-          .map((c: string) => encodeURIComponent(c))
+      // NEW: Add support for additional jewelry-specific aspects
+      if (filters.metal_purity && filters.metal_purity.length > 0) {
+        const purityValues = filters.metal_purity
+          .map((p: string) => encodeURIComponent(p))
           .join('|');
-        aspectFilters.push(`aspects:Type:${categoryValues}`);
-        console.log(`✅ Added category filter: aspects:Type:${categoryValues}`);
+        aspectFilters.push(`aspects:Metal%20Purity:${purityValues}`);
+        console.log(`✅ Added metal purity filter: aspects:Metal%20Purity:${purityValues}`);
       }
+
+      if (filters.setting_style && filters.setting_style.length > 0) {
+        const styleValues = filters.setting_style
+          .map((s: string) => encodeURIComponent(s))
+          .join('|');
+        aspectFilters.push(`aspects:Setting%20Style:${styleValues}`);
+        console.log(`✅ Added setting style filter: aspects:Setting%20Style:${styleValues}`);
+      }
+
       break;
 
     case 'watch':
@@ -452,7 +466,7 @@ const buildAspectFilters = (itemType: string, filters: any, conditions?: string[
   return aspectFilters;
 };
 
-const parseEbayBrowseResponse = (response: any): EbayItem[] => {
+const parseEbayBrowseResponse = (response: any, allowedCategoryIds?: string[]): EbayItem[] => {
   const items: EbayItem[] = [];
   
   try {
@@ -466,6 +480,15 @@ const parseEbayBrowseResponse = (response: any): EbayItem[] => {
     console.log(`📦 Found ${response.itemSummaries.length} items in eBay response`);
 
     for (const item of response.itemSummaries) {
+      // NEW: Prevent "random tools" bleed-through by checking category IDs
+      if (allowedCategoryIds && allowedCategoryIds.length > 0) {
+        const itemCategoryId = item.categoryId || item.primaryCategory?.categoryId;
+        if (itemCategoryId && !allowedCategoryIds.includes(itemCategoryId)) {
+          console.log(`🚫 Skipping item from unwanted category: ${itemCategoryId} - ${item.title}`);
+          continue;
+        }
+      }
+
       const price = item.price?.value ? parseFloat(item.price.value) : 0;
       
       let listingFormat = 'Unknown';
@@ -568,7 +591,12 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
     }
 
     const data = await response.json();
-    const items = parseEbayBrowseResponse(data);
+    
+    // NEW: Pass allowed category IDs to prevent unwanted items
+    const allowedCategoryIds = searchParams.typeSpecificFilters?.leafCategoryId ? 
+      [searchParams.typeSpecificFilters.leafCategoryId] : [];
+    
+    const items = parseEbayBrowseResponse(data, allowedCategoryIds);
     
     await updateKeyUsage(apiKey, true, false, false);
     console.log(`Successfully used API key "${apiKey.label}" - found ${items.length} items`);

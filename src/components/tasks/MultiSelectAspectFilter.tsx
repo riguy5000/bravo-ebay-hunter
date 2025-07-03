@@ -6,7 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ChevronDown, X, RefreshCw, Info } from 'lucide-react';
-import { useEbayAspects } from '@/hooks/useEbayAspects';
+import { useEbayTaxonomy } from '@/hooks/useEbayTaxonomy';
 
 interface MultiSelectAspectFilterProps {
   title: string;
@@ -27,8 +27,8 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
   onChange,
   placeholder = 'Select options...'
 }) => {
-  const { aspects: primaryAspects, getAspectValues: getPrimaryValues, loading: primaryLoading, error: primaryError, populateTestData } = useEbayAspects(categoryId);
-  const { aspects: fallbackAspects, getAspectValues: getFallbackValues, loading: fallbackLoading } = useEbayAspects(fallbackCategoryId);
+  const { aspects: primaryAspects, getAspectValues: getPrimaryValues, loading: primaryLoading, error: primaryError, refreshTaxonomyData } = useEbayTaxonomy(categoryId);
+  const { aspects: fallbackAspects, getAspectValues: getFallbackValues, loading: fallbackLoading } = useEbayTaxonomy(fallbackCategoryId);
   
   // Try primary category first, then fallback
   const primaryValues = getPrimaryValues(aspectName);
@@ -66,8 +66,10 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
     onChange([]);
   };
 
-  const handlePopulateTestData = () => {
-    populateTestData();
+  const handleRefreshTaxonomy = () => {
+    if (refreshTaxonomyData) {
+      refreshTaxonomyData();
+    }
   };
 
   return (
@@ -105,8 +107,17 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
                 Loading {aspectName.toLowerCase()} options...
               </div>
             ) : primaryError && !usingFallback ? (
-              <div className="text-sm text-red-500 py-2 text-center">
-                Error: {primaryError}
+              <div className="text-sm text-red-500 py-2 text-center space-y-2">
+                <div>Error: {primaryError}</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefreshTaxonomy}
+                  className="flex items-center gap-1"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Retry
+                </Button>
               </div>
             ) : availableValues.length > 0 ? (
               <>
@@ -115,9 +126,13 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
                     <div className="font-medium">
                       {availableValues.length} options available
                     </div>
-                    {usingFallback && (
+                    {usingFallback ? (
                       <div className="text-xs text-blue-600">
                         Using category {fallbackCategoryId} data
+                      </div>
+                    ) : (
+                      <div className="text-xs text-green-600">
+                        Live taxonomy data for {categoryId}
                       </div>
                     )}
                   </div>
@@ -155,16 +170,16 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
               <div className="text-sm text-gray-500 py-4 text-center space-y-2">
                 <div>No {aspectName.toLowerCase()} options available.</div>
                 <div className="text-xs text-gray-400">
-                  Primary: {categoryId || 'None'} | Fallback: {fallbackCategoryId || 'None'}
+                  Category: {categoryId || 'None'} | Fallback: {fallbackCategoryId || 'None'}
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handlePopulateTestData}
+                  onClick={handleRefreshTaxonomy}
                   className="flex items-center gap-1"
                 >
                   <RefreshCw className="h-3 w-3" />
-                  Add Test Data
+                  Fetch Taxonomy Data
                 </Button>
               </div>
             )}
