@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -236,36 +237,47 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     }
   }
 
-  // Add condition filter - FIXED MAPPING
+  // Handle condition filters - use aspect-based filtering for specific item types
+  const useAspectConditions = params.itemType && ['jewelry', 'watch', 'gemstone'].includes(params.itemType);
+  
   if (params.condition && params.condition.length > 0) {
     console.log('🔧 Processing condition filters:', params.condition);
+    console.log('🎯 Item type:', params.itemType, 'Use aspect conditions:', useAspectConditions);
     
-    const conditionMapping: { [key: string]: string } = {
-      'New': 'NEW',
-      'Pre-owned': 'USED_EXCELLENT|USED_VERY_GOOD|USED_GOOD|USED_ACCEPTABLE',
-      'For parts or not working': 'FOR_PARTS_OR_NOT_WORKING',
-      // Add lowercase variants for backward compatibility
-      'new': 'NEW',
-      'pre-owned': 'USED_EXCELLENT|USED_VERY_GOOD|USED_GOOD|USED_ACCEPTABLE',
-      'for parts or not working': 'FOR_PARTS_OR_NOT_WORKING'
-    };
-    
-    const mappedConditions = params.condition
-      .map(c => {
-        const mapped = conditionMapping[c];
-        if (!mapped) {
-          console.warn(`⚠️ Unknown condition: ${c}`);
-          return null;
-        }
-        console.log(`✅ Mapped condition "${c}" -> "${mapped}"`);
-        return mapped;
-      })
-      .filter(Boolean)
-      .join('|');
-    
-    if (mappedConditions) {
-      filters.push(`conditions:{${mappedConditions}}`);
-      console.log(`🎯 Applied condition filter: conditions:{${mappedConditions}}`);
+    if (useAspectConditions) {
+      // For jewelry, watches, and gemstones - use aspect-based condition filtering
+      console.log('✨ Using aspect-based condition filtering');
+      // This will be handled in buildAspectFilters function
+    } else {
+      // For other categories - use global condition filtering
+      console.log('🌐 Using global condition filtering');
+      const conditionMapping: { [key: string]: string } = {
+        'New': 'NEW',
+        'Pre-owned': 'USED_EXCELLENT|USED_VERY_GOOD|USED_GOOD|USED_ACCEPTABLE',
+        'For parts or not working': 'FOR_PARTS_OR_NOT_WORKING',
+        // Add lowercase variants for backward compatibility
+        'new': 'NEW',
+        'pre-owned': 'USED_EXCELLENT|USED_VERY_GOOD|USED_GOOD|USED_ACCEPTABLE',
+        'for parts or not working': 'FOR_PARTS_OR_NOT_WORKING'
+      };
+      
+      const mappedConditions = params.condition
+        .map(c => {
+          const mapped = conditionMapping[c];
+          if (!mapped) {
+            console.warn(`⚠️ Unknown condition: ${c}`);
+            return null;
+          }
+          console.log(`✅ Mapped condition "${c}" -> "${mapped}"`);
+          return mapped;
+        })
+        .filter(Boolean)
+        .join('|');
+      
+      if (mappedConditions) {
+        filters.push(`conditions:{${mappedConditions}}`);
+        console.log(`🎯 Applied global condition filter: conditions:{${mappedConditions}}`);
+      }
     }
   }
 
@@ -297,9 +309,9 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     }
   }
 
-  // Add type-specific aspect filters
+  // Add type-specific aspect filters (including conditions for jewelry/watch/gemstone)
   if (params.typeSpecificFilters && params.itemType) {
-    const aspectFilters = buildAspectFilters(params.itemType, params.typeSpecificFilters);
+    const aspectFilters = buildAspectFilters(params.itemType, params.typeSpecificFilters, params.condition);
     if (aspectFilters.length > 0) {
       filters.push(...aspectFilters);
     }
@@ -319,10 +331,30 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
   return finalUrl;
 };
 
-const buildAspectFilters = (itemType: string, filters: any): string[] => {
+const buildAspectFilters = (itemType: string, filters: any, conditions?: string[]): string[] => {
   const aspectFilters: string[] = [];
   
   console.log(`🔧 Building aspect filters for ${itemType}:`, JSON.stringify(filters, null, 2));
+  console.log(`🎭 Processing conditions for ${itemType}:`, conditions);
+
+  // Add condition filters using aspect-based filtering for jewelry, watches, and gemstones
+  if (conditions && conditions.length > 0 && ['jewelry', 'watch', 'gemstone'].includes(itemType)) {
+    console.log(`🎯 Adding aspect-based condition filters for ${itemType}`);
+    
+    // For these item types, use the exact condition values as aspects
+    const conditionValues = conditions
+      .map((condition: string) => {
+        console.log(`🔄 Processing condition: "${condition}"`);
+        // Use the condition value exactly as provided by the UI
+        return encodeURIComponent(condition);
+      })
+      .join('|');
+    
+    if (conditionValues) {
+      aspectFilters.push(`aspects:Condition:${conditionValues}`);
+      console.log(`✅ Added aspect condition filter: aspects:Condition:${conditionValues}`);
+    }
+  }
 
   switch (itemType) {
     case 'jewelry':
@@ -331,6 +363,7 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           .map((m: string) => encodeURIComponent(m))
           .join('|');
         aspectFilters.push(`aspects:Metal:${metalValues}`);
+        console.log(`✅ Added metal filter: aspects:Metal:${metalValues}`);
       }
 
       if (filters.main_stones && filters.main_stones.length > 0) {
@@ -343,6 +376,7 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           })
           .join('|');
         aspectFilters.push(`aspects:Main%20Stone:${stoneValues}`);
+        console.log(`✅ Added main stone filter: aspects:Main%20Stone:${stoneValues}`);
       }
 
       if (filters.brands && filters.brands.length > 0) {
@@ -350,6 +384,7 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           .map((b: string) => encodeURIComponent(b))
           .join('|');
         aspectFilters.push(`aspects:Brand:${brandValues}`);
+        console.log(`✅ Added brand filter: aspects:Brand:${brandValues}`);
       }
 
       if (filters.categories && filters.categories.length > 0) {
@@ -357,6 +392,7 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           .map((c: string) => encodeURIComponent(c))
           .join('|');
         aspectFilters.push(`aspects:Type:${categoryValues}`);
+        console.log(`✅ Added category filter: aspects:Type:${categoryValues}`);
       }
       break;
 
@@ -366,6 +402,7 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           .map((b: string) => encodeURIComponent(b))
           .join('|');
         aspectFilters.push(`aspects:Brand:${brandValues}`);
+        console.log(`✅ Added watch brand filter: aspects:Brand:${brandValues}`);
       }
 
       if (filters.movement && filters.movement.length > 0) {
@@ -373,6 +410,7 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           .map((m: string) => encodeURIComponent(m))
           .join('|');
         aspectFilters.push(`aspects:Movement:${movementValues}`);
+        console.log(`✅ Added movement filter: aspects:Movement:${movementValues}`);
       }
 
       if (filters.case_material && filters.case_material.length > 0) {
@@ -380,6 +418,7 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           .map((m: string) => encodeURIComponent(m))
           .join('|');
         aspectFilters.push(`aspects:Case%20Material:${materialValues}`);
+        console.log(`✅ Added case material filter: aspects:Case%20Material:${materialValues}`);
       }
       break;
 
@@ -389,6 +428,7 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           .map((s: string) => encodeURIComponent(s))
           .join('|');
         aspectFilters.push(`aspects:Stone%20Type:${stoneValues}`);
+        console.log(`✅ Added stone type filter: aspects:Stone%20Type:${stoneValues}`);
       }
 
       if (filters.cuts && filters.cuts.length > 0) {
@@ -396,11 +436,12 @@ const buildAspectFilters = (itemType: string, filters: any): string[] => {
           .map((c: string) => encodeURIComponent(c))
           .join('|');
         aspectFilters.push(`aspects:Cut:${cutValues}`);
+        console.log(`✅ Added cut filter: aspects:Cut:${cutValues}`);
       }
       break;
   }
 
-  console.log(`✨ Generated aspect filters for ${itemType}:`, aspectFilters);
+  console.log(`✨ Generated ${aspectFilters.length} aspect filters for ${itemType}:`, aspectFilters);
   return aspectFilters;
 };
 
