@@ -20,32 +20,32 @@ const handler = async (req: Request): Promise<Response> => {
   try {
     console.log('🥇 Metal price scheduler started');
 
-    // Get the metal fetch interval from settings
+    // Get the metal fetch interval from settings (default to 24 hours = 86400 seconds)
     const { data: settingData, error: settingError } = await supabase
       .from('settings')
       .select('value_json')
       .eq('key', 'metal_fetch_interval')
       .single();
 
-    if (settingError) {
+    if (settingError && settingError.code !== 'PGRST116') {
       console.error('Error fetching metal fetch interval:', settingError);
-      // Default to daily if setting not found
     }
 
-    const intervalSeconds = settingData?.value_json ? parseInt(settingData.value_json as string) : 86400;
+    const intervalSeconds = settingData?.value_json ? parseInt(settingData.value_json as string) : 86400; // 24 hours default
     console.log(`🕐 Metal fetch interval: ${intervalSeconds} seconds (${intervalSeconds / 3600} hours)`);
 
-    // Check if we need to update metal prices based on the last update
-    const { data: lastUpdate, error: lastUpdateError } = await supabase
-      .from('settings')
-      .select('value_json, updated_at')
-      .eq('key', 'last_metal_price_update')
+    // Check the last update from the metal_prices table
+    const { data: lastPriceData, error: lastPriceError } = await supabase
+      .from('metal_prices')
+      .select('updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .single();
 
     let shouldUpdate = true;
     
-    if (!lastUpdateError && lastUpdate) {
-      const lastUpdateTime = new Date(lastUpdate.updated_at);
+    if (!lastPriceError && lastPriceData) {
+      const lastUpdateTime = new Date(lastPriceData.updated_at);
       const now = new Date();
       const timeSinceUpdate = (now.getTime() - lastUpdateTime.getTime()) / 1000;
       
@@ -53,14 +53,16 @@ const handler = async (req: Request): Promise<Response> => {
         console.log(`⏰ Metal prices were updated ${Math.round(timeSinceUpdate)} seconds ago, skipping update`);
         shouldUpdate = false;
       }
+    } else {
+      console.log('📊 No cached prices found, will fetch fresh data');
     }
 
     if (!shouldUpdate) {
       return new Response(JSON.stringify({ 
         success: true, 
         message: 'Metal prices are up to date',
-        lastUpdate: lastUpdate?.updated_at,
-        nextUpdate: new Date(Date.now() + (intervalSeconds * 1000) - (Date.now() - new Date(lastUpdate?.updated_at || 0).getTime())),
+        lastUpdate: lastPriceData?.updated_at,
+        nextUpdate: new Date(Date.now() + (intervalSeconds * 1000) - (Date.now() - new Date(lastPriceData?.updated_at || 0).getTime())),
         intervalSeconds
       }), {
         status: 200,
@@ -68,7 +70,7 @@ const handler = async (req: Request): Promise<Response> => {
       });
     }
 
-    // Fetch current gold prices
+    // Fetch current gold prices using the get-gold-prices function
     console.log('📊 Fetching current gold prices...');
     
     const { data: goldData, error: goldError } = await supabase.functions.invoke('get-gold-prices');
@@ -78,9 +80,9 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error(`Failed to fetch gold prices: ${goldError.message}`);
     }
 
-    console.log('✅ Gold prices updated successfully:', goldData);
+    console.log('✅ Gold prices updated successfully');
 
-    // Update the last update timestamp
+    // Update the last update timestamp in settings
     await supabase
       .from('settings')
       .upsert({

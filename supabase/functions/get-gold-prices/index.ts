@@ -1,10 +1,16 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const supabase = createClient(
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+);
 
 interface GoldPriceResponse {
   metal: string;
@@ -30,168 +36,190 @@ interface GoldPriceResponse {
   price_gram_10k: number;
 }
 
-// Enhanced mock data with all metals for when API is unavailable
-const getMockGoldPrices = () => {
-  return [
-    {
-      metal: 'Gold',
-      symbol: 'XAU',
-      price: 2650.00,
-      change: 15.50,
-      changePercent: 0.59,
-      high: 2665.00,
-      low: 2635.00,
-      priceGram24k: 85.20,
-      priceGram18k: 63.90,
-      priceGram14k: 49.82,
-      priceGram10k: 35.58,
-      currency: 'USD',
-      lastUpdated: new Date().toISOString()
-    },
-    {
-      metal: 'Silver',
-      symbol: 'XAG',
-      price: 30.85,
-      change: 0.25,
-      changePercent: 0.82,
-      high: 31.10,
-      low: 30.45,
-      currency: 'USD',
-      lastUpdated: new Date().toISOString()
-    },
-    {
-      metal: 'Platinum',
-      symbol: 'XPT',
-      price: 980.50,
-      change: -5.25,
-      changePercent: -0.53,
-      high: 995.00,
-      low: 975.00,
-      currency: 'USD',
-      lastUpdated: new Date().toISOString()
-    },
-    {
-      metal: 'Palladium',
-      symbol: 'XPD',
-      price: 1025.75,
-      change: 12.30,
-      changePercent: 1.22,
-      high: 1035.00,
-      low: 1010.50,
-      currency: 'USD',
-      lastUpdated: new Date().toISOString()
+const isDataStale = (lastUpdate: string): boolean => {
+  const now = new Date();
+  const lastUpdateTime = new Date(lastUpdate);
+  const hoursSinceUpdate = (now.getTime() - lastUpdateTime.getTime()) / (1000 * 60 * 60);
+  return hoursSinceUpdate >= 24;
+};
+
+const getCachedPrices = async () => {
+  const { data, error } = await supabase
+    .from('metal_prices')
+    .select('*')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching cached prices:', error);
+    return null;
+  }
+
+  return data;
+};
+
+const savePricesToCache = async (prices: any[]) => {
+  for (const price of prices) {
+    const { error } = await supabase
+      .from('metal_prices')
+      .upsert({
+        metal: price.metal,
+        symbol: price.symbol,
+        price: price.price,
+        change_amount: price.change,
+        change_percent: price.changePercent,
+        high: price.high,
+        low: price.low,
+        price_gram_24k: price.priceGram24k,
+        price_gram_18k: price.priceGram18k,
+        price_gram_14k: price.priceGram14k,
+        price_gram_10k: price.priceGram10k,
+        currency: price.currency,
+        source: 'goldapi',
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'metal,symbol,currency'
+      });
+
+    if (error) {
+      console.error('Error saving price to cache:', error);
     }
-  ];
+  }
+};
+
+const fetchFromAPI = async () => {
+  const goldApiKey = Deno.env.get('GOLD_API_KEY');
+  
+  if (!goldApiKey) {
+    throw new Error('GOLD_API_KEY not configured');
+  }
+
+  console.log('Fetching fresh data from Gold API...');
+  
+  const goldResponse = await fetch(`https://www.goldapi.io/api/XAU/USD`, {
+    headers: {
+      'x-access-token': goldApiKey,
+    },
+  });
+  
+  if (!goldResponse.ok) {
+    if (goldResponse.status === 403) {
+      throw new Error('API quota exceeded');
+    }
+    throw new Error(`API error: ${goldResponse.status}`);
+  }
+  
+  const goldData: GoldPriceResponse = await goldResponse.json();
+  
+  const prices = [{
+    metal: 'Gold',
+    symbol: 'XAU',
+    price: goldData.price,
+    change: goldData.ch,
+    changePercent: goldData.chp,
+    high: goldData.high_price,
+    low: goldData.low_price,
+    priceGram24k: goldData.price_gram_24k,
+    priceGram18k: goldData.price_gram_18k,
+    priceGram14k: goldData.price_gram_14k,
+    priceGram10k: goldData.price_gram_10k,
+    currency: goldData.currency,
+    lastUpdated: new Date().toISOString()
+  }];
+
+  // Try to fetch silver as well
+  try {
+    const silverResponse = await fetch(`https://www.goldapi.io/api/XAG/USD`, {
+      headers: {
+        'x-access-token': goldApiKey,
+      },
+    });
+    
+    if (silverResponse.ok) {
+      const silverData: GoldPriceResponse = await silverResponse.json();
+      prices.push({
+        metal: 'Silver',
+        symbol: 'XAG',
+        price: silverData.price,
+        change: silverData.ch,
+        changePercent: silverData.chp,
+        high: silverData.high_price,
+        low: silverData.low_price,
+        currency: silverData.currency,
+        lastUpdated: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.log('Could not fetch silver price:', error);
+  }
+
+  return prices;
 };
 
 const handler = async (req: Request): Promise<Response> => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const goldApiKey = Deno.env.get('GOLD_API_KEY');
+    console.log('🥇 Checking cached metal prices...');
     
-    if (!goldApiKey) {
-      console.log('GOLD_API_KEY not configured, using mock data');
-      return new Response(JSON.stringify({ 
-        prices: getMockGoldPrices(),
-        message: 'Using mock data - API key not configured',
-        apiStatus: 'no-key'
-      }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      });
-    }
-
-    console.log('Fetching gold prices from API...');
-
-    // Try to fetch gold price first (most important)
-    try {
-      const goldResponse = await fetch(`https://www.goldapi.io/api/XAU/USD`, {
-        headers: {
-          'x-access-token': goldApiKey,
-        },
-      });
+    // First, try to get cached prices
+    const cachedPrices = await getCachedPrices();
+    
+    // Check if we have cached data and if it's still fresh (less than 24 hours old)
+    if (cachedPrices && cachedPrices.length > 0) {
+      const latestUpdate = cachedPrices[0].updated_at;
       
-      if (goldResponse.status === 403) {
-        const errorData = await goldResponse.json();
-        if (errorData.error && errorData.error.includes('quota exceeded')) {
-          console.log('Gold API quota exceeded, using mock data');
-          return new Response(JSON.stringify({ 
-            prices: getMockGoldPrices(),
-            message: 'API quota exceeded - using estimated prices. The cleanup function should reduce API calls.',
-            quotaExceeded: true,
-            apiStatus: 'quota-exceeded'
-          }), {
-            status: 200,
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders,
-            },
-          });
-        }
-      }
+      if (!isDataStale(latestUpdate)) {
+        console.log('✅ Using fresh cached data');
+        
+        // Transform cached data to match expected format
+        const formattedPrices = cachedPrices.map(price => ({
+          metal: price.metal,
+          symbol: price.symbol,
+          price: Number(price.price),
+          change: Number(price.change_amount || 0),
+          changePercent: Number(price.change_percent || 0),
+          high: Number(price.high || 0),
+          low: Number(price.low || 0),
+          priceGram24k: price.price_gram_24k ? Number(price.price_gram_24k) : undefined,
+          priceGram18k: price.price_gram_18k ? Number(price.price_gram_18k) : undefined,
+          priceGram14k: price.price_gram_14k ? Number(price.price_gram_14k) : undefined,
+          priceGram10k: price.price_gram_10k ? Number(price.price_gram_10k) : undefined,
+          currency: price.currency,
+          lastUpdated: price.updated_at
+        }));
 
-      if (!goldResponse.ok) {
-        throw new Error(`Failed to fetch gold price: ${goldResponse.status}`);
-      }
-      
-      const goldData: GoldPriceResponse = await goldResponse.json();
-      
-      // Try to fetch other metals as well if quota allows
-      const prices = [{
-        metal: 'Gold',
-        symbol: 'XAU',
-        price: goldData.price,
-        change: goldData.ch,
-        changePercent: goldData.chp,
-        high: goldData.high_price,
-        low: goldData.low_price,
-        priceGram24k: goldData.price_gram_24k,
-        priceGram18k: goldData.price_gram_18k,
-        priceGram14k: goldData.price_gram_14k,
-        priceGram10k: goldData.price_gram_10k,
-        currency: goldData.currency,
-        lastUpdated: new Date().toISOString()
-      }];
-
-      // Try to fetch silver if we have quota
-      try {
-        const silverResponse = await fetch(`https://www.goldapi.io/api/XAG/USD`, {
+        return new Response(JSON.stringify({ 
+          prices: formattedPrices,
+          message: 'Real-time cached prices',
+          apiStatus: 'cached',
+          lastUpdate: latestUpdate
+        }), {
+          status: 200,
           headers: {
-            'x-access-token': goldApiKey,
+            'Content-Type': 'application/json',
+            ...corsHeaders,
           },
         });
-        
-        if (silverResponse.ok) {
-          const silverData: GoldPriceResponse = await silverResponse.json();
-          prices.push({
-            metal: 'Silver',
-            symbol: 'XAG',
-            price: silverData.price,
-            change: silverData.ch,
-            changePercent: silverData.chp,
-            high: silverData.high_price,
-            low: silverData.low_price,
-            currency: silverData.currency,
-            lastUpdated: new Date().toISOString()
-          });
-        }
-      } catch (silverError) {
-        console.log('Could not fetch silver price, continuing with just gold');
       }
+    }
 
-      console.log(`Successfully fetched ${prices.length} metal prices from API`);
-
+    console.log('📊 Cache is stale or empty, fetching from API...');
+    
+    // Try to fetch fresh data from API
+    try {
+      const freshPrices = await fetchFromAPI();
+      
+      // Save to cache
+      await savePricesToCache(freshPrices);
+      
+      console.log('✅ Fresh data fetched and cached successfully');
+      
       return new Response(JSON.stringify({ 
-        prices,
-        message: `Real-time ${prices.length === 1 ? 'gold' : 'metal'} prices fetched successfully`,
-        apiStatus: 'healthy'
+        prices: freshPrices,
+        message: 'Real-time prices updated successfully',
+        apiStatus: 'fresh'
       }), {
         status: 200,
         headers: {
@@ -201,32 +229,54 @@ const handler = async (req: Request): Promise<Response> => {
       });
 
     } catch (apiError: any) {
-      console.error('API error, falling back to mock data:', apiError.message);
-      return new Response(JSON.stringify({ 
-        prices: getMockGoldPrices(),
-        message: 'API temporarily unavailable - using estimated prices',
-        fallback: true,
-        apiStatus: 'error'
-      }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      });
+      console.error('❌ API error:', apiError.message);
+      
+      // If API fails but we have stale cached data, use it
+      if (cachedPrices && cachedPrices.length > 0) {
+        console.log('🔄 Using stale cached data due to API error');
+        
+        const formattedPrices = cachedPrices.map(price => ({
+          metal: price.metal,
+          symbol: price.symbol,
+          price: Number(price.price),
+          change: Number(price.change_amount || 0),
+          changePercent: Number(price.change_percent || 0),
+          high: Number(price.high || 0),
+          low: Number(price.low || 0),
+          priceGram24k: price.price_gram_24k ? Number(price.price_gram_24k) : undefined,
+          priceGram18k: price.price_gram_18k ? Number(price.price_gram_18k) : undefined,
+          priceGram14k: price.price_gram_14k ? Number(price.price_gram_14k) : undefined,
+          priceGram10k: price.price_gram_10k ? Number(price.price_gram_10k) : undefined,
+          currency: price.currency,
+          lastUpdated: price.updated_at
+        }));
+
+        return new Response(JSON.stringify({ 
+          prices: formattedPrices,
+          message: 'Using cached prices - API temporarily unavailable',
+          apiStatus: 'stale-cache',
+          lastUpdate: cachedPrices[0].updated_at
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
+        });
+      }
+      
+      throw apiError;
     }
 
   } catch (error: any) {
-    console.error('Error in get-gold-prices function:', error);
+    console.error('💥 Error in get-gold-prices function:', error);
     
-    // Always return mock data as fallback
     return new Response(JSON.stringify({ 
-      prices: getMockGoldPrices(),
-      message: 'Using fallback data due to technical issues',
-      error: error.message,
-      apiStatus: 'fallback'
+      error: 'Unable to fetch metal prices',
+      message: error.message,
+      apiStatus: 'error'
     }), {
-      status: 200,
+      status: 500,
       headers: {
         'Content-Type': 'application/json',
         ...corsHeaders,

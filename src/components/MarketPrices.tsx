@@ -2,12 +2,12 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, Clock, Wifi, WifiOff } from 'lucide-react';
 import { useGoldPrices } from '@/hooks/useGoldPrices';
 import { Button } from '@/components/ui/button';
 
 export const MarketPrices = () => {
-  const { prices, loading, error, refetch } = useGoldPrices();
+  const { prices, loading, error, apiStatus, lastUpdate, refetch } = useGoldPrices();
 
   if (loading) {
     return (
@@ -56,11 +56,60 @@ export const MarketPrices = () => {
     return `${sign}${change.toFixed(2)}`;
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'fresh':
+      case 'cached':
+        return <Wifi className="h-4 w-4 text-green-600" />;
+      case 'stale-cache':
+        return <Clock className="h-4 w-4 text-yellow-600" />;
+      case 'error':
+        return <WifiOff className="h-4 w-4 text-red-600" />;
+      default:
+        return <Clock className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'fresh':
+        return 'Real-time';
+      case 'cached':
+        return 'Live Data';
+      case 'stale-cache':
+        return 'Cached';
+      case 'error':
+        return 'Offline';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'fresh':
+      case 'cached':
+        return 'bg-green-100 text-green-800';
+      case 'stale-cache':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'error':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
-          Live Market Prices
+          <div className="flex items-center gap-2">
+            Live Market Prices
+            <Badge variant="secondary" className={`${getStatusColor(apiStatus)} flex items-center gap-1`}>
+              {getStatusIcon(apiStatus)}
+              {getStatusText(apiStatus)}
+            </Badge>
+          </div>
           <Button onClick={refetch} variant="ghost" size="sm">
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -106,9 +155,9 @@ export const MarketPrices = () => {
           ))}
         </div>
         
-        {prices.length > 0 && (
+        {lastUpdate && (
           <p className="text-xs text-gray-500 mt-4">
-            Last updated: {new Date(prices[0].lastUpdated).toLocaleString()}
+            Last updated: {new Date(lastUpdate).toLocaleString()}
           </p>
         )}
       </CardContent>

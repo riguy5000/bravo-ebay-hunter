@@ -396,6 +396,63 @@ export type Database = {
           },
         ]
       }
+      metal_prices: {
+        Row: {
+          change_amount: number | null
+          change_percent: number | null
+          created_at: string
+          currency: string
+          high: number | null
+          id: string
+          low: number | null
+          metal: string
+          price: number
+          price_gram_10k: number | null
+          price_gram_14k: number | null
+          price_gram_18k: number | null
+          price_gram_24k: number | null
+          source: string | null
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          change_amount?: number | null
+          change_percent?: number | null
+          created_at?: string
+          currency?: string
+          high?: number | null
+          id?: string
+          low?: number | null
+          metal: string
+          price: number
+          price_gram_10k?: number | null
+          price_gram_14k?: number | null
+          price_gram_18k?: number | null
+          price_gram_24k?: number | null
+          source?: string | null
+          symbol: string
+          updated_at?: string
+        }
+        Update: {
+          change_amount?: number | null
+          change_percent?: number | null
+          created_at?: string
+          currency?: string
+          high?: number | null
+          id?: string
+          low?: number | null
+          metal?: string
+          price?: number
+          price_gram_10k?: number | null
+          price_gram_14k?: number | null
+          price_gram_18k?: number | null
+          price_gram_24k?: number | null
+          source?: string | null
+          symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       purchases: {
         Row: {
           created_at: string
