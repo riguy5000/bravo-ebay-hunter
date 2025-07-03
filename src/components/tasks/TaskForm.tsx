@@ -50,10 +50,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   // Subcategory selection
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
   
-  // Type-specific filters
-  const [watchFilters, setWatchFilters] = useState({});
-  const [jewelryFilters, setJewelryFilters] = useState({});
-  const [gemstoneFilters, setGemstoneFilters] = useState({});
+  // Type-specific filters - initialize with empty objects to prevent malformed data
+  const [watchFilters, setWatchFilters] = useState<any>({});
+  const [jewelryFilters, setJewelryFilters] = useState<any>({});
+  const [gemstoneFilters, setGemstoneFilters] = useState<any>({});
 
   // Initialize form with template or editing task data
   useEffect(() => {
@@ -64,9 +64,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setName(template.name);
       setItemType(template.itemType);
       setMaxPrice(template.maxPrice?.toString() || '1000');
-      setWatchFilters(template.watchFilters || {});
-      setJewelryFilters(template.jewelryFilters || {});
-      setGemstoneFilters(template.gemstoneFilters || {});
+      
+      // Safely initialize filters to prevent malformed data
+      setWatchFilters(template.watchFilters && typeof template.watchFilters === 'object' ? template.watchFilters : {});
+      setJewelryFilters(template.jewelryFilters && typeof template.jewelryFilters === 'object' ? template.jewelryFilters : {});
+      setGemstoneFilters(template.gemstoneFilters && typeof template.gemstoneFilters === 'object' ? template.gemstoneFilters : {});
       
       if (template.listingFormats) {
         setListingFormats(template.listingFormats);
@@ -81,15 +83,19 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setExcludeKeywords(editingTask.exclude_keywords?.join(', ') || '');
       setListingFormats(editingTask.listing_format || ['Fixed Price (BIN)', 'Auction']);
       
-      // Load type-specific filters with proper fallbacks
-      setWatchFilters(editingTask.watch_filters || {});
-      setJewelryFilters(editingTask.jewelry_filters || {});
-      setGemstoneFilters(editingTask.gemstone_filters || {});
+      // Safely load type-specific filters with proper fallbacks and validation
+      const safeWatchFilters = editingTask.watch_filters && typeof editingTask.watch_filters === 'object' && !Array.isArray(editingTask.watch_filters) ? editingTask.watch_filters : {};
+      const safeJewelryFilters = editingTask.jewelry_filters && typeof editingTask.jewelry_filters === 'object' && !Array.isArray(editingTask.jewelry_filters) ? editingTask.jewelry_filters : {};
+      const safeGemstoneFilters = editingTask.gemstone_filters && typeof editingTask.gemstone_filters === 'object' && !Array.isArray(editingTask.gemstone_filters) ? editingTask.gemstone_filters : {};
+      
+      setWatchFilters(safeWatchFilters);
+      setJewelryFilters(safeJewelryFilters);
+      setGemstoneFilters(safeGemstoneFilters);
       
       console.log('📊 Loaded filters:', {
-        watch: editingTask.watch_filters,
-        jewelry: editingTask.jewelry_filters,
-        gemstone: editingTask.gemstone_filters
+        watch: safeWatchFilters,
+        jewelry: safeJewelryFilters,
+        gemstone: safeGemstoneFilters
       });
     } else {
       // Reset to defaults for new task
@@ -144,6 +150,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({
 
     setLoading(true);
     try {
+      // Clean and validate filter data before saving
+      const cleanWatchFilters = watchFilters && typeof watchFilters === 'object' && !Array.isArray(watchFilters) ? watchFilters : {};
+      const cleanJewelryFilters = jewelryFilters && typeof jewelryFilters === 'object' && !Array.isArray(jewelryFilters) ? jewelryFilters : {};
+      const cleanGemstoneFilters = gemstoneFilters && typeof gemstoneFilters === 'object' && !Array.isArray(gemstoneFilters) ? gemstoneFilters : {};
+
       const taskData = {
         name: name.trim(),
         item_type: itemType,
@@ -153,9 +164,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         listing_format: listingFormats,
         min_seller_feedback: minSellerFeedback ? parseInt(minSellerFeedback) : 0,
         exclude_keywords: excludeKeywords ? excludeKeywords.split(',').map(k => k.trim()).filter(k => k) : [],
-        watch_filters: itemType === 'watch' ? watchFilters : undefined,
-        jewelry_filters: itemType === 'jewelry' ? jewelryFilters : undefined,
-        gemstone_filters: itemType === 'gemstone' ? gemstoneFilters : undefined,
+        watch_filters: itemType === 'watch' ? cleanWatchFilters : undefined,
+        jewelry_filters: itemType === 'jewelry' ? cleanJewelryFilters : undefined,
+        gemstone_filters: itemType === 'gemstone' ? cleanGemstoneFilters : undefined,
       };
 
       console.log('💾 Saving task data:', taskData);
