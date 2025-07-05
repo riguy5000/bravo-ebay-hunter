@@ -1,40 +1,46 @@
 
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ApiConfiguration } from '@/components/settings/ApiConfiguration';
-import { UserPreferences } from '@/components/settings/UserPreferences';
+import { EbayApiSettings } from '@/components/settings/EbayApiSettings';
+import { MetalPriceApiSettings } from '@/components/settings/MetalPriceApiSettings';
+import { OpenAiApiSettings } from '@/components/settings/OpenAiApiSettings';
+import { GeneralSettings } from '@/components/settings/GeneralSettings';
 import { DataImport } from '@/components/settings/DataImport';
-import { EbayApiKeysManager } from '@/components/settings/EbayApiKeysManager';
 
 const Settings = () => {
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600">Configure your eBay CRM</p>
+        <p className="text-gray-600">Configure your eBay CRM APIs and preferences</p>
       </div>
 
-      <Tabs defaultValue="api" className="w-full">
-        <TabsList>
-          <TabsTrigger value="api">API Configuration</TabsTrigger>
-          <TabsTrigger value="ebay-keys">eBay API Keys</TabsTrigger>
-          <TabsTrigger value="preferences">Preferences</TabsTrigger>
-          <TabsTrigger value="import">Import Data</TabsTrigger>
+      <Tabs defaultValue="ebay" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="ebay">eBay API</TabsTrigger>
+          <TabsTrigger value="metals">Metal Prices</TabsTrigger>
+          <TabsTrigger value="openai">OpenAI</TabsTrigger>
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="data">Data Management</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="api">
-          <ApiConfiguration />
+        <TabsContent value="ebay">
+          <EbayApiSettings />
         </TabsContent>
         
-        <TabsContent value="ebay-keys">
-          <EbayApiKeysManager />
+        <TabsContent value="metals">
+          <MetalPriceApiSettings />
         </TabsContent>
         
-        <TabsContent value="preferences">
-          <UserPreferences />
+        <TabsContent value="openai">
+          <OpenAiApiSettings />
         </TabsContent>
         
-        <TabsContent value="import">
+        <TabsContent value="general">
+          <GeneralSettings />
+        </TabsContent>
+        
+        <TabsContent value="data">
           <DataImport />
         </TabsContent>
       </Tabs>
