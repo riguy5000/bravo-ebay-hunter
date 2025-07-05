@@ -1,5 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,7 +31,12 @@ interface GoldPriceResponse {
   price_gram_10k: number;
 }
 
-// Enhanced mock data with all metals for when API is unavailable
+const supabase = createClient(
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+);
+
+// Enhanced mock data for fallback
 const getMockGoldPrices = () => {
   return [
     {
@@ -84,6 +90,61 @@ const getMockGoldPrices = () => {
   ];
 };
 
+const fetchApiKey = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('value_json')
+      .eq('key', 'precious_metal_api')
+      .single();
+
+    if (error || !data) {
+      console.log('No precious metal API settings found');
+      return null;
+    }
+
+    const settings = data.value_json as any;
+    return settings?.api_key || null;
+  } catch (error) {
+    console.error('Error fetching API key from settings:', error);
+    return null;
+  }
+};
+
+const storePricesInDatabase = async (prices: any[]) => {
+  try {
+    // Clear existing prices
+    await supabase.from('metal_prices').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+    // Insert new prices
+    const dbPrices = prices.map(price => ({
+      metal: price.metal,
+      symbol: price.symbol,
+      price: price.price,
+      currency: price.currency,
+      change_amount: price.change,
+      change_percent: price.changePercent,
+      high: price.high,
+      low: price.low,
+      price_gram_24k: price.priceGram24k,
+      price_gram_18k: price.priceGram18k,
+      price_gram_14k: price.priceGram14k,
+      price_gram_10k: price.priceGram10k,
+      source: 'goldapi'
+    }));
+
+    const { error } = await supabase.from('metal_prices').insert(dbPrices);
+    
+    if (error) {
+      console.error('Error storing prices in database:', error);
+    } else {
+      console.log('Successfully stored prices in database');
+    }
+  } catch (error) {
+    console.error('Error in storePricesInDatabase:', error);
+  }
+};
+
 const handler = async (req: Request): Promise<Response> => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -91,13 +152,16 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const goldApiKey = Deno.env.get('GOLD_API_KEY');
+    console.log('Fetching gold prices...');
+    
+    // Get API key from database settings
+    const goldApiKey = await fetchApiKey();
     
     if (!goldApiKey) {
-      console.log('GOLD_API_KEY not configured, using mock data');
+      console.log('No API key configured, using mock data');
       return new Response(JSON.stringify({ 
         prices: getMockGoldPrices(),
-        message: 'Using mock data - API key not configured',
+        message: 'Using mock data - API key not configured in settings',
         apiStatus: 'no-key'
       }), {
         status: 200,
@@ -108,13 +172,30 @@ const handler = async (req: Request): Promise<Response> => {
       });
     }
 
-    console.log('Fetching gold prices from API...');
+    // Validate API key format
+    if (!goldApiKey.startsWith('goldapi-')) {
+      console.log('Invalid API key format, using mock data');
+      return new Response(JSON.stringify({ 
+        prices: getMockGoldPrices(),
+        message: 'Invalid API key format - should start with "goldapi-"',
+        apiStatus: 'invalid-key'
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
+      });
+    }
+
+    console.log('Using API key from settings:', goldApiKey.substring(0, 10) + '...');
 
     // Try to fetch gold price first (most important)
     try {
       const goldResponse = await fetch(`https://www.goldapi.io/api/XAU/USD`, {
         headers: {
           'x-access-token': goldApiKey,
+          'Content-Type': 'application/json',
         },
       });
       
@@ -124,7 +205,7 @@ const handler = async (req: Request): Promise<Response> => {
           console.log('Gold API quota exceeded, using mock data');
           return new Response(JSON.stringify({ 
             prices: getMockGoldPrices(),
-            message: 'API quota exceeded - using estimated prices. The cleanup function should reduce API calls.',
+            message: 'API quota exceeded - using estimated prices',
             quotaExceeded: true,
             apiStatus: 'quota-exceeded'
           }), {
@@ -138,12 +219,13 @@ const handler = async (req: Request): Promise<Response> => {
       }
 
       if (!goldResponse.ok) {
-        throw new Error(`Failed to fetch gold price: ${goldResponse.status}`);
+        throw new Error(`Failed to fetch gold price: ${goldResponse.status} ${goldResponse.statusText}`);
       }
       
       const goldData: GoldPriceResponse = await goldResponse.json();
+      console.log('Gold API response:', goldData);
       
-      // Try to fetch other metals as well if quota allows
+      // Build prices array starting with gold
       const prices = [{
         metal: 'Gold',
         symbol: 'XAU',
@@ -160,31 +242,45 @@ const handler = async (req: Request): Promise<Response> => {
         lastUpdated: new Date().toISOString()
       }];
 
-      // Try to fetch silver if we have quota
-      try {
-        const silverResponse = await fetch(`https://www.goldapi.io/api/XAG/USD`, {
-          headers: {
-            'x-access-token': goldApiKey,
-          },
-        });
-        
-        if (silverResponse.ok) {
-          const silverData: GoldPriceResponse = await silverResponse.json();
-          prices.push({
-            metal: 'Silver',
-            symbol: 'XAG',
-            price: silverData.price,
-            change: silverData.ch,
-            changePercent: silverData.chp,
-            high: silverData.high_price,
-            low: silverData.low_price,
-            currency: silverData.currency,
-            lastUpdated: new Date().toISOString()
+      // Try to fetch other metals if we have quota
+      const metals = [
+        { symbol: 'XAG', name: 'Silver' },
+        { symbol: 'XPT', name: 'Platinum' },
+        { symbol: 'XPD', name: 'Palladium' }
+      ];
+
+      for (const metal of metals) {
+        try {
+          const response = await fetch(`https://www.goldapi.io/api/${metal.symbol}/USD`, {
+            headers: {
+              'x-access-token': goldApiKey,
+              'Content-Type': 'application/json',
+            },
           });
+          
+          if (response.ok) {
+            const data: GoldPriceResponse = await response.json();
+            prices.push({
+              metal: metal.name,
+              symbol: metal.symbol,
+              price: data.price,
+              change: data.ch,
+              changePercent: data.chp,
+              high: data.high_price,
+              low: data.low_price,
+              currency: data.currency,
+              lastUpdated: new Date().toISOString()
+            });
+          } else {
+            console.log(`Could not fetch ${metal.name} price: ${response.status}`);
+          }
+        } catch (metalError) {
+          console.log(`Error fetching ${metal.name} price:`, metalError);
         }
-      } catch (silverError) {
-        console.log('Could not fetch silver price, continuing with just gold');
       }
+
+      // Store prices in database
+      await storePricesInDatabase(prices);
 
       console.log(`Successfully fetched ${prices.length} metal prices from API`);
 
@@ -204,7 +300,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error('API error, falling back to mock data:', apiError.message);
       return new Response(JSON.stringify({ 
         prices: getMockGoldPrices(),
-        message: 'API temporarily unavailable - using estimated prices',
+        message: `API error: ${apiError.message} - using estimated prices`,
         fallback: true,
         apiStatus: 'error'
       }), {

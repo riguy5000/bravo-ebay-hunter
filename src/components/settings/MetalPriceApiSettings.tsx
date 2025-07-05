@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { TestTube, ExternalLink } from 'lucide-react';
+import { TestTube, ExternalLink, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSettings } from '@/hooks/useSettings';
 import { useGoldPrices } from '@/hooks/useGoldPrices';
@@ -27,14 +27,30 @@ export const MetalPriceApiSettings = () => {
     poll_interval: 300
   };
 
+  const validateApiKey = (apiKey: string) => {
+    if (!apiKey) return false;
+    if (!apiKey.startsWith('goldapi-')) {
+      toast.error('API key should start with "goldapi-"');
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSaving(true);
 
     const formData = new FormData(e.currentTarget);
+    const apiKey = formData.get('api_key') as string;
+    
+    if (!validateApiKey(apiKey)) {
+      setSaving(false);
+      return;
+    }
+
     const updatedSettings = {
       provider: formData.get('provider') as string,
-      api_key: formData.get('api_key') as string,
+      api_key: apiKey,
       poll_interval: parseInt(formData.get('poll_interval') as string)
     };
 
@@ -50,11 +66,16 @@ export const MetalPriceApiSettings = () => {
   };
 
   const testConnection = async () => {
+    if (!metalApiSettings.api_key || !validateApiKey(metalApiSettings.api_key)) {
+      toast.error('Please save a valid API key first');
+      return;
+    }
+
     setTesting(true);
     try {
       await refetch();
       if (prices && prices.length > 0) {
-        toast.success('Metal Price API connection successful!');
+        toast.success(`Metal Price API connection successful! Fetched ${prices.length} metals.`);
       } else {
         toast.warning('API connected but no price data received');
       }
@@ -65,6 +86,8 @@ export const MetalPriceApiSettings = () => {
       setTesting(false);
     }
   };
+
+  const isValidApiKey = metalApiSettings.api_key && metalApiSettings.api_key.startsWith('goldapi-');
 
   return (
     <div className="space-y-6">
@@ -96,10 +119,16 @@ export const MetalPriceApiSettings = () => {
               <Input
                 name="api_key"
                 type="password"
-                placeholder="Enter your API key"
+                placeholder="goldapi-xxxxxxxxx-io"
                 defaultValue={metalApiSettings.api_key}
                 required
               />
+              {metalApiSettings.api_key && !isValidApiKey && (
+                <div className="flex items-center gap-2 mt-2 text-amber-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span className="text-sm">API key should start with "goldapi-"</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -125,7 +154,7 @@ export const MetalPriceApiSettings = () => {
                 type="button" 
                 variant="outline" 
                 onClick={testConnection}
-                disabled={testing || pricesLoading}
+                disabled={testing || pricesLoading || !isValidApiKey}
                 className="flex items-center gap-2"
               >
                 <TestTube className="h-4 w-4" />
@@ -149,15 +178,30 @@ export const MetalPriceApiSettings = () => {
                 {pricesLoading ? 'Checking...' : (prices && prices.length > 0) ? 'Connected' : 'Disconnected'}
               </Badge>
             </div>
+
+            <div className="flex items-center justify-between">
+              <span>API Key Status:</span>
+              <Badge variant={isValidApiKey ? "default" : "secondary"}>
+                {isValidApiKey ? 'Valid' : 'Not Set'}
+              </Badge>
+            </div>
             
             {prices && prices.length > 0 && (
               <div className="space-y-2">
-                <span className="text-sm font-medium">Available Metals:</span>
-                <div className="flex flex-wrap gap-1">
+                <span className="text-sm font-medium">Current Prices:</span>
+                <div className="grid grid-cols-2 gap-2">
                   {prices.map((price) => (
-                    <Badge key={price.symbol} variant="outline" className="text-xs">
-                      {price.metal}: ${typeof price.price === 'number' ? price.price.toFixed(2) : 'N/A'}
-                    </Badge>
+                    <div key={price.symbol} className="bg-gray-50 p-2 rounded text-sm">
+                      <div className="font-medium">{price.metal}</div>
+                      <div className="text-lg font-bold">
+                        ${typeof price.price === 'number' ? price.price.toFixed(2) : 'N/A'}
+                      </div>
+                      {price.change && (
+                        <div className={`text-xs ${price.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {price.change >= 0 ? '+' : ''}{price.change.toFixed(2)} ({price.changePercent?.toFixed(2)}%)
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
@@ -178,6 +222,7 @@ export const MetalPriceApiSettings = () => {
             <li>• Free tier includes 100 requests per month</li>
             <li>• Covers Gold, Silver, Platinum, and Palladium pricing</li>
             <li>• Data updates every few minutes during market hours</li>
+            <li>• API key format: goldapi-xxxxxxxxx-io</li>
           </ul>
           <div className="mt-3">
             <a 
