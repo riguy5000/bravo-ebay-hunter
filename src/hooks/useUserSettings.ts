@@ -14,6 +14,8 @@ interface UserSettings {
   email_notifications: boolean;
   match_notifications: boolean;
   theme: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export const useUserSettings = () => {
