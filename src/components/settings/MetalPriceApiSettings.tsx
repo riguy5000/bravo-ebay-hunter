@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { TestTube, ExternalLink, AlertTriangle } from 'lucide-react';
+import { TestTube, ExternalLink, AlertTriangle, Clock, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSettings } from '@/hooks/useSettings';
 import { useGoldPrices } from '@/hooks/useGoldPrices';
@@ -16,6 +16,7 @@ export const MetalPriceApiSettings = () => {
   const { prices, loading: pricesLoading, refetch } = useGoldPrices();
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [selectedInterval, setSelectedInterval] = useState<number | null>(null);
 
   if (loading) {
     return <div>Loading Metal Price API settings...</div>;
@@ -24,7 +25,7 @@ export const MetalPriceApiSettings = () => {
   const metalApiSettings = settings.precious_metal_api || {
     provider: 'goldapi',
     api_key: '',
-    poll_interval: 300
+    poll_interval: 43200 // Default to 12 hours instead of 5 minutes
   };
 
   const validateApiKey = (apiKey: string) => {
@@ -36,12 +37,35 @@ export const MetalPriceApiSettings = () => {
     return true;
   };
 
+  const getIntervalSuggestions = () => [
+    { label: '1 Hour', seconds: 3600, requestsPerMonth: 744 },
+    { label: '6 Hours', seconds: 21600, requestsPerMonth: 124 },
+    { label: '12 Hours', seconds: 43200, requestsPerMonth: 62 },
+    { label: '24 Hours', seconds: 86400, requestsPerMonth: 31 }
+  ];
+
+  const calculateMonthlyRequests = (intervalSeconds: number) => {
+    return Math.ceil((30 * 24 * 60 * 60) / intervalSeconds);
+  };
+
+  const getIntervalWarning = (intervalSeconds: number) => {
+    const monthlyRequests = calculateMonthlyRequests(intervalSeconds);
+    if (monthlyRequests > 100) {
+      return `⚠️ ${monthlyRequests} requests/month will exceed the free tier limit (100 requests)`;
+    }
+    if (monthlyRequests > 50) {
+      return `⚠️ ${monthlyRequests} requests/month - consider a longer interval to stay within free tier`;
+    }
+    return `✅ ${monthlyRequests} requests/month - well within free tier limits`;
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSaving(true);
 
     const formData = new FormData(e.currentTarget);
     const apiKey = formData.get('api_key') as string;
+    const pollInterval = selectedInterval || parseInt(formData.get('poll_interval') as string);
     
     if (!validateApiKey(apiKey)) {
       setSaving(false);
@@ -51,7 +75,7 @@ export const MetalPriceApiSettings = () => {
     const updatedSettings = {
       provider: formData.get('provider') as string,
       api_key: apiKey,
-      poll_interval: parseInt(formData.get('poll_interval') as string)
+      poll_interval: pollInterval
     };
 
     try {
@@ -88,6 +112,7 @@ export const MetalPriceApiSettings = () => {
   };
 
   const isValidApiKey = metalApiSettings.api_key && metalApiSettings.api_key.startsWith('goldapi-');
+  const currentInterval = selectedInterval || metalApiSettings.poll_interval;
 
   return (
     <div className="space-y-6">
@@ -131,19 +156,57 @@ export const MetalPriceApiSettings = () => {
               )}
             </div>
 
-            <div>
-              <Label htmlFor="poll_interval">Poll Interval (seconds)</Label>
-              <Input
-                name="poll_interval"
-                type="number"
-                min="60"
-                max="3600"
-                defaultValue={metalApiSettings.poll_interval}
-                required
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                How often to fetch updated price data (minimum 60 seconds)
-              </p>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="poll_interval">Poll Interval (seconds)</Label>
+                <Input
+                  name="poll_interval"
+                  type="number"
+                  min="60"
+                  max="2592000"
+                  value={selectedInterval || metalApiSettings.poll_interval}
+                  onChange={(e) => setSelectedInterval(parseInt(e.target.value))}
+                  required
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  How often to fetch updated price data (minimum 60 seconds, maximum 30 days)
+                </p>
+              </div>
+
+              {/* Quick Interval Buttons */}
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Quick Presets:</Label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {getIntervalSuggestions().map((suggestion) => (
+                    <Button
+                      key={suggestion.seconds}
+                      type="button"
+                      variant={currentInterval === suggestion.seconds ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSelectedInterval(suggestion.seconds)}
+                      className="flex flex-col items-center p-3 h-auto"
+                    >
+                      <Clock className="h-3 w-3 mb-1" />
+                      <span className="text-xs">{suggestion.label}</span>
+                      <span className="text-xs text-gray-500">{suggestion.requestsPerMonth}/mo</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Usage Warning/Info */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium text-blue-800 mb-1">API Usage Estimate</p>
+                    <p className="text-blue-700">{getIntervalWarning(currentInterval)}</p>
+                    <p className="text-blue-600 mt-1 text-xs">
+                      Metal prices change slowly - longer intervals (6-24 hours) are usually sufficient and conserve your API quota.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-2 pt-4">
@@ -185,6 +248,13 @@ export const MetalPriceApiSettings = () => {
                 {isValidApiKey ? 'Valid' : 'Not Set'}
               </Badge>
             </div>
+
+            <div className="flex items-center justify-between">
+              <span>Current Poll Interval:</span>
+              <Badge variant="outline">
+                {Math.floor(metalApiSettings.poll_interval / 3600)}h {Math.floor((metalApiSettings.poll_interval % 3600) / 60)}m
+              </Badge>
+            </div>
             
             {prices && prices.length > 0 && (
               <div className="space-y-2">
@@ -223,6 +293,7 @@ export const MetalPriceApiSettings = () => {
             <li>• Covers Gold, Silver, Platinum, and Palladium pricing</li>
             <li>• Data updates every few minutes during market hours</li>
             <li>• API key format: goldapi-xxxxxxxxx-io</li>
+            <li>• Recommended: Use 12-24 hour intervals to conserve quota</li>
           </ul>
           <div className="mt-3">
             <a 
