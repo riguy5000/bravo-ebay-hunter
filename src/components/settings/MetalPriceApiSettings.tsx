@@ -42,6 +42,7 @@ export const MetalPriceApiSettings = () => {
       await updateSetting('precious_metal_api', updatedSettings);
       toast.success('Metal Price API settings updated successfully!');
     } catch (error) {
+      console.error('Error updating metal price API settings:', error);
       toast.error('Failed to update Metal Price API settings');
     } finally {
       setSaving(false);
@@ -52,12 +53,13 @@ export const MetalPriceApiSettings = () => {
     setTesting(true);
     try {
       await refetch();
-      if (prices.length > 0) {
+      if (prices && prices.length > 0) {
         toast.success('Metal Price API connection successful!');
       } else {
         toast.warning('API connected but no price data received');
       }
     } catch (error) {
+      console.error('Error testing metal price API connection:', error);
       toast.error('Failed to connect to Metal Price API');
     } finally {
       setTesting(false);
@@ -123,7 +125,7 @@ export const MetalPriceApiSettings = () => {
                 type="button" 
                 variant="outline" 
                 onClick={testConnection}
-                disabled={testing}
+                disabled={testing || pricesLoading}
                 className="flex items-center gap-2"
               >
                 <TestTube className="h-4 w-4" />
@@ -143,21 +145,24 @@ export const MetalPriceApiSettings = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span>Connection Status:</span>
-              <Badge variant={prices.length > 0 ? "default" : "secondary"}>
-                {pricesLoading ? 'Checking...' : prices.length > 0 ? 'Connected' : 'Disconnected'}
+              <Badge variant={prices && prices.length > 0 ? "default" : "secondary"}>
+                {pricesLoading ? 'Checking...' : (prices && prices.length > 0) ? 'Connected' : 'Disconnected'}
               </Badge>
             </div>
             
-            {prices.length > 0 && (
+            {prices && prices.length > 0 && (
               <div className="space-y-2">
                 <span className="text-sm font-medium">Available Metals:</span>
                 <div className="flex flex-wrap gap-1">
                   {prices.map((price) => (
                     <Badge key={price.symbol} variant="outline" className="text-xs">
-                      {price.metal} (${price.price.toFixed(2)})
+                      {price.metal}: ${typeof price.price === 'number' ? price.price.toFixed(2) : 'N/A'}
                     </Badge>
                   ))}
                 </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Last updated: {prices[0]?.lastUpdated ? new Date(prices[0].lastUpdated).toLocaleString() : 'Unknown'}
+                </p>
               </div>
             )}
           </div>
@@ -175,10 +180,17 @@ export const MetalPriceApiSettings = () => {
             <li>• Data updates every few minutes during market hours</li>
           </ul>
           <div className="mt-3">
-            <Button variant="outline" size="sm" className="text-green-700 border-green-300">
-              <ExternalLink className="h-3 w-3 mr-1" />
-              Get API Key from GoldAPI.io
-            </Button>
+            <a 
+              href="https://www.goldapi.io/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center"
+            >
+              <Button variant="outline" size="sm" className="text-green-700 border-green-300">
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Get API Key from GoldAPI.io
+              </Button>
+            </a>
           </div>
         </CardContent>
       </Card>
