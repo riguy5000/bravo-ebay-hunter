@@ -26,8 +26,6 @@ export const GeneralSettings = () => {
       theme: formData.get('theme') as string,
       email_notifications: formData.get('email_notifications') === 'on',
       match_notifications: formData.get('match_notifications') === 'on',
-      default_poll_interval: parseInt(formData.get('default_poll_interval') as string),
-      default_max_price: parseFloat(formData.get('default_max_price') as string),
     };
 
     try {
@@ -46,12 +44,12 @@ export const GeneralSettings = () => {
         <CardHeader>
           <CardTitle>General Preferences</CardTitle>
           <CardDescription>
-            Configure your personal preferences and default values
+            Configure your personal preferences and notification settings
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <Label htmlFor="theme">Theme</Label>
                 <Select name="theme" defaultValue={settings?.theme || 'light'}>
@@ -64,30 +62,6 @@ export const GeneralSettings = () => {
                     <SelectItem value="system">System</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="default_poll_interval">Default Poll Interval (seconds)</Label>
-                <Input
-                  name="default_poll_interval"
-                  type="number"
-                  min="60"
-                  max="3600"
-                  defaultValue={settings?.default_poll_interval || 300}
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="default_max_price">Default Max Price ($)</Label>
-                <Input
-                  name="default_max_price"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  defaultValue={settings?.default_max_price || 1000}
-                  required
-                />
               </div>
             </div>
 
