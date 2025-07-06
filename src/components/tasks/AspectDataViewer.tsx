@@ -40,13 +40,13 @@ export const AspectDataViewer: React.FC = () => {
       const { data: watchData } = await supabase
         .from('ebay_aspects')
         .select('aspect_name, values_json')
-        .eq('category_id', '31387');
+        .eq('category_id', 'watches_merged');
 
       // Fetch gems data  
       const { data: gemData } = await supabase
         .from('ebay_aspects')
         .select('aspect_name, values_json')
-        .eq('category_id', 'gemstone_general');
+        .eq('category_id', 'gems_merged');
 
       // Process each category
       const processData = (data: any[]) => {
@@ -225,7 +225,7 @@ export const AspectDataViewer: React.FC = () => {
               className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white"
             >
               <Zap className={`h-4 w-4 ${bulkRefreshing ? 'animate-pulse' : ''}`} />
-              {bulkRefreshing ? 'Collecting All Data...' : 'Bulk Collect All Jewelry'}
+              {bulkRefreshing ? 'Collecting All Data...' : 'Bulk Collect All Categories'}
             </Button>
             <Button 
               variant="outline" 
@@ -274,12 +274,22 @@ export const AspectDataViewer: React.FC = () => {
           </div>
 
           {/* Missing Data Alert */}
-          {categoryData.jewelry.Metal && (
-            <Alert className="mb-4">
+          {Object.keys(categoryData.gems).length === 0 && (
+            <Alert className="mb-4 border-orange-200 bg-orange-50">
               <AlertDescription>
-                <strong>Metal Options Status:</strong> Found {categoryData.jewelry.Metal.length} metal types. 
-                Missing from eBay data: Platinum (non-plated), Palladium (non-plated), Fine Silver, Sterling Silver, Vermeil.
-                Try "Bulk Collect All Jewelry" to gather more comprehensive data.
+                <strong>Missing Gemstone Data:</strong> No gemstone aspects found. 
+                Click "Bulk Collect All Categories" to gather comprehensive data from 
+                Loose Diamonds (164394) and Loose Gemstones (262027) categories.
+                Expected filters: Gemstone Creation, Gemstone Color, Gemstone Shape, Brand, Condition.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {Object.keys(categoryData.watches).length === 0 && (
+            <Alert className="mb-4 border-blue-200 bg-blue-50">
+              <AlertDescription>
+                <strong>Missing Watch Data:</strong> No watch aspects found. 
+                Click "Bulk Collect All Categories" to gather watch data with proper filtering options.
               </AlertDescription>
             </Alert>
           )}

@@ -20,10 +20,10 @@ export const EnhancedWatchFilters: React.FC<EnhancedWatchFiltersProps> = ({
     onChange({ ...filters, [key]: value });
   };
 
-  // Use test category for consistent data
+  // Use real eBay category for watches
   const categoryId = selectedSubcategories.length > 0 
     ? selectedSubcategories[0] 
-    : 'watch_general';
+    : 'watches_merged';
 
   return (
     <Card>

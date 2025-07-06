@@ -20,10 +20,10 @@ export const EnhancedGemstoneFilters: React.FC<EnhancedGemstoneFiltersProps> = (
     onChange({ ...filters, [key]: value });
   };
 
-  // Use test category for consistent data
+  // Use real eBay category for gemstones  
   const categoryId = selectedSubcategories.length > 0 
     ? selectedSubcategories[0] 
-    : 'gemstone_general';
+    : 'gems_merged';
 
   return (
     <Card>
@@ -37,21 +37,75 @@ export const EnhancedGemstoneFilters: React.FC<EnhancedGemstoneFiltersProps> = (
         {/* Multi-select aspect filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <MultiSelectAspectFilter
-            title="Stone Types"
+            title="Gemstone Types"
             categoryId={categoryId}
-            aspectName="Stone Type"
-            selectedValues={filters.stone_types || []}
-            onChange={(values) => handleChange('stone_types', values)}
-            placeholder="Select stone types..."
+            aspectName="Gemstone Type"
+            selectedValues={filters.gemstone_types || []}
+            onChange={(values) => handleChange('gemstone_types', values)}
+            placeholder="Select gemstone types..."
           />
 
           <MultiSelectAspectFilter
-            title="Cuts/Shapes"
+            title="Gemstone Creation"
             categoryId={categoryId}
-            aspectName="Cut"
-            selectedValues={filters.cuts || []}
-            onChange={(values) => handleChange('cuts', values)}
-            placeholder="Select cuts/shapes..."
+            aspectName="Gemstone Creation"
+            selectedValues={filters.gemstone_creation || []}
+            onChange={(values) => handleChange('gemstone_creation', values)}
+            placeholder="Select creation method..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Gemstone Color"
+            categoryId={categoryId}
+            aspectName="Gemstone Color"
+            selectedValues={filters.gemstone_color || []}
+            onChange={(values) => handleChange('gemstone_color', values)}
+            placeholder="Select colors..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Gemstone Shape"
+            categoryId={categoryId}
+            aspectName="Gemstone Shape"
+            selectedValues={filters.gemstone_shape || []}
+            onChange={(values) => handleChange('gemstone_shape', values)}
+            placeholder="Select shapes..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Brands"
+            categoryId={categoryId}
+            aspectName="Brand"
+            selectedValues={filters.brands || []}
+            onChange={(values) => handleChange('brands', values)}
+            placeholder="Select brands..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Condition"
+            categoryId={categoryId}
+            aspectName="Condition"
+            selectedValues={filters.condition || []}
+            onChange={(values) => handleChange('condition', values)}
+            placeholder="Select condition..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Gemstone Clarity Grade"
+            categoryId={categoryId}
+            aspectName="Gemstone Clarity Grade"
+            selectedValues={filters.clarity_grade || []}
+            onChange={(values) => handleChange('clarity_grade', values)}
+            placeholder="Select clarity..."
+          />
+
+          <MultiSelectAspectFilter
+            title="Gemstone Treatment"
+            categoryId={categoryId}
+            aspectName="Gemstone Treatment"
+            selectedValues={filters.treatment || []}
+            onChange={(values) => handleChange('treatment', values)}
+            placeholder="Select treatment..."
           />
         </div>
 

@@ -11,40 +11,49 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
-// Complete jewelry category mapping
-const JEWELRY_CATEGORIES = {
-  'Fine Categories': {
-    'Rings': '164343',
-    'Necklaces & Pendants': '164329', 
-    'Earrings': '164321',
-    'Bracelets': '10968',
+// Complete category mapping - JEWELRY, WATCHES, GEMS/DIAMONDS
+const ALL_CATEGORIES = {
+  'Jewelry - Fine Categories': {
+    'Fine Rings': '164343',
+    'Fine Necklaces & Pendants': '164329', 
+    'Fine Earrings': '164321',
+    'Fine Bracelets': '10968',
     'Brooches & Pins': '50692',
     'Charms / Charm Bracelets': '140956',
     'Body Jewellery': '103428'
   },
-  'Fashion Categories': {
+  'Jewelry - Fashion Categories': {
     'Fashion Rings': '50647',
     'Fashion Necklaces & Pendants': '155101',
     'Fashion Earrings': '155099',
     'Fashion Bracelets': '155100'
   },
-  'Men\'s Categories': {
+  'Jewelry - Men\'s Categories': {
     'Men\'s Rings': '102888',
     'Men\'s Necklaces': '102890',
     'Men\'s Bracelets': '102889',
     'Men\'s Cufflinks': '102891'
   },
-  'Wedding Categories': {
+  'Jewelry - Wedding Categories': {
     'Engagement Rings': '92947',
     'Wedding Bands': '91452'
   },
-  'Vintage': {
+  'Jewelry - Vintage': {
     'Vintage Fine Jewellery': '48579'
   },
-  'Metal-only': {
+  'Jewelry - Metal-only': {
     'Gold Jewellery': '67705',
     'Silver Jewellery': '4191',
     'Platinum Jewellery': '164329'
+  },
+  'Watches - All Categories': {
+    'Wristwatches': '31387',
+    'Pocket Watches': '7376',
+    'Watch Parts & Accessories': '14324'
+  },
+  'Gems/Diamonds - Loose Stones': {
+    'Loose Gemstones': '262027',
+    'Loose Diamonds': '164394'  // Common category for loose diamonds
   }
 };
 
@@ -156,7 +165,7 @@ const handler = async (req: Request): Promise<Response> => {
     
     // Collect all category IDs
     const allCategories: string[] = [];
-    Object.values(JEWELRY_CATEGORIES).forEach(categoryGroup => {
+    Object.values(ALL_CATEGORIES).forEach(categoryGroup => {
       Object.values(categoryGroup).forEach(categoryId => {
         if (!allCategories.includes(categoryId)) {
           allCategories.push(categoryId);
@@ -164,7 +173,7 @@ const handler = async (req: Request): Promise<Response> => {
       });
     });
 
-    console.log(`Processing ${allCategories.length} unique jewelry categories...`);
+    console.log(`Processing ${allCategories.length} unique categories (jewelry + watches + gems)...`);
     
     // Collect all aspects across categories
     const aspectsMap = new Map<string, { values: any[], categories: string[] }>();
@@ -215,12 +224,33 @@ const handler = async (req: Request): Promise<Response> => {
     const aspectsToStore = [];
     
     for (const [aspectName, aspectData] of aspectsMap.entries()) {
-      // Store one record per aspect with merged values from all categories
+      // Store merged data for each category type
       aspectsToStore.push({
-        category_id: 'jewelry_merged', // Special category for merged data
+        category_id: 'jewelry_merged', // Comprehensive jewelry data
         aspect_name: aspectName,
         values_json: aspectData.values
       });
+      
+      // Also store specific category data for watches and gems
+      if (aspectData.categories.some(cat => ['31387', '7376', '14324'].includes(cat))) {
+        aspectsToStore.push({
+          category_id: 'watches_merged',
+          aspect_name: aspectName,
+          values_json: aspectData.values.filter(v => 
+            aspectData.categories.some(cat => ['31387', '7376', '14324'].includes(cat))
+          )
+        });
+      }
+      
+      if (aspectData.categories.some(cat => ['262027', '164394'].includes(cat))) {
+        aspectsToStore.push({
+          category_id: 'gems_merged',
+          aspect_name: aspectName,
+          values_json: aspectData.values.filter(v => 
+            aspectData.categories.some(cat => ['262027', '164394'].includes(cat))
+          )
+        });
+      }
     }
     
     if (aspectsToStore.length > 0) {
@@ -228,7 +258,7 @@ const handler = async (req: Request): Promise<Response> => {
       await supabase
         .from('ebay_aspects')
         .delete()
-        .eq('category_id', 'jewelry_merged');
+        .in('category_id', ['jewelry_merged', 'watches_merged', 'gems_merged']);
       
       // Insert merged data in batches
       const batchSize = 100;
@@ -252,15 +282,24 @@ const handler = async (req: Request): Promise<Response> => {
     
     return new Response(JSON.stringify({ 
       success: true,
-      message: `Bulk taxonomy collection completed`,
+      message: `Comprehensive aspect collection completed for jewelry, watches, and gems`,
       stats: {
         categoriesProcessed: totalProcessed,
         categoriesSuccessful: successCount,
         uniqueAspects: aspectsMap.size,
         aspectsStored: aspectsToStore.length,
-        metalOptionsFound: metalCount
+        metalOptionsFound: metalCount,
+        jewelryCategories: Object.values(ALL_CATEGORIES['Jewelry - Fine Categories']).length + 
+                          Object.values(ALL_CATEGORIES['Jewelry - Fashion Categories']).length,
+        watchCategories: Object.values(ALL_CATEGORIES['Watches - All Categories']).length,
+        gemCategories: Object.values(ALL_CATEGORIES['Gems/Diamonds - Loose Stones']).length
       },
-      metalOptions: metalAspect?.values?.map(v => v.value) || []
+      metalOptions: metalAspect?.values?.map(v => v.value) || [],
+      categoriesCollected: {
+        jewelry: Object.keys(ALL_CATEGORIES).filter(k => k.startsWith('Jewelry')).length,
+        watches: Object.keys(ALL_CATEGORIES).filter(k => k.startsWith('Watches')).length,
+        gems: Object.keys(ALL_CATEGORIES).filter(k => k.startsWith('Gems')).length
+      }
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
