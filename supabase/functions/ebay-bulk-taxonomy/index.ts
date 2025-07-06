@@ -132,6 +132,22 @@ const fetchTaxonomyAspects = async (categoryId: string, accessToken: string) => 
   const data = await response.json();
   console.log(`Category ${categoryId}: ${data.aspects?.length || 0} aspects found`);
   
+  // Special logging for diamond-related categories
+  if (categoryId === '164394') {
+    console.log(`LOOSE DIAMONDS (164394) - Full response:`, JSON.stringify(data, null, 2));
+    const gemstoneTypeAspect = data.aspects?.find((a: any) => 
+      (a.localizedAspectName || a.aspectName || '').toLowerCase().includes('gemstone type') ||
+      (a.localizedAspectName || a.aspectName || '').toLowerCase().includes('stone type') ||
+      (a.localizedAspectName || a.aspectName || '').toLowerCase().includes('type')
+    );
+    if (gemstoneTypeAspect) {
+      console.log(`LOOSE DIAMONDS - Gemstone Type aspect found:`, JSON.stringify(gemstoneTypeAspect, null, 2));
+    } else {
+      console.log(`LOOSE DIAMONDS - No gemstone type aspect found. All aspects:`, 
+        data.aspects?.map((a: any) => a.localizedAspectName || a.aspectName));
+    }
+  }
+  
   return data;
 };
 
@@ -219,6 +235,27 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Processed ${totalProcessed} categories, ${successCount} successful`);
     console.log(`Found ${aspectsMap.size} unique aspects`);
+    
+    // Ensure Diamond is included in Gemstone Type for gems
+    const gemstoneTypeAspect = aspectsMap.get('Gemstone Type');
+    if (gemstoneTypeAspect) {
+      const hasDiamond = gemstoneTypeAspect.values.some(v => v.value.toLowerCase().includes('diamond'));
+      if (!hasDiamond) {
+        console.log('Adding missing Diamond to Gemstone Type aspect');
+        gemstoneTypeAspect.values.push({
+          value: 'Diamond',
+          meaning: 'Diamond'
+        });
+        // Re-sort the values
+        gemstoneTypeAspect.values.sort((a, b) => a.value.localeCompare(b.value));
+      }
+    } else {
+      console.log('Creating new Gemstone Type aspect with Diamond');
+      aspectsMap.set('Gemstone Type', {
+        values: [{ value: 'Diamond', meaning: 'Diamond' }],
+        categories: ['164394', '262027'] // Add to both loose diamond and gemstone categories
+      });
+    }
     
     // Store merged aspects
     const aspectsToStore = [];
