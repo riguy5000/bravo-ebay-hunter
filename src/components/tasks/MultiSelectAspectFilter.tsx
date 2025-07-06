@@ -27,17 +27,33 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
   onChange,
   placeholder = 'Select options...'
 }) => {
+  // Use merged jewelry data first, then try specific categories
   const { aspects: primaryAspects, getAspectValues: getPrimaryValues, loading: primaryLoading, error: primaryError, refreshTaxonomyData } = useEbayTaxonomy(categoryId);
   const { aspects: fallbackAspects, getAspectValues: getFallbackValues, loading: fallbackLoading } = useEbayTaxonomy(fallbackCategoryId);
+  const { aspects: mergedAspects, getAspectValues: getMergedValues, loading: mergedLoading } = useEbayTaxonomy('jewelry_merged');
   
-  // Try primary category first, then fallback
+  // Try primary category first, then fallback, then merged comprehensive data
   const primaryValues = getPrimaryValues(aspectName);
   const fallbackValues = getFallbackValues(aspectName);
+  const mergedValues = getMergedValues(aspectName);
   
-  // Use primary values if available, otherwise fallback
-  const availableValues = primaryValues.length > 0 ? primaryValues : fallbackValues;
-  const loading = primaryLoading || fallbackLoading;
-  const usingFallback = primaryValues.length === 0 && fallbackValues.length > 0;
+  // Use primary values if available, otherwise fallback, otherwise merged comprehensive data
+  let availableValues = primaryValues;
+  let dataSource = 'primary';
+  
+  if (availableValues.length === 0 && fallbackValues.length > 0) {
+    availableValues = fallbackValues;
+    dataSource = 'fallback';
+  }
+  
+  if (availableValues.length === 0 && mergedValues.length > 0) {
+    availableValues = mergedValues;
+    dataSource = 'merged';
+  }
+  
+  const loading = primaryLoading || fallbackLoading || mergedLoading;
+  const usingFallback = dataSource === 'fallback';
+  const usingMerged = dataSource === 'merged';
 
   console.log('MultiSelectAspectFilter:', {
     title,
@@ -76,7 +92,12 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Label>{title}</Label>
-        {usingFallback && (
+        {usingMerged ? (
+          <div className="flex items-center gap-1 text-xs text-purple-600">
+            <Info className="h-3 w-3" />
+            <span>Using comprehensive merged data</span>
+          </div>
+        ) : usingFallback && (
           <div className="flex items-center gap-1 text-xs text-blue-600">
             <Info className="h-3 w-3" />
             <span>Using fallback data</span>
@@ -126,15 +147,19 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
                     <div className="font-medium">
                       {availableValues.length} options available
                     </div>
-                    {usingFallback ? (
-                      <div className="text-xs text-blue-600">
-                        Using category {fallbackCategoryId} data
-                      </div>
-                    ) : (
-                      <div className="text-xs text-green-600">
-                        Live taxonomy data for {categoryId}
-                      </div>
-                    )}
+                     {usingMerged ? (
+                       <div className="text-xs text-purple-600">
+                         Using comprehensive merged data from all jewelry categories
+                       </div>
+                     ) : usingFallback ? (
+                       <div className="text-xs text-blue-600">
+                         Using category {fallbackCategoryId} data
+                       </div>
+                     ) : (
+                       <div className="text-xs text-green-600">
+                         Live taxonomy data for {categoryId}
+                       </div>
+                     )}
                   </div>
                   {selectedValues.length > 0 && (
                     <Button

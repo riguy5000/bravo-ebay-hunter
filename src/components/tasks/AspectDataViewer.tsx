@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
-import { RefreshCw, Database, CheckCircle, XCircle } from 'lucide-react';
+import { RefreshCw, Database, CheckCircle, XCircle, Zap } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from 'sonner';
 
 interface AspectValue {
   value: string;
@@ -18,6 +19,7 @@ export const AspectDataViewer: React.FC = () => {
   const [aspectData, setAspectData] = useState<AspectData>({});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [bulkRefreshing, setBulkRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<{
     totalCategories: number;
@@ -95,6 +97,57 @@ export const AspectDataViewer: React.FC = () => {
       setError(err.message || 'Failed to fetch aspect data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const bulkRefreshAllJewelry = async () => {
+    setBulkRefreshing(true);
+    setError(null);
+
+    try {
+      console.log('Starting bulk taxonomy collection for all jewelry categories...');
+      toast.info('Starting comprehensive jewelry aspect collection...', {
+        description: 'This will fetch aspects from all jewelry subcategories and may take a few minutes.'
+      });
+      
+      const { data, error } = await supabase.functions.invoke('ebay-bulk-taxonomy');
+      
+      if (error) {
+        console.error('Bulk refresh error:', error);
+        throw error;
+      }
+      
+      console.log('Bulk refresh response:', data);
+      
+      if (data && !data.success) {
+        throw new Error(data.message || 'Bulk refresh failed');
+      }
+      
+      // Show success message with comprehensive stats
+      if (data) {
+        const stats = data.stats || {};
+        const message = `Successfully collected ${stats.uniqueAspects || 0} unique aspects from ${stats.categoriesSuccessful || 0} jewelry categories`;
+        const description = `Found ${stats.metalOptionsFound || 0} metal options including comprehensive plated/filled variants`;
+        
+        toast.success(message, { description });
+        console.log(`✓ Bulk collection completed:`, stats);
+        
+        // Show metal options if available
+        if (data.metalOptions && data.metalOptions.length > 0) {
+          console.log('Metal options found:', data.metalOptions.join(', '));
+        }
+      }
+      
+      // Refetch data after refresh
+      await fetchAspectData();
+      
+    } catch (err: any) {
+      console.error('Error in bulk refresh:', err);
+      const errorMessage = err.message || 'Failed to perform bulk refresh';
+      setError(errorMessage);
+      toast.error('Bulk refresh failed', { description: errorMessage });
+    } finally {
+      setBulkRefreshing(false);
     }
   };
 
@@ -203,6 +256,16 @@ export const AspectDataViewer: React.FC = () => {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Enhanced eBay Aspect Data (Multi-Category + Subcategories)</CardTitle>
           <div className="flex gap-2">
+            <Button 
+              variant="default" 
+              size="sm" 
+              onClick={bulkRefreshAllJewelry}
+              disabled={bulkRefreshing}
+              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              <Zap className={`h-4 w-4 ${bulkRefreshing ? 'animate-pulse' : ''}`} />
+              {bulkRefreshing ? 'Collecting All Data...' : 'Bulk Collect All Jewelry'}
+            </Button>
             <Button 
               variant="outline" 
               size="sm" 

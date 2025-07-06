@@ -20,19 +20,20 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
     onChange({ ...filters, [key]: value });
   };
 
-  // Use smart category mapping for best data availability
+  // Update the enhanced jewelry filters to use merged data
   const getCategoryForAspects = () => {
     // If we have selected subcategories, try the first one
     if (selectedSubcategories.length > 0) {
       return selectedSubcategories[0];
     }
     
-    // Fall back to category 50647 which has comprehensive jewelry aspects (40 total)
+    // Fall back to category 50647 which has comprehensive jewelry aspects
     return '50647';
   };
 
   const categoryId = getCategoryForAspects();
   const fallbackCategory = '50647'; // Most comprehensive jewelry category
+  const mergedCategory = 'jewelry_merged'; // Comprehensive merged data from all categories
 
   console.log('Enhanced Jewelry Filters using category:', categoryId);
   console.log('Selected subcategories:', selectedSubcategories);
@@ -57,15 +58,15 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
       <CardContent className="space-y-6">
         {/* Multi-select aspect filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <MultiSelectAspectFilter
-            title="Metal Types"
-            categoryId={categoryId}
-            fallbackCategoryId={fallbackCategory}
-            aspectName="Metal"
-            selectedValues={filters.metal || []}
-            onChange={(values) => handleChange('metal', values)}
-            placeholder="Select metals..."
-          />
+            <MultiSelectAspectFilter
+              title="Metal Types"
+              categoryId={categoryId}
+              fallbackCategoryId={mergedCategory}
+              aspectName="Metal"
+              selectedValues={filters.metal || []}
+              onChange={(values) => handleChange('metal', values)}
+              placeholder="Select metals..."
+            />
 
           <MultiSelectAspectFilter
             title="Colors"
