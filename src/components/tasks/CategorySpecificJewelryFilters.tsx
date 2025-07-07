@@ -58,18 +58,10 @@ export const CategorySpecificJewelryFilters: React.FC<CategorySpecificJewelryFil
 
   // Initialize state from existing filters when editing
   useEffect(() => {
-    console.log('🔍 CategorySpecificJewelryFilters received filters:', filters);
     if (filters.categoryGroup && filters.categoryName) {
-      console.log('📝 Initializing from existing data:', {
-        categoryGroup: filters.categoryGroup,
-        categoryName: filters.categoryName,
-        leafCategoryId: filters.leafCategoryId
-      });
       setSelectedGroup(filters.categoryGroup);
       setSelectedCategory(filters.categoryName);
       setCategoryId(filters.leafCategoryId || '');
-    } else {
-      console.log('⚠️ No existing category data found in filters');
     }
   }, [filters]);
 
@@ -165,64 +157,62 @@ export const CategorySpecificJewelryFilters: React.FC<CategorySpecificJewelryFil
           </div>
         )}
 
-        {/* Aspect-based filters - only show when category is selected */}
-        {categoryId && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <MultiSelectAspectFilter
-              title="Metal Types"
-              categoryId={categoryId}
-              aspectName="Metal"
-              selectedValues={filters.metal || []}
-              onChange={(values) => handleChange('metal', values)}
-              placeholder="Select metals..."
-            />
+        {/* Aspect-based filters - show always, use merged category if no specific category selected */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <MultiSelectAspectFilter
+            title="Metal Types"
+            categoryId={categoryId || 'jewelry_merged'}
+            aspectName="Metal"
+            selectedValues={filters.metal || []}
+            onChange={(values) => handleChange('metal', values)}
+            placeholder="Select metals..."
+          />
 
-            <MultiSelectAspectFilter
-              title="Conditions"
-              categoryId={categoryId}
-              aspectName="Condition"
-              selectedValues={filters.conditions || []}
-              onChange={(values) => handleChange('conditions', values)}
-              placeholder="Select conditions..."
-            />
+          <MultiSelectAspectFilter
+            title="Conditions"
+            categoryId={categoryId || 'jewelry_merged'}
+            aspectName="Condition"
+            selectedValues={filters.conditions || []}
+            onChange={(values) => handleChange('conditions', values)}
+            placeholder="Select conditions..."
+          />
 
-            <MultiSelectAspectFilter
-              title="Brands"
-              categoryId={categoryId}
-              aspectName="Brand"
-              selectedValues={filters.brands || []}
-              onChange={(values) => handleChange('brands', values)}
-              placeholder="Select brands..."
-            />
+          <MultiSelectAspectFilter
+            title="Brands"
+            categoryId={categoryId || 'jewelry_merged'}
+            aspectName="Brand"
+            selectedValues={filters.brands || []}
+            onChange={(values) => handleChange('brands', values)}
+            placeholder="Select brands..."
+          />
 
-            <MultiSelectAspectFilter
-              title="Main Stone"
-              categoryId={categoryId}
-              aspectName="Main Stone"
-              selectedValues={filters.main_stones || []}
-              onChange={(values) => handleChange('main_stones', values)}
-              placeholder="Select stones..."
-            />
+          <MultiSelectAspectFilter
+            title="Main Stone"
+            categoryId={categoryId || 'jewelry_merged'}
+            aspectName="Main Stone"
+            selectedValues={filters.main_stones || []}
+            onChange={(values) => handleChange('main_stones', values)}
+            placeholder="Select stones..."
+          />
 
-            <MultiSelectAspectFilter
-              title="Metal Purity"
-              categoryId={categoryId}
-              aspectName="Metal Purity"
-              selectedValues={filters.metal_purity || []}
-              onChange={(values) => handleChange('metal_purity', values)}
-              placeholder="Select purity..."
-            />
+          <MultiSelectAspectFilter
+            title="Metal Purity"
+            categoryId={categoryId || 'jewelry_merged'}
+            aspectName="Metal Purity"
+            selectedValues={filters.metal_purity || []}
+            onChange={(values) => handleChange('metal_purity', values)}
+            placeholder="Select purity..."
+          />
 
-            <MultiSelectAspectFilter
-              title="Setting Style"
-              categoryId={categoryId}
-              aspectName="Setting Style"
-              selectedValues={filters.setting_style || []}
-              onChange={(values) => handleChange('setting_style', values)}
-              placeholder="Select setting styles..."
-            />
-          </div>
-        )}
+          <MultiSelectAspectFilter
+            title="Setting Style"
+            categoryId={categoryId || 'jewelry_merged'}
+            aspectName="Setting Style"
+            selectedValues={filters.setting_style || []}
+            onChange={(values) => handleChange('setting_style', values)}
+            placeholder="Select setting styles..."
+          />
+        </div>
 
         {/* Additional keywords */}
         <div>
