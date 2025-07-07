@@ -257,6 +257,34 @@ const handler = async (req: Request): Promise<Response> => {
       });
     }
     
+    // Ensure Platinum and Palladium are included in Metal aspect for jewelry
+    const metalAspect = aspectsMap.get('Metal');
+    if (metalAspect) {
+      const hasPlatinum = metalAspect.values.some(v => v.value === 'Platinum');
+      const hasPalladium = metalAspect.values.some(v => v.value === 'Palladium');
+      
+      if (!hasPlatinum) {
+        console.log('Adding missing Platinum to Metal aspect');
+        metalAspect.values.push({
+          value: 'Platinum',
+          meaning: 'Platinum'
+        });
+      }
+      
+      if (!hasPalladium) {
+        console.log('Adding missing Palladium to Metal aspect');
+        metalAspect.values.push({
+          value: 'Palladium',
+          meaning: 'Palladium'
+        });
+      }
+      
+      // Re-sort the values if we added any
+      if (!hasPlatinum || !hasPalladium) {
+        metalAspect.values.sort((a, b) => a.value.localeCompare(b.value));
+      }
+    }
+    
     // Store merged aspects
     const aspectsToStore = [];
     
