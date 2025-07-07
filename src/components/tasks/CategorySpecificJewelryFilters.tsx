@@ -58,12 +58,20 @@ export const CategorySpecificJewelryFilters: React.FC<CategorySpecificJewelryFil
 
   // Initialize state from existing filters when editing
   useEffect(() => {
+    console.log('🔍 CategorySpecificJewelryFilters received filters:', filters);
     if (filters.categoryGroup && filters.categoryName) {
+      console.log('📝 Initializing from existing data:', {
+        categoryGroup: filters.categoryGroup,
+        categoryName: filters.categoryName,
+        leafCategoryId: filters.leafCategoryId
+      });
       setSelectedGroup(filters.categoryGroup);
       setSelectedCategory(filters.categoryName);
       setCategoryId(filters.leafCategoryId || '');
+    } else {
+      console.log('⚠️ No existing category data found in filters');
     }
-  }, [filters.categoryGroup, filters.categoryName, filters.leafCategoryId]);
+  }, [filters]);
 
   // Update category ID when selection changes
   useEffect(() => {
