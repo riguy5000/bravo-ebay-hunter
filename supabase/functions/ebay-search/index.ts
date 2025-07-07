@@ -381,7 +381,7 @@ const buildAspectFilters = (itemType: string, filters: any, conditions?: string[
         const stoneValues = filters.main_stones
           .map((stone: string) => {
             if (stone === 'No Stone') {
-              return 'No%20Main%20Stone';
+              return 'No%20Stone';
             }
             return encodeURIComponent(stone);
           })
