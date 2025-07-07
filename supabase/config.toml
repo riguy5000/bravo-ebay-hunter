@@ -18,3 +18,15 @@ verify_jwt = false
 
 [functions.ebay-bulk-taxonomy]
 verify_jwt = false
+
+[functions.ebay-taxonomy]
+verify_jwt = false
+
+[functions.metal-price-scheduler]
+verify_jwt = false
+
+[functions.cron-cleanup]
+verify_jwt = false
+
+[functions.cron-manager]
+verify_jwt = false
