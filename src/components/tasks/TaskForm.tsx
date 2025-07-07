@@ -92,6 +92,17 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setJewelryFilters(safeJewelryFilters);
       setGemstoneFilters(safeGemstoneFilters);
       
+      // Load subcategories from the relevant filter object
+      let taskSubcategories: string[] = [];
+      if (editingTask.item_type === 'jewelry' && safeJewelryFilters.subcategories) {
+        taskSubcategories = safeJewelryFilters.subcategories;
+      } else if (editingTask.item_type === 'watch' && safeWatchFilters.subcategories) {
+        taskSubcategories = safeWatchFilters.subcategories;
+      } else if (editingTask.item_type === 'gemstone' && safeGemstoneFilters.subcategories) {
+        taskSubcategories = safeGemstoneFilters.subcategories;
+      }
+      setSelectedSubcategories(taskSubcategories);
+      
       console.log('📊 Loaded filters:', {
         watch: safeWatchFilters,
         jewelry: safeJewelryFilters,
@@ -154,6 +165,17 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       const cleanWatchFilters = watchFilters && typeof watchFilters === 'object' && !Array.isArray(watchFilters) ? watchFilters : {};
       const cleanJewelryFilters = jewelryFilters && typeof jewelryFilters === 'object' && !Array.isArray(jewelryFilters) ? jewelryFilters : {};
       const cleanGemstoneFilters = gemstoneFilters && typeof gemstoneFilters === 'object' && !Array.isArray(gemstoneFilters) ? gemstoneFilters : {};
+
+      // Add subcategories to the relevant filter object
+      if (selectedSubcategories.length > 0) {
+        if (itemType === 'jewelry') {
+          cleanJewelryFilters.subcategories = selectedSubcategories;
+        } else if (itemType === 'watch') {
+          cleanWatchFilters.subcategories = selectedSubcategories;
+        } else if (itemType === 'gemstone') {
+          cleanGemstoneFilters.subcategories = selectedSubcategories;
+        }
+      }
 
       const taskData = {
         name: name.trim(),
