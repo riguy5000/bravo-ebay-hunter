@@ -15,3 +15,6 @@ verify_jwt = false
 
 [functions.get-gold-prices]
 verify_jwt = false
+
+[functions.ebay-bulk-taxonomy]
+verify_jwt = false
