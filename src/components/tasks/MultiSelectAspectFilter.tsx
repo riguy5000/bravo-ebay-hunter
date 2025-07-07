@@ -27,9 +27,18 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
   onChange,
   placeholder = 'Select options...'
 }) => {
-  // Use merged jewelry data first, then try specific categories
-  const { aspects: primaryAspects, getAspectValues: getPrimaryValues, loading: primaryLoading, error: primaryError, refreshTaxonomyData } = useEbayTaxonomy(categoryId);
-  const { aspects: fallbackAspects, getAspectValues: getFallbackValues, loading: fallbackLoading } = useEbayTaxonomy(fallbackCategoryId);
+  // Validate category IDs - only use real eBay categories or merged data
+  const isValidEbayCategoryId = (id?: string) => {
+    if (!id) return false;
+    // Check if it's a merged category or a valid numeric eBay category
+    return id.endsWith('_merged') || /^\d+$/.test(id);
+  };
+
+  const validCategoryId = isValidEbayCategoryId(categoryId) ? categoryId : undefined;
+  const validFallbackId = isValidEbayCategoryId(fallbackCategoryId) ? fallbackCategoryId : undefined;
+
+  const { aspects: primaryAspects, getAspectValues: getPrimaryValues, loading: primaryLoading, error: primaryError, refreshTaxonomyData } = useEbayTaxonomy(validCategoryId);
+  const { aspects: fallbackAspects, getAspectValues: getFallbackValues, loading: fallbackLoading } = useEbayTaxonomy(validFallbackId);
   const { aspects: mergedAspects, getAspectValues: getMergedValues, loading: mergedLoading } = useEbayTaxonomy('jewelry_merged');
   
   // Try primary category first, then fallback, then merged comprehensive data

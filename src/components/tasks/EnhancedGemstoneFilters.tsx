@@ -20,7 +20,7 @@ export const EnhancedGemstoneFilters: React.FC<EnhancedGemstoneFiltersProps> = (
     onChange({ ...filters, [key]: value });
   };
 
-  // Use real eBay category for gemstones  
+  // Use real eBay category for gemstones or fallback to merged data
   const categoryId = selectedSubcategories.length > 0 
     ? selectedSubcategories[0] 
     : 'gems_merged';
