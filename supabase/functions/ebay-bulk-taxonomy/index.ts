@@ -285,35 +285,49 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
     
-    // Store merged aspects
+    // Store aspects properly categorized
     const aspectsToStore = [];
     
+    // Define category sets for proper separation
+    const jewelryCategories = new Set([
+      '164343', '164329', '164321', '10968', '50692', '140956', '103428', // Fine jewelry
+      '50647', '155101', '155099', '155100', // Fashion jewelry  
+      '102888', '102890', '102889', '102891', // Men's jewelry
+      '92947', '91452', // Wedding jewelry
+      '48579', // Vintage jewelry
+      '67705', '4191', '164329' // Metal-only jewelry
+    ]);
+    
+    const watchCategories = new Set(['31387', '7376', '14324']);
+    const gemCategories = new Set(['262027', '164394']);
+    
     for (const [aspectName, aspectData] of aspectsMap.entries()) {
-      // Store merged data for each category type
-      aspectsToStore.push({
-        category_id: 'jewelry_merged', // Comprehensive jewelry data
-        aspect_name: aspectName,
-        values_json: aspectData.values
-      });
+      const categories = new Set(aspectData.categories);
       
-      // Also store specific category data for watches and gems
-      if (aspectData.categories.some(cat => ['31387', '7376', '14324'].includes(cat))) {
+      // Only store in jewelry_merged if it comes from jewelry categories
+      if (aspectData.categories.some(cat => jewelryCategories.has(cat))) {
         aspectsToStore.push({
-          category_id: 'watches_merged',
+          category_id: 'jewelry_merged',
           aspect_name: aspectName,
-          values_json: aspectData.values.filter(v => 
-            aspectData.categories.some(cat => ['31387', '7376', '14324'].includes(cat))
-          )
+          values_json: aspectData.values
         });
       }
       
-      if (aspectData.categories.some(cat => ['262027', '164394'].includes(cat))) {
+      // Only store in watches_merged if it comes from watch categories
+      if (aspectData.categories.some(cat => watchCategories.has(cat))) {
+        aspectsToStore.push({
+          category_id: 'watches_merged',
+          aspect_name: aspectName,
+          values_json: aspectData.values
+        });
+      }
+      
+      // Only store in gems_merged if it comes from gem categories
+      if (aspectData.categories.some(cat => gemCategories.has(cat))) {
         aspectsToStore.push({
           category_id: 'gems_merged',
           aspect_name: aspectName,
-          values_json: aspectData.values.filter(v => 
-            aspectData.categories.some(cat => ['262027', '164394'].includes(cat))
-          )
+          values_json: aspectData.values
         });
       }
     }
