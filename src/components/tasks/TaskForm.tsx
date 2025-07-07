@@ -106,7 +106,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       console.log('📊 Loaded filters:', {
         watch: safeWatchFilters,
         jewelry: safeJewelryFilters,
-        gemstone: safeGemstoneFilters
+        gemstone: safeGemstoneFilters,
+        subcategories: taskSubcategories
       });
     } else {
       // Reset to defaults for new task

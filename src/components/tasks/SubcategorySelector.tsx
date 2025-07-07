@@ -87,6 +87,8 @@ export const SubcategorySelector: React.FC<SubcategorySelectorProps> = ({
 }) => {
   const [availableSubcategories, setAvailableSubcategories] = useState<Record<string, Subcategory[]>>({});
 
+  console.log('🏷️ SubcategorySelector received:', { itemType, selectedSubcategories });
+
   useEffect(() => {
     switch (itemType) {
       case 'jewelry':
