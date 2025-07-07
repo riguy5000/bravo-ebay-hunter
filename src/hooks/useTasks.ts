@@ -10,6 +10,7 @@ export interface Task {
   item_type: 'watch' | 'jewelry' | 'gemstone';
   status: 'active' | 'paused' | 'stopped';
   max_price?: number;
+  min_price?: number;
   price_percentage?: number;
   listing_format?: string[];
   min_seller_feedback?: number;

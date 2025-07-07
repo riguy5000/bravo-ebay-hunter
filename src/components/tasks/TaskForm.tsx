@@ -40,6 +40,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   const [name, setName] = useState('');
   const [itemType, setItemType] = useState<'watch' | 'jewelry' | 'gemstone'>('jewelry');
   const [maxPrice, setMaxPrice] = useState('1000');
+  const [minPrice, setMinPrice] = useState('');
   const [pollInterval, setPollInterval] = useState('300');
   const [minSellerFeedback, setMinSellerFeedback] = useState('0');
   const [excludeKeywords, setExcludeKeywords] = useState('');
@@ -78,6 +79,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setName(editingTask.name);
       setItemType(editingTask.item_type);
       setMaxPrice(editingTask.max_price?.toString() || '1000');
+      setMinPrice(editingTask.min_price?.toString() || '');
       setPollInterval(editingTask.poll_interval?.toString() || '300');
       setMinSellerFeedback(editingTask.min_seller_feedback?.toString() || '0');
       setExcludeKeywords(editingTask.exclude_keywords?.join(', ') || '');
@@ -115,6 +117,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setName('');
       setItemType('jewelry');
       setMaxPrice('1000');
+      setMinPrice('');
       setPollInterval('300');
       setMinSellerFeedback('0');
       setExcludeKeywords('');
@@ -183,6 +186,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         item_type: itemType,
         status: editingTask?.status || 'active',
         max_price: maxPrice ? parseFloat(maxPrice) : undefined,
+        min_price: minPrice ? parseFloat(minPrice) : undefined,
         poll_interval: intervalNum,
         listing_format: listingFormats,
         min_seller_feedback: minSellerFeedback ? parseInt(minSellerFeedback) : 0,
@@ -330,6 +334,18 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                 onChange={(e) => setMaxPrice(e.target.value)}
                 placeholder="1000"
                 min="1"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="minPrice">Min Price ($)</Label>
+              <Input
+                id="minPrice"
+                type="number"
+                value={minPrice}
+                onChange={(e) => setMinPrice(e.target.value)}
+                placeholder="0"
+                min="0"
               />
             </div>
 

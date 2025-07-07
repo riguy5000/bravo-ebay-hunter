@@ -656,6 +656,7 @@ export type Database = {
           last_run: string | null
           listing_format: string[] | null
           max_price: number | null
+          min_price: number | null
           min_seller_feedback: number | null
           name: string
           poll_interval: number | null
@@ -682,6 +683,7 @@ export type Database = {
           last_run?: string | null
           listing_format?: string[] | null
           max_price?: number | null
+          min_price?: number | null
           min_seller_feedback?: number | null
           name: string
           poll_interval?: number | null
@@ -708,6 +710,7 @@ export type Database = {
           last_run?: string | null
           listing_format?: string[] | null
           max_price?: number | null
+          min_price?: number | null
           min_seller_feedback?: number | null
           name?: string
           poll_interval?: number | null
