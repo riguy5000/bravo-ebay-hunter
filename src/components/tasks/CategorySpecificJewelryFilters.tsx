@@ -56,6 +56,15 @@ export const CategorySpecificJewelryFilters: React.FC<CategorySpecificJewelryFil
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [categoryId, setCategoryId] = useState<string>('');
 
+  // Initialize state from existing filters when editing
+  useEffect(() => {
+    if (filters.categoryGroup && filters.categoryName) {
+      setSelectedGroup(filters.categoryGroup);
+      setSelectedCategory(filters.categoryName);
+      setCategoryId(filters.leafCategoryId || '');
+    }
+  }, [filters.categoryGroup, filters.categoryName, filters.leafCategoryId]);
+
   // Update category ID when selection changes
   useEffect(() => {
     if (selectedGroup && selectedCategory) {
