@@ -285,7 +285,7 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
     
-    // Store aspects properly categorized
+    // Store aspects properly categorized with explicit exclusions
     const aspectsToStore = [];
     
     // Define category sets for proper separation
@@ -295,17 +295,22 @@ const handler = async (req: Request): Promise<Response> => {
       '102888', '102890', '102889', '102891', // Men's jewelry
       '92947', '91452', // Wedding jewelry
       '48579', // Vintage jewelry
-      '67705', '4191', '164329' // Metal-only jewelry
+      '67705', '4191' // Metal-only jewelry (removed duplicate 164329)
     ]);
     
     const watchCategories = new Set(['31387', '7376', '14324']);
     const gemCategories = new Set(['262027', '164394']);
     
+    // Define watch-specific aspects that should NEVER be in jewelry
+    const watchOnlyAspects = new Set([
+      'Band Material', 'Band Color', 'Band Width', 'Band/Strap',
+      'Case Material', 'Case Color', 'Case Size', 'Case Thickness', 'Case Finish', 'Caseback',
+      'Dial Color', 'Dial Pattern', 'Movement', 'Water Resistance', 'Bezel Color', 'Bezel Material'
+    ]);
+    
     for (const [aspectName, aspectData] of aspectsMap.entries()) {
-      const categories = new Set(aspectData.categories);
-      
-      // Only store in jewelry_merged if it comes from jewelry categories
-      if (aspectData.categories.some(cat => jewelryCategories.has(cat))) {
+      // JEWELRY: Only from jewelry categories AND NOT watch-specific aspects
+      if (aspectData.categories.some(cat => jewelryCategories.has(cat)) && !watchOnlyAspects.has(aspectName)) {
         aspectsToStore.push({
           category_id: 'jewelry_merged',
           aspect_name: aspectName,
@@ -313,16 +318,16 @@ const handler = async (req: Request): Promise<Response> => {
         });
       }
       
-      // Only store in watches_merged if it comes from watch categories
-      if (aspectData.categories.some(cat => watchCategories.has(cat))) {
+      // WATCHES: Only from watch categories OR if it's a watch-specific aspect
+      if (aspectData.categories.some(cat => watchCategories.has(cat)) || watchOnlyAspects.has(aspectName)) {
         aspectsToStore.push({
-          category_id: 'watches_merged',
+          category_id: 'watches_merged',  
           aspect_name: aspectName,
           values_json: aspectData.values
         });
       }
       
-      // Only store in gems_merged if it comes from gem categories
+      // GEMS: Only from gem categories
       if (aspectData.categories.some(cat => gemCategories.has(cat))) {
         aspectsToStore.push({
           category_id: 'gems_merged',
