@@ -27,20 +27,27 @@ export const useGoldPrices = () => {
     try {
       setLoading(true);
       setError(null);
+      
+      console.log('🥇 Fetching gold prices...');
 
       const { data, error: functionError } = await supabase.functions.invoke('get-gold-prices');
+      
+      console.log('🥇 Gold prices response:', { data, functionError });
 
       if (functionError) {
+        console.error('🥇 Function error:', functionError);
         throw functionError;
       }
 
       if (data?.error) {
+        console.error('🥇 Data error:', data.error);
         throw new Error(data.error);
       }
 
+      console.log('🥇 Setting prices:', data.prices);
       setPrices(data.prices || []);
     } catch (err: any) {
-      console.error('Error fetching gold prices:', err);
+      console.error('🥇 Error fetching gold prices:', err);
       setError(err.message || 'Failed to fetch gold prices');
     } finally {
       setLoading(false);
