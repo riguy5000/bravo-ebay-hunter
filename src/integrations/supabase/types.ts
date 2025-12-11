@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.3 (519615d)"
@@ -780,7 +780,7 @@ export type Database = {
     }
     Functions: {
       schedule_task_cron: {
-        Args: { task_id_param: string; poll_interval_param: number }
+        Args: { poll_interval_param: number; task_id_param: string }
         Returns: number
       }
       unschedule_task_cron: {
