@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,16 +6,19 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
-import { TestTube, ExternalLink } from 'lucide-react';
+import { TestTube, ExternalLink, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSettings } from '@/hooks/useSettings';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { supabase } from '@/integrations/supabase/client';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const OpenAiApiSettings = () => {
   const { settings, loading: settingsLoading, updateSetting } = useSettings();
   const { settings: userSettings, loading: userLoading, updateSettings } = useUserSettings();
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   if (settingsLoading || userLoading) {
     return <div>Loading OpenAI API settings...</div>;
@@ -41,7 +43,6 @@ export const OpenAiApiSettings = () => {
       model: formData.get('model') as string,
       temperature: parseFloat(formData.get('temperature') as string),
       max_tokens: parseInt(formData.get('max_tokens') as string),
-      api_key: formData.get('api_key') as string,
       endpoint_url: formData.get('endpoint_url') as string
     };
 
@@ -64,20 +65,30 @@ export const OpenAiApiSettings = () => {
 
   const testConnection = async () => {
     setTesting(true);
+    setConnectionStatus('idle');
+    
     try {
-      // Simple test to verify API key works
-      const response = await fetch('/api/test-openai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: 'Test connection' })
+      const { data, error } = await supabase.functions.invoke('test-openai', {
+        body: { test: true }
       });
 
-      if (response.ok) {
-        toast.success('OpenAI API connection successful!');
-      } else {
-        toast.error('OpenAI API connection failed');
+      if (error) {
+        console.error('Test connection error:', error);
+        setConnectionStatus('error');
+        toast.error(error.message || 'OpenAI API connection failed');
+        return;
       }
-    } catch (error) {
+
+      if (data?.success) {
+        setConnectionStatus('success');
+        toast.success(data.message || 'OpenAI API connection successful!');
+      } else {
+        setConnectionStatus('error');
+        toast.error(data?.error || 'OpenAI API connection failed');
+      }
+    } catch (error: any) {
+      console.error('Test connection error:', error);
+      setConnectionStatus('error');
       toast.error('Failed to test OpenAI connection');
     } finally {
       setTesting(false);
@@ -127,16 +138,21 @@ export const OpenAiApiSettings = () => {
               </div>
             </div>
 
-            <div>
-              <Label htmlFor="api_key">API Key</Label>
-              <Input
-                name="api_key"
-                type="password"
-                placeholder="Enter your OpenAI API key"
-                defaultValue={llmConfig.api_key}
-                required
-              />
-            </div>
+            {/* API Key Notice */}
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800">
+                <strong>Important:</strong> The OpenAI API key must be configured as a Supabase secret named <code className="bg-amber-100 px-1 rounded">OPENAI_API_KEY</code>.
+                <a 
+                  href="https://supabase.com/dashboard/project/hzinvalidlnlhindttbu/settings/functions" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="ml-1 text-amber-700 underline hover:text-amber-900"
+                >
+                  Configure in Supabase →
+                </a>
+              </AlertDescription>
+            </Alert>
 
             <div>
               <Label htmlFor="endpoint_url">Custom Endpoint URL (Optional)</Label>
@@ -146,7 +162,7 @@ export const OpenAiApiSettings = () => {
                 placeholder="https://api.openai.com/v1"
                 defaultValue={llmConfig.endpoint_url}
               />
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 Leave empty to use default OpenAI endpoint
               </p>
             </div>
@@ -162,7 +178,7 @@ export const OpenAiApiSettings = () => {
                   defaultValue={[llmConfig.temperature]}
                   className="mt-2"
                 />
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   Controls randomness (0 = focused, 2 = creative)
                 </p>
               </div>
@@ -177,13 +193,13 @@ export const OpenAiApiSettings = () => {
                   defaultValue={llmConfig.max_tokens}
                   required
                 />
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   Maximum response length
                 </p>
               </div>
             </div>
 
-            <div className="flex gap-2 pt-4">
+            <div className="flex gap-2 pt-4 items-center">
               <Button type="submit" disabled={saving}>
                 {saving ? 'Saving...' : 'Save Settings'}
               </Button>
@@ -197,6 +213,16 @@ export const OpenAiApiSettings = () => {
                 <TestTube className="h-4 w-4" />
                 {testing ? 'Testing...' : 'Test Connection'}
               </Button>
+              {connectionStatus === 'success' && (
+                <span className="flex items-center gap-1 text-green-600 text-sm">
+                  <CheckCircle className="h-4 w-4" /> Connected
+                </span>
+              )}
+              {connectionStatus === 'error' && (
+                <span className="flex items-center gap-1 text-destructive text-sm">
+                  <AlertCircle className="h-4 w-4" /> Failed
+                </span>
+              )}
             </div>
           </form>
         </CardContent>
