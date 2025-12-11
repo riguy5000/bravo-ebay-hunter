@@ -23,10 +23,12 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
   categoryId,
   fallbackCategoryId,
   aspectName,
-  selectedValues,
+  selectedValues: rawSelectedValues,
   onChange,
   placeholder = 'Select options...'
 }) => {
+  // Ensure selectedValues is always an array to prevent .map() errors
+  const selectedValues = Array.isArray(rawSelectedValues) ? rawSelectedValues : [];
   // Validate category IDs - only use real eBay categories or merged data
   const isValidEbayCategoryId = (id?: string) => {
     if (!id) return false;
