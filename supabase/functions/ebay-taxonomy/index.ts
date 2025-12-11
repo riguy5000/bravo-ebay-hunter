@@ -87,6 +87,13 @@ const fetchTaxonomyAspects = async (categoryId: string, accessToken: string) => 
   if (!response.ok) {
     const errorText = await response.text();
     console.error(`Taxonomy API error: ${response.status} ${response.statusText} - ${errorText}`);
+    
+    // For 400 errors (invalid category), return empty result instead of throwing
+    if (response.status === 400) {
+      console.log(`Category ${categoryId} is not valid for this category tree, returning empty result`);
+      return { aspects: [] };
+    }
+    
     throw new Error(`Taxonomy API failed: ${response.status} ${response.statusText}`);
   }
 
