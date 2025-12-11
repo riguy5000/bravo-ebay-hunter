@@ -110,6 +110,47 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Processing taxonomy request for category: ${categoryId}`);
 
+    // Check if this is a synthetic/merged category ID (not a real eBay category)
+    if (categoryId.includes('_merged') || !/^\d+$/.test(categoryId)) {
+      console.log(`Skipping API call for synthetic category: ${categoryId}, returning cached data if available`);
+      
+      // Try to return cached data for synthetic categories
+      const { data: cachedData } = await supabase
+        .from('ebay_aspects')
+        .select('*')
+        .eq('category_id', categoryId)
+        .order('aspect_name');
+      
+      if (cachedData && cachedData.length > 0) {
+        return new Response(JSON.stringify({ 
+          success: true,
+          categoryId,
+          aspects: cachedData.map(a => ({
+            aspect_name: a.aspect_name,
+            values_json: a.values_json,
+            refreshed_at: a.refreshed_at
+          })),
+          totalAspects: cachedData.length,
+          message: `Returned ${cachedData.length} cached aspects for synthetic category ${categoryId}`
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+      
+      // No cached data - return empty but successful response
+      return new Response(JSON.stringify({ 
+        success: true,
+        categoryId,
+        aspects: [],
+        totalAspects: 0,
+        message: `No cached data available for synthetic category ${categoryId}`
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+
     // Get API credentials
     const apiKey = await getApiKey();
     
