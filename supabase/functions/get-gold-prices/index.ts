@@ -268,6 +268,10 @@ const handler = async (req: Request): Promise<Response> => {
               changePercent: data.chp,
               high: data.high_price,
               low: data.low_price,
+              priceGram24k: data.price_gram_24k || 0,
+              priceGram18k: data.price_gram_18k || 0,
+              priceGram14k: data.price_gram_14k || 0,
+              priceGram10k: data.price_gram_10k || 0,
               currency: data.currency,
               lastUpdated: new Date().toISOString()
             });

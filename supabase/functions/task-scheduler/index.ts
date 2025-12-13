@@ -371,9 +371,9 @@ const processTask = async (task: Task) => {
     console.log(`🎯 Task ${task.name} completed (UNLIMITED): ${newMatches} new matches, ${excludedItems} excluded, ${analyzedItems} analyzed`);
     console.log(`📊 Processing: ${analyzedItems} items processed, ${newMatches} new matches created`);
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`❌ Error processing task ${task.id}:`, error);
-    console.error('Error stack:', error.stack);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'Unknown error');
     
     // Still update last_run to prevent endless retries
     try {
