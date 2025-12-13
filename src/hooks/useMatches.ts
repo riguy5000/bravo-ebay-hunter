@@ -131,9 +131,9 @@ export const useMatches = () => {
 
       const tasks = tasksResult.data || [];
       const allMatches: Match[] = [
-        ...(watchData.data || []),
-        ...(jewelryData.data || []),
-        ...(gemstoneData.data || [])
+        ...((watchData.data as WatchMatch[]) || []),
+        ...((jewelryData.data as JewelryMatch[]) || []),
+        ...((gemstoneData.data as GemstoneMatch[]) || [])
       ];
 
       // Group matches by task_id
@@ -173,11 +173,11 @@ export const useMatches = () => {
   const updateMatch = async (id: string, itemType: string, updates: Partial<Match>) => {
     if (!user) return;
 
-    const tableName = `matches_${itemType}`;
+    const tableName = `matches_${itemType}` as const;
 
     const { data, error } = await supabase
-      .from(tableName)
-      .update(updates)
+      .from(tableName as 'matches_watch' | 'matches_jewelry' | 'matches_gemstone')
+      .update(updates as any)
       .eq('id', id)
       .select()
       .single();
@@ -190,7 +190,7 @@ export const useMatches = () => {
     // Update the match in the task groups
     setTaskGroups(prev => prev.map(group => ({
       ...group,
-      matches: group.matches.map(match => match.id === id ? { ...match, ...data } : match)
+      matches: group.matches.map(match => match.id === id ? { ...match, ...(data as Match) } : match)
     })));
 
     return data;

@@ -361,8 +361,8 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     // Get Metal aspect for response
-    const metalAspect = aspectsMap.get('Metal');
-    const metalCount = metalAspect?.values?.length || 0;
+    const metalAspectForResponse = aspectsMap.get('Metal');
+    const metalCount = metalAspectForResponse?.values?.length || 0;
     
     return new Response(JSON.stringify({ 
       success: true,

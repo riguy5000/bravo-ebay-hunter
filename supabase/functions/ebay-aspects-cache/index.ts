@@ -337,12 +337,12 @@ Deno.serve(async (req) => {
           } else {
             console.log(`⚠ eBay API failed for ${category.name}: ${ebayResponse.status}`);
           }
-        } catch (error) {
-          console.log(`⚠ Error fetching real eBay data for ${category.name}:`, error.message);
+        } catch (error: unknown) {
+          console.log(`⚠ Error fetching real eBay data for ${category.name}:`, error instanceof Error ? error.message : 'Unknown error');
         }
       }
-    } catch (error) {
-      console.log('⚠ Real eBay data collection failed:', error.message);
+    } catch (error: unknown) {
+      console.log('⚠ Real eBay data collection failed:', error instanceof Error ? error.message : 'Unknown error');
       console.log('✓ Using test data instead');
     }
 
@@ -386,12 +386,12 @@ Deno.serve(async (req) => {
       }
     );
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('eBay aspects cache error:', error);
     return new Response(
       JSON.stringify({ 
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString()
       }),
       { 
