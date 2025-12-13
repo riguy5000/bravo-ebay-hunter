@@ -1,25 +1,22 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useMatches, type WatchMatch, type JewelryMatch, type GemstoneMatch } from '@/hooks/useMatches';
-import { Eye, ShoppingCart, RotateCcw, Package, Brain, TrendingUp, RefreshCw } from 'lucide-react';
+import { useMatches, type Match } from '@/hooks/useMatches';
+import { Eye, ShoppingCart, RotateCcw, Package, Brain, TrendingUp, RefreshCw, Watch, Gem, CircleDot } from 'lucide-react';
 
 const Matches = () => {
-  const { 
-    watchMatches, 
-    jewelryMatches, 
-    gemstoneMatches, 
-    loading, 
-    hasMore,
-    loadMore,
-    updateWatchMatch, 
-    updateJewelryMatch, 
-    updateGemstoneMatch,
-    refetch
-  } = useMatches();
+  const { taskGroups, loading, totalCount, updateMatch, refetch } = useMatches();
+  const [activeTaskId, setActiveTaskId] = useState<string>('');
+
+  // Set default active task to first task with matches, or first task
+  React.useEffect(() => {
+    if (taskGroups.length > 0 && !activeTaskId) {
+      const taskWithMatches = taskGroups.find(g => g.matchCount > 0);
+      setActiveTaskId(taskWithMatches?.task.id || taskGroups[0].task.id);
+    }
+  }, [taskGroups, activeTaskId]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -41,31 +38,24 @@ const Matches = () => {
     }
   };
 
-  const handleWatchStatusUpdate = async (id: string, newStatus: string) => {
-    try {
-      await updateWatchMatch(id, { status: newStatus as any });
-    } catch (error) {
-      console.error('Failed to update watch match status:', error);
+  const getItemTypeIcon = (itemType: string) => {
+    switch (itemType) {
+      case 'watch': return <Watch className="h-4 w-4" />;
+      case 'jewelry': return <Gem className="h-4 w-4" />;
+      case 'gemstone': return <CircleDot className="h-4 w-4" />;
+      default: return null;
     }
   };
 
-  const handleJewelryStatusUpdate = async (id: string, newStatus: string) => {
+  const handleStatusUpdate = async (match: Match, newStatus: string, itemType: string) => {
     try {
-      await updateJewelryMatch(id, { status: newStatus as any });
+      await updateMatch(match.id, itemType, { status: newStatus as any });
     } catch (error) {
-      console.error('Failed to update jewelry match status:', error);
+      console.error('Failed to update match status:', error);
     }
   };
 
-  const handleGemstoneStatusUpdate = async (id: string, newStatus: string) => {
-    try {
-      await updateGemstoneMatch(id, { status: newStatus as any });
-    } catch (error) {
-      console.error('Failed to update gemstone match status:', error);
-    }
-  };
-
-  const renderAIAnalysis = (match: WatchMatch | JewelryMatch | GemstoneMatch) => {
+  const renderAIAnalysis = (match: Match) => {
     if (!match.ai_score && !match.ai_reasoning) return null;
 
     return (
@@ -82,8 +72,7 @@ const Matches = () => {
         {match.ai_reasoning && (
           <p className="text-xs text-blue-700">{match.ai_reasoning}</p>
         )}
-        
-        {/* Show jewelry-specific AI data */}
+
         {'profit_scrap' in match && match.profit_scrap && (
           <div className="flex items-center gap-2 mt-2 text-xs">
             <TrendingUp className="h-3 w-3 text-green-600" />
@@ -97,7 +86,7 @@ const Matches = () => {
     );
   };
 
-  const renderMatchCard = (match: WatchMatch | JewelryMatch | GemstoneMatch, onStatusUpdate: (id: string, status: string) => void) => (
+  const renderMatchCard = (match: Match, itemType: string) => (
     <div key={match.id} className="border rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between">
         <div className="flex-1">
@@ -132,9 +121,9 @@ const Matches = () => {
           </Button>
         )}
         {match.status === 'new' && (
-          <Button 
-            size="sm" 
-            onClick={() => onStatusUpdate(match.id, 'purchased')}
+          <Button
+            size="sm"
+            onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
           >
             Mark Purchased
           </Button>
@@ -143,19 +132,19 @@ const Matches = () => {
     </div>
   );
 
-  if (loading && watchMatches.length === 0 && jewelryMatches.length === 0 && gemstoneMatches.length === 0) {
+  if (loading) {
     return <div className="p-6">Loading matches...</div>;
   }
 
-  const totalMatches = watchMatches.length + jewelryMatches.length + gemstoneMatches.length;
+  const activeGroup = taskGroups.find(g => g.task.id === activeTaskId);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">AI-Analyzed Matches</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Matches</h1>
           <p className="text-gray-600">
-            Continuous monitoring - displaying {totalMatches} matches found{hasMore ? ' (loading more available)' : ' (all loaded)'}
+            {totalCount} total matches across {taskGroups.length} tasks
           </p>
         </div>
         <Button onClick={refetch} variant="outline" size="sm">
@@ -164,148 +153,72 @@ const Matches = () => {
         </Button>
       </div>
 
-      <Tabs defaultValue="all" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="all">All ({totalMatches})</TabsTrigger>
-          <TabsTrigger value="watches">Watches ({watchMatches.length})</TabsTrigger>
-          <TabsTrigger value="jewelry">Jewelry ({jewelryMatches.length})</TabsTrigger>
-          <TabsTrigger value="gemstones">Gemstones ({gemstoneMatches.length})</TabsTrigger>
-        </TabsList>
+      {taskGroups.length > 0 ? (
+        <Tabs value={activeTaskId} onValueChange={setActiveTaskId} className="w-full">
+          <TabsList className="flex flex-wrap h-auto gap-1 bg-muted p-1">
+            {taskGroups.map(group => (
+              <TabsTrigger
+                key={group.task.id}
+                value={group.task.id}
+                className="flex items-center gap-2 px-3 py-2"
+              >
+                {getItemTypeIcon(group.task.item_type)}
+                <span className="truncate max-w-[150px]">{group.task.name}</span>
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {group.matchCount}
+                </Badge>
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-        <TabsContent value="all">
-          <Card>
-            <CardHeader>
-              <CardTitle>All AI-Analyzed Matches</CardTitle>
-              <CardDescription>
-                Continuous monitoring results - {totalMatches} matches found and growing
-                {hasMore && ' (more available)'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {totalMatches > 0 ? (
-                <div className="space-y-4">
-                  {watchMatches.map((match) => renderMatchCard(match, handleWatchStatusUpdate))}
-                  {jewelryMatches.map((match) => renderMatchCard(match, handleJewelryStatusUpdate))}
-                  {gemstoneMatches.map((match) => renderMatchCard(match, handleGemstoneStatusUpdate))}
-                  
-                  {hasMore && (
-                    <div className="flex justify-center pt-4">
-                      <Button 
-                        onClick={loadMore} 
-                        disabled={loading}
-                        variant="outline"
-                      >
-                        {loading ? 'Loading...' : 'Load More Matches'}
-                      </Button>
+          {taskGroups.map(group => (
+            <TabsContent key={group.task.id} value={group.task.id} className="mt-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        {group.task.name}
+                        <Badge variant="outline" className="text-xs">
+                          {group.task.item_type}
+                        </Badge>
+                        {group.task.status !== 'active' && (
+                          <Badge variant="secondary" className="text-xs">
+                            {group.task.status}
+                          </Badge>
+                        )}
+                      </CardTitle>
+                      <CardDescription>
+                        {group.task.max_price && `Max price: $${group.task.max_price} • `}
+                        {group.matchCount} {group.matchCount === 1 ? 'match' : 'matches'} found
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {group.matches.length > 0 ? (
+                    <div className="space-y-4">
+                      {group.matches.map((match) => renderMatchCard(match, group.task.item_type))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500 py-4 text-center">
+                      No matches found yet. The worker will scan eBay for items matching this task's criteria.
                     </div>
                   )}
-                  
-                  {!hasMore && totalMatches > 0 && (
-                    <div className="text-center pt-4 text-sm text-gray-500">
-                      All {totalMatches} matches displayed. Tasks continue monitoring for new items.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-gray-500">No matches found yet. Create a task to start continuous monitoring!</div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="watches">
-          <Card>
-            <CardHeader>
-              <CardTitle>Watch Matches</CardTitle>
-              <CardDescription>
-                Luxury watches and timepieces - {watchMatches.length} matches from continuous monitoring
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {watchMatches.length > 0 ? (
-                <div className="space-y-4">
-                  {watchMatches.map((match) => renderMatchCard(match, handleWatchStatusUpdate))}
-                  {hasMore && (
-                    <div className="flex justify-center pt-4">
-                      <Button 
-                        onClick={loadMore} 
-                        disabled={loading}
-                        variant="outline"
-                      >
-                        {loading ? 'Loading...' : 'Load More Watches'}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-gray-500">No watch matches found yet from continuous monitoring</div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="jewelry">
-          <Card>
-            <CardHeader>
-              <CardTitle>Jewelry Matches</CardTitle>
-              <CardDescription>
-                Gold jewelry and precious metals - {jewelryMatches.length} matches with profit analysis
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {jewelryMatches.length > 0 ? (
-                <div className="space-y-4">
-                  {jewelryMatches.map((match) => renderMatchCard(match, handleJewelryStatusUpdate))}
-                  {hasMore && (
-                    <div className="flex justify-center pt-4">
-                      <Button 
-                        onClick={loadMore} 
-                        disabled={loading}
-                        variant="outline"
-                      >
-                        {loading ? 'Loading...' : 'Load More Jewelry'}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-gray-500">No jewelry matches found yet from continuous monitoring</div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="gemstones">
-          <Card>
-            <CardHeader>
-              <CardTitle>Gemstone Matches</CardTitle>
-              <CardDescription>
-                Loose diamonds and precious stones - {gemstoneMatches.length} matches with market analysis
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {gemstoneMatches.length > 0 ? (
-                <div className="space-y-4">
-                  {gemstoneMatches.map((match) => renderMatchCard(match, handleGemstoneStatusUpdate))}
-                  {hasMore && (
-                    <div className="flex justify-center pt-4">
-                      <Button 
-                        onClick={loadMore} 
-                        disabled={loading}
-                        variant="outline"
-                      >
-                        {loading ? 'Loading...' : 'Load More Gemstones'}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-gray-500">No gemstone matches found yet from continuous monitoring</div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          ))}
+        </Tabs>
+      ) : (
+        <Card>
+          <CardContent className="py-8">
+            <div className="text-center text-gray-500">
+              No tasks found. Create a task to start finding matches!
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

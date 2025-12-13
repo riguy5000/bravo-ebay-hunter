@@ -66,160 +66,141 @@ export interface GemstoneMatch extends BaseMatch {
 
 export type Match = WatchMatch | JewelryMatch | GemstoneMatch;
 
+export interface Task {
+  id: string;
+  user_id: string;
+  name: string;
+  item_type: 'watch' | 'jewelry' | 'gemstone';
+  status: 'active' | 'paused' | 'stopped';
+  max_price?: number;
+  created_at: string;
+}
+
+export interface TaskWithMatches {
+  task: Task;
+  matches: Match[];
+  matchCount: number;
+}
+
 export const useMatches = () => {
   const { user } = useAuth();
-  const [watchMatches, setWatchMatches] = useState<WatchMatch[]>([]);
-  const [jewelryMatches, setJewelryMatches] = useState<JewelryMatch[]>([]);
-  const [gemstoneMatches, setGemstoneMatches] = useState<GemstoneMatch[]>([]);
+  const [taskGroups, setTaskGroups] = useState<TaskWithMatches[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const itemsPerPage = 50; // Increased from 25 to 50 for better UX
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     if (user) {
-      fetchMatches();
+      fetchMatchesByTask();
     }
-  }, [user, page]);
+  }, [user]);
 
-  const fetchMatches = async (resetData = false) => {
+  const fetchMatchesByTask = async () => {
     if (!user) return;
 
     try {
       setLoading(true);
-      
-      // Calculate offset for pagination
-      const offset = resetData ? 0 : (page - 1) * itemsPerPage;
-      
-      // Fetch all match types in parallel with increased pagination
-      const [watchData, jewelryData, gemstoneData] = await Promise.all([
+
+      // Fetch tasks and all matches in parallel
+      const [tasksResult, watchData, jewelryData, gemstoneData] = await Promise.all([
+        supabase
+          .from('tasks')
+          .select('id, user_id, name, item_type, status, max_price, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
         supabase
           .from('matches_watch')
           .select('*')
           .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .range(offset, offset + itemsPerPage - 1),
+          .order('created_at', { ascending: false }),
         supabase
           .from('matches_jewelry')
           .select('*')
           .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .range(offset, offset + itemsPerPage - 1),
+          .order('created_at', { ascending: false }),
         supabase
           .from('matches_gemstone')
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
-          .range(offset, offset + itemsPerPage - 1)
       ]);
 
+      if (tasksResult.error) console.error('Error fetching tasks:', tasksResult.error);
       if (watchData.error) console.error('Error fetching watch matches:', watchData.error);
       if (jewelryData.error) console.error('Error fetching jewelry matches:', jewelryData.error);
       if (gemstoneData.error) console.error('Error fetching gemstone matches:', gemstoneData.error);
 
-      const newWatchMatches = watchData.data || [];
-      const newJewelryMatches = jewelryData.data || [];
-      const newGemstoneMatches = gemstoneData.data || [];
+      const tasks = tasksResult.data || [];
+      const allMatches: Match[] = [
+        ...(watchData.data || []),
+        ...(jewelryData.data || []),
+        ...(gemstoneData.data || [])
+      ];
 
-      if (resetData || page === 1) {
-        setWatchMatches(newWatchMatches);
-        setJewelryMatches(newJewelryMatches);
-        setGemstoneMatches(newGemstoneMatches);
-      } else {
-        setWatchMatches(prev => [...prev, ...newWatchMatches]);
-        setJewelryMatches(prev => [...prev, ...newJewelryMatches]);
-        setGemstoneMatches(prev => [...prev, ...newGemstoneMatches]);
+      // Group matches by task_id
+      const matchesByTaskId = new Map<string, Match[]>();
+      for (const match of allMatches) {
+        const existing = matchesByTaskId.get(match.task_id) || [];
+        existing.push(match);
+        matchesByTaskId.set(match.task_id, existing);
       }
 
-      // Check if there are more items to load
-      const totalNewItems = newWatchMatches.length + newJewelryMatches.length + newGemstoneMatches.length;
-      setHasMore(totalNewItems === itemsPerPage * 3); // More accurate estimation
-      
+      // Build task groups with matches
+      const groups: TaskWithMatches[] = tasks.map(task => {
+        const matches = matchesByTaskId.get(task.id) || [];
+        // Sort matches by created_at descending (newest first)
+        matches.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        return {
+          task,
+          matches,
+          matchCount: matches.length
+        };
+      });
+
+      setTaskGroups(groups);
+      setTotalCount(allMatches.length);
+
     } catch (error) {
-      console.error('Error in fetchMatches:', error);
+      console.error('Error in fetchMatchesByTask:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadMore = () => {
-    if (hasMore && !loading) {
-      setPage(prev => prev + 1);
-    }
-  };
-
   const refetch = () => {
-    setPage(1);
-    fetchMatches(true);
+    fetchMatchesByTask();
   };
 
-  const updateWatchMatch = async (id: string, updates: Partial<WatchMatch>) => {
+  const updateMatch = async (id: string, itemType: string, updates: Partial<Match>) => {
     if (!user) return;
 
+    const tableName = `matches_${itemType}`;
+
     const { data, error } = await supabase
-      .from('matches_watch')
+      .from(tableName)
       .update(updates)
       .eq('id', id)
       .select()
       .single();
 
     if (error) {
-      console.error('Error updating watch match:', error);
+      console.error(`Error updating ${itemType} match:`, error);
       throw error;
     }
 
-    setWatchMatches(prev => prev.map(match => match.id === id ? data : match));
-    return data;
-  };
+    // Update the match in the task groups
+    setTaskGroups(prev => prev.map(group => ({
+      ...group,
+      matches: group.matches.map(match => match.id === id ? { ...match, ...data } : match)
+    })));
 
-  const updateJewelryMatch = async (id: string, updates: Partial<JewelryMatch>) => {
-    if (!user) return;
-
-    const { data, error } = await supabase
-      .from('matches_jewelry')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error updating jewelry match:', error);
-      throw error;
-    }
-
-    setJewelryMatches(prev => prev.map(match => match.id === id ? data : match));
-    return data;
-  };
-
-  const updateGemstoneMatch = async (id: string, updates: Partial<GemstoneMatch>) => {
-    if (!user) return;
-
-    const { data, error } = await supabase
-      .from('matches_gemstone')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error updating gemstone match:', error);
-      throw error;
-    }
-
-    setGemstoneMatches(prev => prev.map(match => match.id === id ? data : match));
     return data;
   };
 
   return {
-    watchMatches,
-    jewelryMatches,
-    gemstoneMatches,
+    taskGroups,
     loading,
-    hasMore,
-    loadMore,
-    updateWatchMatch,
-    updateJewelryMatch,
-    updateGemstoneMatch,
+    totalCount,
+    updateMatch,
     refetch,
   };
 };

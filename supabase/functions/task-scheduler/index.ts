@@ -327,8 +327,9 @@ const processTask = async (task: Task) => {
         continue;
       }
 
-      // AI Analysis
-      const aiAnalysis = await analyzeItemWithAI(task, item);
+      // AI Analysis - DISABLED for performance (re-enable when ready)
+      // const aiAnalysis = await analyzeItemWithAI(task, item);
+      const aiAnalysis = null; // Disabled - saves items faster without AI scoring
       
       // Smart exclusion logic
       const exclusionCheck = shouldExcludeItem(task, item, aiAnalysis);

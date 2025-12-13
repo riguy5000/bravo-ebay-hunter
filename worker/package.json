@@ -1,0 +1,15 @@
+{
+  "name": "ebay-hunter-worker",
+  "version": "1.0.0",
+  "description": "Long-running worker for eBay deal hunting",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.3.1"
+  }
+}

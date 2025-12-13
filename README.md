@@ -1,73 +1,81 @@
-# Welcome to your Lovable project
+# Bravo eBay Hunter
 
-## Project info
+A CRM tool for finding deals on eBay for watches, jewelry, and gemstones. Create search tasks with specific criteria, run the worker to scan eBay listings, and manage your matches.
 
-**URL**: https://lovable.dev/projects/fe5aa787-d0f5-488c-b510-e9f4ee2a0fc8
+## Prerequisites
 
-## How can I edit this code?
+- Node.js 18+ and npm
+- Supabase account (for database and edge functions)
+- eBay Developer API credentials
 
-There are several ways of editing your application.
+## Setup
 
-**Use Lovable**
+1. **Clone and install dependencies:**
+   ```sh
+   git clone https://github.com/riguy5000/bravo-ebay-hunter.git
+   cd bravo-ebay-hunter
+   npm install
+   ```
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/fe5aa787-d0f5-488c-b510-e9f4ee2a0fc8) and start prompting.
+2. **Set up environment variables:**
 
-Changes made via Lovable will be committed automatically to this repo.
+   Create a `.env` file in the `worker/` directory:
+   ```
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   ```
 
-**Use your preferred IDE**
+3. **Configure eBay API credentials:**
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+   Add your eBay API credentials in the app's Settings page (Client ID, Client Secret, etc.)
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Running the Application
 
-Follow these steps:
+### Web App (Dashboard)
 
+Start the development server:
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The app will be available at `http://localhost:5173`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Worker (eBay Scanner)
 
-**Use GitHub Codespaces**
+The worker scans eBay for listings matching your active tasks:
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```sh
+cd worker
+node index.js
+```
 
-## What technologies are used for this project?
+The worker will:
+- Poll every 10 seconds for active tasks
+- Search eBay for matching listings
+- Save new matches to the database
+- Skip duplicates and excluded keywords
 
-This project is built with:
+**Note:** Keep the worker running in a separate terminal while using the app.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Usage
 
-## How can I deploy this project?
+1. **Create a Task** - Go to Tasks page and create a new search task with:
+   - Search keywords (e.g., "Rose Gold jewelry")
+   - Item type (watch, jewelry, or gemstone)
+   - Price range
+   - Subcategories to search
+   - Exclusion keywords (e.g., "plated", "filled")
 
-Simply open [Lovable](https://lovable.dev/projects/fe5aa787-d0f5-488c-b510-e9f4ee2a0fc8) and click on Share -> Publish.
+2. **Activate the Task** - Set the task status to "Active"
 
-## Can I connect a custom domain to my Lovable project?
+3. **Run the Worker** - Start the worker to begin scanning eBay
 
-Yes, you can!
+4. **View Matches** - Check the Matches page to see found listings
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+5. **Manage Matches** - Mark items as purchased, hidden, or delete them
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+## Tech Stack
+
+- **Frontend:** React, TypeScript, Vite, Tailwind CSS, shadcn/ui
+- **Backend:** Supabase (PostgreSQL, Edge Functions)
+- **API:** eBay Browse API v1

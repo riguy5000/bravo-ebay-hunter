@@ -332,11 +332,40 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
   return finalUrl;
 };
 
+// Helper to normalize filter values - handles both string and array formats
+const normalizeFilterValue = (value: any): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') return [value];
+  return [];
+};
+
 const buildAspectFilters = (itemType: string, filters: any, conditions?: string[]): string[] => {
   const aspectFilters: string[] = [];
-  
+
   console.log(`🔧 Building aspect filters for ${itemType}:`, JSON.stringify(filters, null, 2));
   console.log(`🎭 Processing conditions for ${itemType}:`, conditions);
+
+  // Normalize filters - handle both singular (brand) and plural (brands) field names
+  // and both string and array values
+  const normalizedFilters = {
+    ...filters,
+    brands: normalizeFilterValue(filters.brands || filters.brand),
+    movement: normalizeFilterValue(filters.movement),
+    case_material: normalizeFilterValue(filters.case_material),
+    metal: normalizeFilterValue(filters.metal),
+    main_stones: normalizeFilterValue(filters.main_stones || filters.main_stone),
+    metal_purity: normalizeFilterValue(filters.metal_purity),
+    setting_style: normalizeFilterValue(filters.setting_style),
+    stone_types: normalizeFilterValue(filters.stone_types || filters.stone_type),
+    cuts: normalizeFilterValue(filters.cuts || filters.cut),
+    conditions: normalizeFilterValue(filters.conditions || filters.condition),
+  };
+
+  console.log(`🔄 Normalized filters:`, JSON.stringify(normalizedFilters, null, 2));
+
+  // Use normalized filters from here on
+  filters = normalizedFilters;
 
   // FIXED: Add condition filters using aspect-based filtering for jewelry, watches, and gemstones
   if (conditions && conditions.length > 0 && ['jewelry', 'watch', 'gemstone'].includes(itemType)) {
