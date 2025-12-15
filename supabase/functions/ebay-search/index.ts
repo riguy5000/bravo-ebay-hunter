@@ -17,6 +17,7 @@ interface SearchRequest {
   sortOrder?: string;
   itemType?: 'watch' | 'jewelry' | 'gemstone';
   typeSpecificFilters?: any;
+  dateFrom?: string;
   testKey?: {
     app_id: string;
     dev_id: string;
