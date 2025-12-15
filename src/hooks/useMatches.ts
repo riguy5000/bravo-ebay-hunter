@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface BaseMatch {
   id: string;
@@ -166,9 +167,73 @@ export const useMatches = () => {
     }
   };
 
-  const refetch = () => {
+  const refetch = useCallback(() => {
     fetchMatchesByTask();
-  };
+  }, [user]);
+
+  // Real-time subscriptions for live updates
+  useEffect(() => {
+    if (!user) return;
+
+    const channels: RealtimeChannel[] = [];
+
+    // Helper to add a new match to the appropriate task group
+    const handleNewMatch = (newMatch: Match) => {
+      setTaskGroups(prev => {
+        return prev.map(group => {
+          if (group.task.id === newMatch.task_id) {
+            // Check if match already exists (avoid duplicates)
+            if (group.matches.some(m => m.id === newMatch.id)) {
+              return group;
+            }
+            // Add new match at the beginning (newest first)
+            return {
+              ...group,
+              matches: [newMatch, ...group.matches],
+              matchCount: group.matchCount + 1
+            };
+          }
+          return group;
+        });
+      });
+      setTotalCount(prev => prev + 1);
+    };
+
+    // Subscribe to each matches table
+    const tables = ['matches_watch', 'matches_jewelry', 'matches_gemstone'] as const;
+
+    for (const table of tables) {
+      const channel = supabase
+        .channel(`${table}_changes`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: table,
+            filter: `user_id=eq.${user.id}`
+          },
+          (payload) => {
+            console.log(`🔔 New ${table} match:`, payload.new);
+            handleNewMatch(payload.new as Match);
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log(`✅ Subscribed to ${table} real-time updates`);
+          }
+        });
+
+      channels.push(channel);
+    }
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      channels.forEach(channel => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, [user]);
 
   const updateMatch = async (id: string, itemType: string, updates: Partial<Match>) => {
     if (!user) return;

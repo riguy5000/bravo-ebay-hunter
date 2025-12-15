@@ -1,5 +1,19 @@
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
+import http from 'http';
+
+// ============================================
+// Environment Validation
+// ============================================
+const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+const missing = REQUIRED_ENV.filter(key => !process.env[key]);
+
+if (missing.length > 0) {
+  console.error('❌ Missing required environment variables:');
+  missing.forEach(key => console.error(`   - ${key}`));
+  console.error('\nCreate a .env file in the worker directory with these values.');
+  process.exit(1);
+}
 
 // Configuration
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '10') * 1000; // Convert to ms
@@ -13,6 +27,199 @@ const supabase = createClient(
 
 // Cache for eBay tokens (they last 2 hours)
 const tokenCache = new Map();
+
+// Track if we're shutting down
+let isShuttingDown = false;
+let pollInterval = null;
+
+// ============================================
+// Rate Limiting (eBay allows 5,000 calls/day)
+// ============================================
+const DAILY_LIMIT = parseInt(process.env.EBAY_DAILY_LIMIT || '4500'); // Leave buffer
+const rateLimiter = {
+  calls: 0,
+  resetTime: Date.now() + 24 * 60 * 60 * 1000,
+
+  canMakeCall() {
+    // Reset counter if past reset time
+    if (Date.now() > this.resetTime) {
+      this.calls = 0;
+      this.resetTime = Date.now() + 24 * 60 * 60 * 1000;
+      console.log('📊 Rate limit counter reset for new day');
+    }
+    return this.calls < DAILY_LIMIT;
+  },
+
+  recordCall() {
+    this.calls++;
+    if (this.calls % 100 === 0) {
+      console.log(`📊 API calls today: ${this.calls}/${DAILY_LIMIT}`);
+    }
+  },
+
+  getRemainingCalls() {
+    return Math.max(0, DAILY_LIMIT - this.calls);
+  }
+};
+
+// ============================================
+// Auto-Exclusions for Jewelry
+// ============================================
+
+// ⚙️ TOGGLE: Require karat markers (10k, 14k, etc.) for gold jewelry
+// Set to false to disable karat requirement and go back to previous behavior
+const REQUIRE_KARAT_MARKERS = true;
+
+// Valid karat markers that indicate real gold
+// Note: Removed hallmark numbers (375, 585, 750, etc.) as they're often misused by cheap jewelry sellers
+const KARAT_MARKERS = [
+  '10k', '10kt', '10 k', '10 kt', '10 karat',
+  '14k', '14kt', '14 k', '14 kt', '14 karat',
+  '18k', '18kt', '18 k', '18 kt', '18 karat',
+  '22k', '22kt', '22 k', '22 kt', '22 karat',
+  '24k', '24kt', '24 k', '24 kt', '24 karat',
+  'solid gold', 'pure gold', 'real gold',
+];
+
+// Costume/fashion jewelry keywords to always exclude
+const COSTUME_JEWELRY_EXCLUSIONS = [
+  'snap jewelry',
+  'snap button',
+  'rhinestone',
+  'costume',
+  'fashion jewelry',
+  'acrylic',
+  'plastic',
+  'glass bead',
+  'simulated',
+  'faux',
+  'fake',
+  'imitation',
+  'cubic zirconia',
+  'cz stone',
+  ' cz ',        // Standalone CZ (with spaces to avoid matching words like "czech")
+  'crystal bead',
+  'resin',
+  'enamel',
+  'leather',
+  'cord',
+  'rope chain',
+  'paracord',
+  // Gold plating/filling abbreviations (not solid gold)
+  ' gf ',        // Gold Filled
+  ' gf',         // Gold Filled at end
+  'gold gf',     // "Rose Gold GF"
+  ' gp ',        // Gold Plated
+  ' gp',         // Gold Plated at end
+  'gold gp',     // "Rose Gold GP"
+  ' hge ',       // Heavy Gold Electroplate
+  ' rgp ',       // Rolled Gold Plate
+  ' gep ',       // Gold Electroplated
+  'gold tone',   // Not real gold
+  'goldtone',    // Not real gold
+];
+
+// Map of metal categories to keywords that identify them in listings
+const METAL_KEYWORDS = {
+  // Precious metals (gold)
+  'Yellow Gold': ['yellow gold'],
+  'White Gold': ['white gold'],
+  'Rose Gold': ['rose gold'],
+  'Gold': ['gold', '10k', '14k', '18k', '24k', '10kt', '14kt', '18kt', '24kt'],
+
+  // Precious metals (other)
+  'Sterling Silver': ['sterling silver', '925 silver', '.925'],
+  'Silver': ['silver'],
+  'Platinum': ['platinum'],
+  'Palladium': ['palladium'],
+
+  // Base/fashion metals (to exclude for scrap hunting)
+  'Stainless Steel': ['stainless steel', 'stainless'],
+  'Steel': ['steel'],
+  'Titanium': ['titanium'],
+  'Tungsten': ['tungsten', 'tungsten carbide'],
+  'Brass': ['brass'],
+  'Bronze': ['bronze'],
+  'Copper': ['copper'],
+  'Pewter': ['pewter'],
+  'Aluminum': ['aluminum', 'aluminium'],
+  'Nickel': ['nickel'],
+  'Alloy': ['alloy', 'metal alloy'],
+
+  // Plated/filled (usually excluded anyway)
+  'Gold Plated': ['gold plated', 'gold-plated', 'plated'],
+  'Gold Filled': ['gold filled', 'gold-filled', 'filled'],
+  'Silver Plated': ['silver plated', 'silver-plated'],
+  'Rhodium Plated': ['rhodium plated', 'rhodium-plated'],
+  'Vermeil': ['vermeil'],
+};
+
+// Get exclusion keywords based on metals NOT selected
+function getMetalExclusionKeywords(selectedMetals) {
+  if (!selectedMetals || selectedMetals.length === 0) {
+    return []; // No metals selected = no auto-exclusions
+  }
+
+  const exclusions = new Set();
+  const selectedLower = selectedMetals.map(m => m.toLowerCase());
+
+  for (const [metalName, keywords] of Object.entries(METAL_KEYWORDS)) {
+    // Check if this metal (or a parent category) is selected
+    const isSelected = selectedLower.some(selected =>
+      metalName.toLowerCase().includes(selected) ||
+      selected.includes(metalName.toLowerCase())
+    );
+
+    if (!isSelected) {
+      // Add keywords for unselected metals
+      // But be smart - don't add generic terms that might match selected metals
+      for (const keyword of keywords) {
+        // Skip if keyword might match a selected metal
+        const mightMatchSelected = selectedLower.some(selected =>
+          keyword.includes(selected.split(' ')[0]) ||
+          selected.includes(keyword.split(' ')[0])
+        );
+
+        if (!mightMatchSelected) {
+          exclusions.add(keyword);
+        }
+      }
+    }
+  }
+
+  return Array.from(exclusions);
+}
+
+// ============================================
+// Health Check Server
+// ============================================
+const HEALTH_PORT = parseInt(process.env.HEALTH_PORT || '3001');
+let lastPollTime = null;
+let lastPollStatus = 'starting';
+
+const healthServer = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    const health = {
+      status: isShuttingDown ? 'shutting_down' : 'healthy',
+      uptime: process.uptime(),
+      lastPoll: lastPollTime,
+      lastPollStatus,
+      apiCallsToday: rateLimiter.calls,
+      apiCallsRemaining: rateLimiter.getRemainingCalls(),
+      timestamp: new Date().toISOString()
+    };
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(health, null, 2));
+  } else {
+    res.writeHead(404);
+    res.end('Not found');
+  }
+});
+
+healthServer.listen(HEALTH_PORT, () => {
+  console.log(`Health check: http://localhost:${HEALTH_PORT}/health`);
+});
 
 console.log('='.repeat(50));
 console.log('eBay Hunter Worker Starting...');
@@ -149,6 +356,12 @@ function buildSearchUrl(task) {
 
 // Search eBay
 async function searchEbay(task, token) {
+  // Check rate limit before making call
+  if (!rateLimiter.canMakeCall()) {
+    console.log('  ⚠️ Daily rate limit reached. Skipping search.');
+    return [];
+  }
+
   const url = buildSearchUrl(task);
   console.log(`  🔍 Search URL: ${url.substring(0, 150)}...`);
 
@@ -159,6 +372,9 @@ async function searchEbay(task, token) {
       'Content-Type': 'application/json'
     }
   });
+
+  // Record the API call
+  rateLimiter.recordCall();
 
   if (!response.ok) {
     throw new Error(`eBay search error: ${response.status}`);
@@ -181,8 +397,34 @@ async function processTask(task, credentials) {
   if (subcatCount > 0) {
     console.log(`  📂 Searching ${subcatCount} subcategories`);
   }
+
+  // Build combined exclusion list (manual + auto exclusions)
+  let allExclusions = [...(task.exclude_keywords || [])];
+
+  // For jewelry tasks, add auto-exclusions
+  if (task.item_type === 'jewelry') {
+    // Always exclude costume jewelry
+    allExclusions = [...allExclusions, ...COSTUME_JEWELRY_EXCLUSIONS];
+    console.log(`  🚫 Auto-excluding costume jewelry (${COSTUME_JEWELRY_EXCLUSIONS.length} terms)`);
+
+    // Log karat requirement status
+    if (REQUIRE_KARAT_MARKERS && filters.metal?.some(m => m.toLowerCase().includes('gold'))) {
+      console.log(`  ✅ Requiring karat markers (10k, 14k, 18k, etc.)`);
+    }
+
+    // Auto-exclude metals not selected (if any metals are selected)
+    if (filters.metal?.length > 0) {
+      const autoMetalExclusions = getMetalExclusionKeywords(filters.metal);
+      if (autoMetalExclusions.length > 0) {
+        console.log(`  🔧 Selected metals: ${filters.metal.join(', ')}`);
+        console.log(`  🚫 Auto-excluding metals: ${autoMetalExclusions.slice(0, 5).join(', ')}${autoMetalExclusions.length > 5 ? '...' : ''}`);
+        allExclusions = [...allExclusions, ...autoMetalExclusions];
+      }
+    }
+  }
+
   if (task.exclude_keywords?.length > 0) {
-    console.log(`  🚫 Excluding: ${task.exclude_keywords.join(', ')}`);
+    console.log(`  🚫 Manual exclusions: ${task.exclude_keywords.join(', ')}`);
   }
 
   try {
@@ -203,15 +445,33 @@ async function processTask(task, credentials) {
       // Skip if over max price
       if (task.max_price && price > task.max_price) continue;
 
-      // Skip if title contains excluded keywords
-      if (task.exclude_keywords && task.exclude_keywords.length > 0) {
-        const titleLower = item.title.toLowerCase();
-        const matchedKeyword = task.exclude_keywords.find(keyword =>
+      // Skip if title contains excluded keywords (manual + auto metal exclusions)
+      const titleLower = item.title.toLowerCase();
+
+      // Check exclusions and skip if matched
+      if (allExclusions.length > 0) {
+        const matchedKeyword = allExclusions.find(keyword =>
           titleLower.includes(keyword.toLowerCase())
         );
         if (matchedKeyword) {
-          console.log(`  ⛔ EXCLUDED (${matchedKeyword}): ${item.title.substring(0, 40)}...`);
-          continue;
+          continue; // Silently skip excluded items
+        }
+      }
+
+      // For jewelry with gold metals selected, require karat markers
+      if (REQUIRE_KARAT_MARKERS && task.item_type === 'jewelry') {
+        const hasGoldSelected = filters.metal?.some(m =>
+          m.toLowerCase().includes('gold')
+        ) || false;
+
+        if (hasGoldSelected) {
+          const hasKaratMarker = KARAT_MARKERS.some(marker =>
+            titleLower.includes(marker.toLowerCase())
+          );
+
+          if (!hasKaratMarker) {
+            continue; // Skip items without karat markers
+          }
         }
       }
 
@@ -267,6 +527,11 @@ async function processTask(task, credentials) {
       if (!error) {
         newMatches++;
         console.log(`  + NEW: $${price} - ${item.title.substring(0, 50)}...`);
+      } else if (error.code === '23505') {
+        // Unique constraint violation - duplicate, just skip silently
+        continue;
+      } else {
+        console.log(`  ⚠️ Insert error: ${error.message}`);
       }
     }
 
@@ -302,6 +567,9 @@ async function processTaskBatch(tasks, credentials) {
 
 // Main polling loop
 async function poll() {
+  lastPollTime = new Date().toISOString();
+  lastPollStatus = 'running';
+
   try {
     // Get eBay credentials
     const credentials = await getEbayCredentials();
@@ -337,8 +605,10 @@ async function poll() {
       await processTaskBatch(batch, credentials);
     }
 
+    lastPollStatus = 'success';
   } catch (error) {
     console.error('Poll error:', error.message);
+    lastPollStatus = `error: ${error.message}`;
   }
 }
 
@@ -348,10 +618,45 @@ async function start() {
   await poll();
 
   // Continue polling
-  setInterval(poll, POLL_INTERVAL);
+  pollInterval = setInterval(poll, POLL_INTERVAL);
 
   console.log(`\nWorker running. Polling every ${POLL_INTERVAL / 1000} seconds...`);
   console.log('Press Ctrl+C to stop.\n');
 }
+
+// ============================================
+// Graceful Shutdown
+// ============================================
+async function shutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n\n${'='.repeat(50)}`);
+  console.log(`Received ${signal}. Shutting down gracefully...`);
+
+  // Stop polling
+  if (pollInterval) {
+    clearInterval(pollInterval);
+  }
+
+  // Close health server
+  healthServer.close();
+
+  // Give current operations time to complete
+  console.log('Waiting for current operations to complete...');
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  console.log('Worker stopped.');
+  console.log('='.repeat(50));
+  process.exit(0);
+}
+
+// Handle shutdown signals
+process.on('SIGINT', () => shutdown('SIGINT'));   // Ctrl+C
+process.on('SIGTERM', () => shutdown('SIGTERM')); // kill command
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  shutdown('uncaughtException');
+});
 
 start();

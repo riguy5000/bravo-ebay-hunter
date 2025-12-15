@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMatches, type Match } from '@/hooks/useMatches';
-import { Eye, ShoppingCart, RotateCcw, Package, Brain, TrendingUp, RefreshCw, Watch, Gem, CircleDot } from 'lucide-react';
+import { Eye, ShoppingCart, RotateCcw, Package, Brain, TrendingUp, RefreshCw, Watch, Gem, CircleDot, Radio } from 'lucide-react';
 
 const Matches = () => {
   const { taskGroups, loading, totalCount, updateMatch, refetch } = useMatches();
@@ -147,10 +147,16 @@ const Matches = () => {
             {totalCount} total matches across {taskGroups.length} tasks
           </p>
         </div>
-        <Button onClick={refetch} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 flex items-center gap-1.5">
+            <Radio className="h-3 w-3 animate-pulse" />
+            Live
+          </Badge>
+          <Button onClick={refetch} variant="outline" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {taskGroups.length > 0 ? (
