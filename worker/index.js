@@ -384,6 +384,70 @@ async function searchEbay(task, token) {
   return data.itemSummaries || [];
 }
 
+// Fetch item details (including item specifics) from eBay
+async function fetchItemDetails(itemId, token) {
+  if (!rateLimiter.canMakeCall()) {
+    return null;
+  }
+
+  const url = `https://api.ebay.com/buy/browse/v1/item/${itemId}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+      'Content-Type': 'application/json'
+    }
+  });
+
+  rateLimiter.recordCall();
+
+  if (!response.ok) {
+    console.log(`  ⚠️ Failed to fetch details for ${itemId}: ${response.status}`);
+    return null;
+  }
+
+  return await response.json();
+}
+
+// Extract item specifics into a simple object
+function extractItemSpecifics(itemDetails) {
+  if (!itemDetails?.localizedAspects) return {};
+
+  const specs = {};
+  for (const aspect of itemDetails.localizedAspects) {
+    // Normalize the name to lowercase for easier matching
+    specs[aspect.name.toLowerCase()] = aspect.value;
+  }
+  return specs;
+}
+
+// Check if item passes the item specifics filters
+function passesItemSpecificsFilter(specs, filters) {
+  // Check Base Metal / Metal
+  const baseMetal = specs['base metal']?.toLowerCase() || '';
+  const metal = specs['metal']?.toLowerCase() || '';
+
+  // If base metal contains "plated", "filled", or non-gold metals, reject
+  const badMetals = ['plated', 'filled', 'steel', 'brass', 'bronze', 'copper', 'alloy', 'tone'];
+  for (const bad of badMetals) {
+    if (baseMetal.includes(bad) || metal.includes(bad)) {
+      return { pass: false, reason: `Base Metal/Metal contains "${bad}"` };
+    }
+  }
+
+  // Check Main Stone if user selected "No Stone" or similar
+  if (filters.main_stones?.includes('No Stone') || filters.main_stone === 'None') {
+    const mainStone = specs['main stone']?.toLowerCase() || '';
+    // If there's a main stone listed and it's not "none" or empty, reject
+    if (mainStone && mainStone !== 'none' && mainStone !== 'no stone') {
+      return { pass: false, reason: `Has main stone: "${specs['main stone']}"` };
+    }
+  }
+
+  return { pass: true, reason: null };
+}
+
 // Get table name for item type
 function getTableName(itemType) {
   return `matches_${itemType}`;
@@ -442,7 +506,11 @@ async function processTask(task, credentials) {
       // Extract price
       const price = parseFloat(item.price?.value || 0);
 
-      // Skip if over max price
+      // Skip if under min price or over max price
+      if (task.min_price && price < task.min_price) {
+        console.log(`  💰 SKIPPED (price $${price} < min $${task.min_price}): ${item.title.substring(0, 30)}...`);
+        continue;
+      }
       if (task.max_price && price > task.max_price) continue;
 
       // Skip if title contains excluded keywords (manual + auto metal exclusions)
@@ -472,6 +540,22 @@ async function processTask(task, credentials) {
           if (!hasKaratMarker) {
             continue; // Skip items without karat markers
           }
+        }
+      }
+
+      // For jewelry tasks, fetch item details and check item specifics
+      if (task.item_type === 'jewelry') {
+        const itemDetails = await fetchItemDetails(item.itemId, token);
+        if (!itemDetails) {
+          continue; // Skip if we couldn't fetch details
+        }
+
+        const specs = extractItemSpecifics(itemDetails);
+        const specsCheck = passesItemSpecificsFilter(specs, filters);
+
+        if (!specsCheck.pass) {
+          console.log(`  ❌ REJECTED (${specsCheck.reason}): ${item.title.substring(0, 40)}...`);
+          continue;
         }
       }
 
