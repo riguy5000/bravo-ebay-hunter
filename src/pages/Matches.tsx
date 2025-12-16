@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useMatches, type Match } from '@/hooks/useMatches';
-import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react';
+import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle } from 'lucide-react';
 
 const Matches = () => {
   const { taskGroups, loading, totalCount, updateMatch, refetch } = useMatches();
@@ -81,8 +81,8 @@ const Matches = () => {
             <TableHead className="w-[60px]">Karat</TableHead>
             <TableHead className="w-[80px]">Weight</TableHead>
             <TableHead className="w-[100px]">Price</TableHead>
-            <TableHead className="w-[100px]">Break Even</TableHead>
-            <TableHead className="w-[100px]">Offer (50%)</TableHead>
+            <TableHead className="w-[100px]">Break Even (97%)</TableHead>
+            <TableHead className="w-[100px]">Offer (87%)</TableHead>
             <TableHead className="w-[100px]">Profit</TableHead>
             <TableHead className="w-[80px]">Status</TableHead>
             <TableHead className="w-[100px]">Actions</TableHead>
@@ -91,9 +91,10 @@ const Matches = () => {
         <TableBody>
           {matches.map((match) => {
             const meltValue = 'melt_value' in match ? match.melt_value : undefined;
-            const suggestedOffer = meltValue ? meltValue * 0.5 : null;
-            const priority = getPriority(match.listed_price, meltValue);
-            const profitScrap = 'profit_scrap' in match ? match.profit_scrap : undefined;
+            const breakEven = meltValue ? meltValue * 0.97 : null; // 97% of melt value (refiner payout)
+            const suggestedOffer = meltValue ? meltValue * 0.87 : null; // 87% of melt value (your offer)
+            const profit = breakEven && match.listed_price ? breakEven - match.listed_price : null;
+            const priority = getPriority(match.listed_price, breakEven ?? undefined);
             const karat = 'karat' in match ? match.karat : undefined;
             const weightG = 'weight_g' in match ? match.weight_g : undefined;
 
@@ -136,13 +137,13 @@ const Matches = () => {
                 <TableCell>{weightG ? `${weightG.toFixed(1)}g` : '-'}</TableCell>
                 <TableCell className="font-semibold">${match.listed_price?.toLocaleString()}</TableCell>
                 <TableCell className="text-green-700 font-semibold">
-                  {meltValue ? `$${meltValue.toFixed(0)}` : '-'}
+                  {breakEven ? `$${breakEven.toFixed(0)}` : '-'}
                 </TableCell>
                 <TableCell className="text-blue-700 font-semibold">
                   {suggestedOffer ? `$${suggestedOffer.toFixed(0)}` : '-'}
                 </TableCell>
-                <TableCell className={`font-semibold ${profitScrap && profitScrap > 0 ? 'text-green-700' : 'text-red-700'}`}>
-                  {profitScrap ? `$${profitScrap.toFixed(0)}` : '-'}
+                <TableCell className={`font-semibold ${profit && profit > 0 ? 'text-green-700' : 'text-red-700'}`}>
+                  {profit ? `$${profit.toFixed(0)}` : '-'}
                 </TableCell>
                 <TableCell>
                   <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
@@ -150,26 +151,17 @@ const Matches = () => {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-1">
-                    {match.ebay_url && (
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" asChild>
-                        <a href={match.ebay_url} target="_blank" rel="noopener noreferrer" title="View Listing">
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    )}
-                    {match.status === 'new' && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 w-8 p-0"
-                        onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
-                        title="Mark Purchased"
-                      >
-                        <ShoppingCart className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
+                  {match.status === 'new' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                      onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
+                      title="Mark Purchased"
+                    >
+                      <ShoppingCart className="h-4 w-4" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             );
@@ -232,26 +224,17 @@ const Matches = () => {
                 </Badge>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-1">
-                  {match.ebay_url && (
-                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" asChild>
-                      <a href={match.ebay_url} target="_blank" rel="noopener noreferrer" title="View Listing">
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </Button>
-                  )}
-                  {match.status === 'new' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 w-8 p-0"
-                      onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
-                      title="Mark Purchased"
-                    >
-                      <ShoppingCart className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
+                {match.status === 'new' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                    onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
+                    title="Mark Purchased"
+                  >
+                    <ShoppingCart className="h-4 w-4" />
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}

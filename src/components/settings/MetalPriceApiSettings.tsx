@@ -17,25 +17,38 @@ export const MetalPriceApiSettings = () => {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState<number | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<string>('swissquote');
+
+  const metalApiSettings = settings?.precious_metal_api || {
+    provider: 'swissquote',
+    api_key: '',
+    poll_interval: 43200 // Default to 12 hours instead of 5 minutes
+  };
+
+  // Sync provider state when settings load
+  React.useEffect(() => {
+    if (settings?.precious_metal_api?.provider) {
+      setSelectedProvider(settings.precious_metal_api.provider);
+    }
+  }, [settings?.precious_metal_api?.provider]);
 
   if (loading) {
     return <div>Loading Metal Price API settings...</div>;
   }
 
-  const metalApiSettings = settings.precious_metal_api || {
-    provider: 'goldapi',
-    api_key: '',
-    poll_interval: 43200 // Default to 12 hours instead of 5 minutes
-  };
+  const validateApiKey = (apiKey: string, provider: string) => {
+    // Swissquote doesn't need an API key
+    if (provider === 'swissquote') return true;
 
-  const validateApiKey = (apiKey: string) => {
     if (!apiKey) return false;
-    if (!apiKey.startsWith('goldapi-')) {
+    if (provider === 'goldapi' && !apiKey.startsWith('goldapi-')) {
       toast.error('API key should start with "goldapi-"');
       return false;
     }
     return true;
   };
+
+  const requiresApiKey = selectedProvider !== 'swissquote';
 
   const getIntervalSuggestions = () => [
     { label: '1 Hour', seconds: 3600, requestsPerMonth: 744 },
@@ -64,16 +77,17 @@ export const MetalPriceApiSettings = () => {
     setSaving(true);
 
     const formData = new FormData(e.currentTarget);
-    const apiKey = formData.get('api_key') as string;
+    const provider = formData.get('provider') as string;
+    const apiKey = formData.get('api_key') as string || '';
     const pollInterval = selectedInterval || parseInt(formData.get('poll_interval') as string);
-    
-    if (!validateApiKey(apiKey)) {
+
+    if (!validateApiKey(apiKey, provider)) {
       setSaving(false);
       return;
     }
 
     const updatedSettings = {
-      provider: formData.get('provider') as string,
+      provider: provider,
       api_key: apiKey,
       poll_interval: pollInterval
     };
@@ -90,11 +104,6 @@ export const MetalPriceApiSettings = () => {
   };
 
   const testConnection = async () => {
-    if (!metalApiSettings.api_key || !validateApiKey(metalApiSettings.api_key)) {
-      toast.error('Please save a valid API key first');
-      return;
-    }
-
     setTesting(true);
     try {
       await refetch();
@@ -111,7 +120,7 @@ export const MetalPriceApiSettings = () => {
     }
   };
 
-  const isValidApiKey = metalApiSettings.api_key && metalApiSettings.api_key.startsWith('goldapi-');
+  const isValidApiKey = !requiresApiKey || (metalApiSettings.api_key && metalApiSettings.api_key.startsWith('goldapi-'));
   const currentInterval = selectedInterval || metalApiSettings.poll_interval;
 
   return (
@@ -127,34 +136,46 @@ export const MetalPriceApiSettings = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="provider">API Provider</Label>
-              <Select name="provider" defaultValue={metalApiSettings.provider}>
+              <Select
+                name="provider"
+                defaultValue={metalApiSettings.provider}
+                onValueChange={(value) => setSelectedProvider(value)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select API provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="goldapi">GoldAPI.io (Recommended)</SelectItem>
-                  <SelectItem value="metals-api">Metals-API.com</SelectItem>
-                  <SelectItem value="finage">Finage.co.uk</SelectItem>
+                  <SelectItem value="swissquote">Swissquote (Free - Recommended)</SelectItem>
+                  <SelectItem value="goldapi">GoldAPI.io (API Key Required)</SelectItem>
+                  <SelectItem value="metals-api">Metals-API.com (API Key Required)</SelectItem>
+                  <SelectItem value="finage">Finage.co.uk (API Key Required)</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="api_key">API Key</Label>
-              <Input
-                name="api_key"
-                type="password"
-                placeholder="goldapi-xxxxxxxxx-io"
-                defaultValue={metalApiSettings.api_key}
-                required
-              />
-              {metalApiSettings.api_key && !isValidApiKey && (
-                <div className="flex items-center gap-2 mt-2 text-amber-600">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span className="text-sm">API key should start with "goldapi-"</span>
-                </div>
+              {selectedProvider === 'swissquote' && (
+                <p className="text-sm text-green-600 mt-1">
+                  ✓ No API key required - uses free public forex feed
+                </p>
               )}
             </div>
+
+            {requiresApiKey && (
+              <div>
+                <Label htmlFor="api_key">API Key</Label>
+                <Input
+                  name="api_key"
+                  type="password"
+                  placeholder={selectedProvider === 'goldapi' ? 'goldapi-xxxxxxxxx-io' : 'Enter API key'}
+                  defaultValue={metalApiSettings.api_key}
+                  required={requiresApiKey}
+                />
+                {selectedProvider === 'goldapi' && metalApiSettings.api_key && !isValidApiKey && (
+                  <div className="flex items-center gap-2 mt-2 text-amber-600">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span className="text-sm">API key should start with "goldapi-"</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="space-y-4">
               <div>
@@ -195,18 +216,30 @@ export const MetalPriceApiSettings = () => {
               </div>
 
               {/* Usage Warning/Info */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <div className="flex items-start gap-2">
-                  <Info className="h-4 w-4 text-blue-600 mt-0.5" />
-                  <div className="text-sm">
-                    <p className="font-medium text-blue-800 mb-1">API Usage Estimate</p>
-                    <p className="text-blue-700">{getIntervalWarning(currentInterval)}</p>
-                    <p className="text-blue-600 mt-1 text-xs">
-                      Metal prices change slowly - longer intervals (6-24 hours) are usually sufficient and conserve your API quota.
-                    </p>
+              {requiresApiKey ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium text-blue-800 mb-1">API Usage Estimate</p>
+                      <p className="text-blue-700">{getIntervalWarning(currentInterval)}</p>
+                      <p className="text-blue-600 mt-1 text-xs">
+                        Metal prices change slowly - longer intervals (6-24 hours) are usually sufficient and conserve your API quota.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <Info className="h-4 w-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium text-green-800 mb-1">No Rate Limits</p>
+                      <p className="text-green-700">Swissquote has no rate limits - you can fetch prices as often as needed.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 pt-4">
@@ -287,27 +320,41 @@ export const MetalPriceApiSettings = () => {
       <Card className="bg-green-50 border-green-200">
         <CardContent className="p-4">
           <h4 className="font-medium text-green-800 mb-2">Metal Price API Information</h4>
-          <ul className="text-sm text-green-700 space-y-1">
-            <li>• GoldAPI.io provides real-time precious metals prices</li>
-            <li>• Free tier includes 100 requests per month</li>
-            <li>• Covers Gold, Silver, Platinum, and Palladium pricing</li>
-            <li>• Data updates every few minutes during market hours</li>
-            <li>• API key format: goldapi-xxxxxxxxx-io</li>
-            <li>• Recommended: Use 12-24 hour intervals to conserve quota</li>
-          </ul>
-          <div className="mt-3">
-            <a 
-              href="https://www.goldapi.io/" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-flex items-center"
-            >
-              <Button variant="outline" size="sm" className="text-green-700 border-green-300">
-                <ExternalLink className="h-3 w-3 mr-1" />
-                Get API Key from GoldAPI.io
-              </Button>
-            </a>
-          </div>
+          {selectedProvider === 'swissquote' ? (
+            <ul className="text-sm text-green-700 space-y-1">
+              <li>• Swissquote provides free real-time precious metals prices</li>
+              <li>• No API key required - completely free</li>
+              <li>• No rate limits - fetch as often as needed</li>
+              <li>• Covers Gold, Silver, Platinum, and Palladium</li>
+              <li>• Provides bid/ask prices from live forex markets</li>
+              <li>• Data source: Swissquote public forex feed</li>
+            </ul>
+          ) : (
+            <>
+              <ul className="text-sm text-green-700 space-y-1">
+                <li>• {selectedProvider === 'goldapi' ? 'GoldAPI.io' : selectedProvider} provides real-time precious metals prices</li>
+                <li>• Free tier includes limited requests per month</li>
+                <li>• Covers Gold, Silver, Platinum, and Palladium pricing</li>
+                <li>• Data updates every few minutes during market hours</li>
+                <li>• Recommended: Use 12-24 hour intervals to conserve quota</li>
+              </ul>
+              {selectedProvider === 'goldapi' && (
+                <div className="mt-3">
+                  <a
+                    href="https://www.goldapi.io/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center"
+                  >
+                    <Button variant="outline" size="sm" className="text-green-700 border-green-300">
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      Get API Key from GoldAPI.io
+                    </Button>
+                  </a>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
