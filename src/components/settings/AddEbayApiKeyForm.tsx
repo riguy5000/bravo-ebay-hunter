@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,66 +8,116 @@ import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSettings } from '@/hooks/useSettings';
 
+interface EbayApiKey {
+  label: string;
+  app_id: string;
+  dev_id: string;
+  cert_id: string;
+  last_used?: string;
+  status?: string;
+  success_rate?: number;
+}
+
 interface AddEbayApiKeyFormProps {
   onClose: () => void;
   onSuccess: () => void;
+  editingKey?: EbayApiKey;
+  editingIndex?: number | null;
 }
 
-export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, onSuccess }) => {
+export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, onSuccess, editingKey, editingIndex }) => {
   const { settings, updateSetting } = useSettings();
+  const isEditing = editingKey !== undefined && editingIndex !== null;
   const [formData, setFormData] = useState({
-    label: '',
-    app_id: '',
-    dev_id: '',
-    cert_id: ''
+    label: editingKey?.label || '',
+    app_id: editingKey?.app_id || '',
+    dev_id: editingKey?.dev_id || '',
+    cert_id: editingKey?.cert_id || ''
   });
   const [saving, setSaving] = useState(false);
 
+  // Update form data when editingKey changes
+  useEffect(() => {
+    if (editingKey) {
+      setFormData({
+        label: editingKey.label || '',
+        app_id: editingKey.app_id || '',
+        dev_id: editingKey.dev_id || '',
+        cert_id: editingKey.cert_id || ''
+      });
+    }
+  }, [editingKey]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.label.trim() || !formData.app_id.trim() || !formData.dev_id.trim() || !formData.cert_id.trim()) {
       toast.error('Please fill in all required fields');
       return;
     }
 
     setSaving(true);
-    
+
     try {
       const currentKeys = settings.ebay_keys?.keys || [];
-      const existingKey = currentKeys.find(k => 
-        k.app_id === formData.app_id.trim() || 
-        k.dev_id === formData.dev_id.trim() || 
-        k.cert_id === formData.cert_id.trim()
-      );
-      
+
+      // Check for duplicates (but skip the key being edited)
+      const existingKey = currentKeys.find((k, idx) => {
+        if (isEditing && idx === editingIndex) return false; // Skip the key being edited
+        return k.app_id === formData.app_id.trim() ||
+               k.dev_id === formData.dev_id.trim() ||
+               k.cert_id === formData.cert_id.trim();
+      });
+
       if (existingKey) {
         toast.error('One or more of these credentials are already configured');
+        setSaving(false);
         return;
       }
 
-      const newKey = {
-        label: formData.label.trim(),
-        app_id: formData.app_id.trim(),
-        dev_id: formData.dev_id.trim(),
-        cert_id: formData.cert_id.trim(),
-        status: 'unknown' as const,
-        last_used: null,
-        success_rate: null
-      };
+      let updatedKeys;
+
+      if (isEditing && editingIndex !== null) {
+        // Update existing key
+        updatedKeys = currentKeys.map((key, idx) => {
+          if (idx === editingIndex) {
+            return {
+              ...key,
+              label: formData.label.trim(),
+              app_id: formData.app_id.trim(),
+              dev_id: formData.dev_id.trim(),
+              cert_id: formData.cert_id.trim(),
+              status: 'unknown' as const // Reset status after edit
+            };
+          }
+          return key;
+        });
+        toast.success(`API key set "${formData.label}" updated successfully!`);
+      } else {
+        // Add new key
+        const newKey = {
+          label: formData.label.trim(),
+          app_id: formData.app_id.trim(),
+          dev_id: formData.dev_id.trim(),
+          cert_id: formData.cert_id.trim(),
+          status: 'unknown' as const,
+          last_used: null,
+          success_rate: null
+        };
+        updatedKeys = [...currentKeys, newKey];
+        toast.success(`API key set "${formData.label}" added successfully!`);
+      }
 
       const updatedEbayKeys = {
-        keys: [...currentKeys, newKey],
+        keys: updatedKeys,
         rotation_strategy: settings.ebay_keys?.rotation_strategy || 'round_robin'
       };
 
       await updateSetting('ebay_keys', updatedEbayKeys);
-      
-      toast.success(`API key set "${formData.label}" added successfully!`);
       onSuccess();
     } catch (error: any) {
-      console.error('Error adding API key set:', error);
-      toast.error('Failed to add API key set: ' + error.message);
+      console.error('Error saving API key set:', error);
+      toast.error('Failed to save API key set: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -78,9 +128,12 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Add New eBay API Key Set</CardTitle>
+            <CardTitle>{isEditing ? 'Edit eBay API Key Set' : 'Add New eBay API Key Set'}</CardTitle>
             <CardDescription>
-              Add a complete set of eBay API credentials to increase your rate limit capacity
+              {isEditing
+                ? 'Update the credentials for this API key set'
+                : 'Add a complete set of eBay API credentials to increase your rate limit capacity'
+              }
             </CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -146,7 +199,7 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Adding...' : 'Add API Key Set'}
+              {saving ? (isEditing ? 'Saving...' : 'Adding...') : (isEditing ? 'Save Changes' : 'Add API Key Set')}
             </Button>
           </div>
         </form>

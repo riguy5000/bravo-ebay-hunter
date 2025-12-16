@@ -28,6 +28,19 @@ const supabase = createClient(
 // Cache for eBay tokens (they last 2 hours)
 const tokenCache = new Map();
 
+// Track rate-limited keys and their cooldown times
+const rateLimitedKeys = new Map(); // app_id -> cooldown expiry timestamp
+const RATE_LIMIT_COOLDOWN = 5 * 60 * 1000; // 5 minutes cooldown
+
+// Custom error for rate limiting
+class RateLimitError extends Error {
+  constructor(message, credentials) {
+    super(message);
+    this.name = 'RateLimitError';
+    this.credentials = credentials;
+  }
+}
+
 // Track if we're shutting down
 let isShuttingDown = false;
 let pollInterval = null;
@@ -80,6 +93,114 @@ const KARAT_MARKERS = [
   '24k', '24kt', '24 k', '24 kt', '24 karat',
   'solid gold', 'pure gold', 'real gold',
 ];
+
+// Extract karat value from title or item specifics
+function extractKarat(title, itemSpecifics = {}) {
+  const titleLower = title.toLowerCase();
+
+  // Check item specifics first (more reliable)
+  const metalPurity = itemSpecifics['metal purity']?.toLowerCase() || '';
+  if (metalPurity) {
+    const purityMatch = metalPurity.match(/(\d+)k/);
+    if (purityMatch) return parseInt(purityMatch[1]);
+  }
+
+  // Check title for karat markers
+  const karatPatterns = [
+    /(\d+)\s*k(?:t|arat)?(?:\s|$|[^a-z])/i,  // 10k, 14kt, 18 karat, etc.
+  ];
+
+  for (const pattern of karatPatterns) {
+    const match = titleLower.match(pattern);
+    if (match) {
+      const karat = parseInt(match[1]);
+      if ([10, 14, 18, 22, 24].includes(karat)) {
+        return karat;
+      }
+    }
+  }
+
+  return null;
+}
+
+// Extract weight from title (in grams)
+function extractWeight(title, itemSpecifics = {}) {
+  // Check item specifics first
+  const weightSpec = itemSpecifics['total carat weight']?.toLowerCase() ||
+                     itemSpecifics['weight']?.toLowerCase() || '';
+  if (weightSpec) {
+    // Try to extract grams
+    const gramMatch = weightSpec.match(/([\d.]+)\s*(?:g|gram)/i);
+    if (gramMatch) return parseFloat(gramMatch[1]);
+
+    // Try to extract dwt (pennyweight) and convert to grams (1 dwt = 1.555g)
+    const dwtMatch = weightSpec.match(/([\d.]+)\s*(?:dwt|pennyweight)/i);
+    if (dwtMatch) return parseFloat(dwtMatch[1]) * 1.555;
+  }
+
+  // Check title for weight
+  const titleLower = title.toLowerCase();
+
+  // Pattern for grams
+  const gramMatch = titleLower.match(/([\d.]+)\s*(?:g|gram|grams)(?:\s|$|[^a-z])/i);
+  if (gramMatch) return parseFloat(gramMatch[1]);
+
+  // Pattern for dwt
+  const dwtMatch = titleLower.match(/([\d.]+)\s*(?:dwt|pennyweight)/i);
+  if (dwtMatch) return parseFloat(dwtMatch[1]) * 1.555;
+
+  return null;
+}
+
+// Cache for metal prices
+let metalPricesCache = null;
+let metalPricesCacheTime = 0;
+const METAL_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+// Get gold prices from database
+async function getGoldPrices() {
+  const now = Date.now();
+  if (metalPricesCache && (now - metalPricesCacheTime) < METAL_CACHE_TTL) {
+    return metalPricesCache;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('metal_prices')
+      .select('metal, price_gram_10k, price_gram_14k, price_gram_18k, price_gram_24k')
+      .eq('metal', 'Gold')
+      .single();
+
+    if (error || !data) {
+      console.log('  ⚠️ Could not fetch gold prices');
+      return null;
+    }
+
+    metalPricesCache = data;
+    metalPricesCacheTime = now;
+    return data;
+  } catch (err) {
+    console.log('  ⚠️ Error fetching gold prices:', err.message);
+    return null;
+  }
+}
+
+// Calculate melt value based on karat, weight, and current gold price
+function calculateMeltValue(karat, weightG, goldPrices) {
+  if (!karat || !weightG || !goldPrices) return null;
+
+  const pricePerGram = {
+    10: goldPrices.price_gram_10k,
+    14: goldPrices.price_gram_14k,
+    18: goldPrices.price_gram_18k,
+    22: goldPrices.price_gram_18k * (22/18), // Estimate 22k from 18k
+    24: goldPrices.price_gram_24k,
+  }[karat];
+
+  if (!pricePerGram) return null;
+
+  return weightG * pricePerGram;
+}
 
 // Costume/fashion jewelry keywords to always exclude
 const COSTUME_JEWELRY_EXCLUSIONS = [
@@ -228,8 +349,29 @@ console.log(`Max concurrent tasks: ${MAX_CONCURRENT_TASKS}`);
 console.log(`Stagger delay: ${STAGGER_DELAY}ms between tasks`);
 console.log('='.repeat(50));
 
-// Get eBay API credentials from Supabase settings
-async function getEbayCredentials() {
+// Mark a key as rate-limited (local tracking with auto-reset)
+function markKeyRateLimited(appId, label) {
+  const expiresAt = Date.now() + RATE_LIMIT_COOLDOWN;
+  rateLimitedKeys.set(appId, expiresAt);
+  console.log(`  🚫 Key "${label || appId}" rate-limited. Cooldown until ${new Date(expiresAt).toLocaleTimeString()}`);
+}
+
+// Check if a key is currently rate-limited
+function isKeyRateLimited(appId) {
+  const expiresAt = rateLimitedKeys.get(appId);
+  if (!expiresAt) return false;
+
+  if (Date.now() > expiresAt) {
+    // Cooldown expired, remove from map
+    rateLimitedKeys.delete(appId);
+    console.log(`  ✅ Key cooldown expired, now available again`);
+    return false;
+  }
+  return true;
+}
+
+// Get all available (non-rate-limited) eBay credentials
+async function getAllEbayCredentials() {
   const { data, error } = await supabase
     .from('settings')
     .select('value_json')
@@ -245,16 +387,39 @@ async function getEbayCredentials() {
     throw new Error('No eBay API credentials found');
   }
 
-  // Filter out rate-limited or errored keys
-  const availableKeys = config.keys.filter(k =>
-    k.status !== 'rate_limited' && k.status !== 'error'
-  );
+  return config.keys;
+}
 
-  const keysToUse = availableKeys.length > 0 ? availableKeys : config.keys;
+// Get eBay API credentials from Supabase settings
+async function getEbayCredentials(excludeAppId = null) {
+  const allKeys = await getAllEbayCredentials();
 
-  // Use round-robin or random selection
-  const index = Math.floor(Math.random() * keysToUse.length);
-  return keysToUse[index];
+  // Filter out rate-limited keys (both from DB status and local tracking)
+  const availableKeys = allKeys.filter(k => {
+    // Skip if DB marks it as rate_limited or error
+    if (k.status === 'rate_limited' || k.status === 'error') return false;
+    // Skip if locally tracked as rate-limited
+    if (isKeyRateLimited(k.app_id)) return false;
+    // Skip if we're explicitly excluding this key (used for retry with different key)
+    if (excludeAppId && k.app_id === excludeAppId) return false;
+    return true;
+  });
+
+  if (availableKeys.length === 0) {
+    // Check if all keys are just temporarily rate-limited
+    const allRateLimited = allKeys.every(k => isKeyRateLimited(k.app_id));
+    if (allRateLimited) {
+      // Find the earliest cooldown expiry
+      const earliestExpiry = Math.min(...allKeys.map(k => rateLimitedKeys.get(k.app_id) || Infinity));
+      const waitTime = Math.ceil((earliestExpiry - Date.now()) / 1000);
+      throw new Error(`All API keys are rate-limited. Cooldown resets in ${waitTime} seconds.`);
+    }
+    throw new Error('No available eBay API credentials');
+  }
+
+  // Use random selection from available keys
+  const index = Math.floor(Math.random() * availableKeys.length);
+  return availableKeys[index];
 }
 
 // Get eBay OAuth token
@@ -293,8 +458,8 @@ async function getEbayToken(credentials) {
   return data.access_token;
 }
 
-// Build eBay search URL
-function buildSearchUrl(task) {
+// Build eBay search URL (metalOverride allows searching for specific metal)
+function buildSearchUrl(task, metalOverride = null) {
   const baseUrl = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
   const params = new URLSearchParams();
 
@@ -306,7 +471,10 @@ function buildSearchUrl(task) {
   if (filters.brands?.length > 0 || filters.brand) {
     keywords = `${filters.brands?.[0] || filters.brand} ${keywords}`;
   }
-  if (filters.metal?.length > 0) {
+  // Use metalOverride if provided, otherwise use first metal from filters
+  if (metalOverride) {
+    keywords = `${metalOverride} ${keywords}`;
+  } else if (filters.metal?.length > 0) {
     keywords = `${filters.metal[0]} ${keywords}`;
   }
   if (filters.keywords) {
@@ -354,16 +522,17 @@ function buildSearchUrl(task) {
   return `${baseUrl}?${params.toString()}`;
 }
 
-// Search eBay
-async function searchEbay(task, token) {
+// Search eBay (single search with optional metal override)
+async function searchEbay(task, token, credentials, metalOverride = null) {
   // Check rate limit before making call
   if (!rateLimiter.canMakeCall()) {
     console.log('  ⚠️ Daily rate limit reached. Skipping search.');
     return [];
   }
 
-  const url = buildSearchUrl(task);
-  console.log(`  🔍 Search URL: ${url.substring(0, 150)}...`);
+  const url = buildSearchUrl(task, metalOverride);
+  const metalInfo = metalOverride ? ` [${metalOverride}]` : '';
+  console.log(`  🔍 Search${metalInfo}: ${url.substring(0, 150)}...`);
 
   const response = await fetch(url, {
     headers: {
@@ -377,6 +546,10 @@ async function searchEbay(task, token) {
   rateLimiter.recordCall();
 
   if (!response.ok) {
+    // Handle rate limiting (429) specially
+    if (response.status === 429) {
+      throw new RateLimitError(`eBay API rate limited (429)`, credentials);
+    }
     throw new Error(`eBay search error: ${response.status}`);
   }
 
@@ -384,8 +557,41 @@ async function searchEbay(task, token) {
   return data.itemSummaries || [];
 }
 
+// Search eBay for all selected metals and combine results
+async function searchEbayAllMetals(task, token, credentials) {
+  const filters = task.jewelry_filters || {};
+  const metals = filters.metal || [];
+
+  // If no metals selected or not a jewelry task, do a single search
+  if (task.item_type !== 'jewelry' || metals.length <= 1) {
+    return await searchEbay(task, token, credentials);
+  }
+
+  console.log(`  🔧 Searching for ${metals.length} metals: ${metals.join(', ')}`);
+
+  // Search for each metal type
+  const allItems = [];
+  const seenItemIds = new Set();
+
+  for (const metal of metals) {
+    const items = await searchEbay(task, token, credentials, metal);
+    console.log(`  📦 Found ${items.length} items for ${metal}`);
+
+    // Add unique items only (deduplicate by itemId)
+    for (const item of items) {
+      if (!seenItemIds.has(item.itemId)) {
+        seenItemIds.add(item.itemId);
+        allItems.push(item);
+      }
+    }
+  }
+
+  console.log(`  📊 Total unique items across all metals: ${allItems.length}`);
+  return allItems;
+}
+
 // Fetch item details (including item specifics) from eBay
-async function fetchItemDetails(itemId, token) {
+async function fetchItemDetails(itemId, token, credentials) {
   if (!rateLimiter.canMakeCall()) {
     return null;
   }
@@ -403,6 +609,10 @@ async function fetchItemDetails(itemId, token) {
   rateLimiter.recordCall();
 
   if (!response.ok) {
+    // Handle rate limiting (429) specially
+    if (response.status === 429) {
+      throw new RateLimitError(`eBay API rate limited (429) during item fetch`, credentials);
+    }
     console.log(`  ⚠️ Failed to fetch details for ${itemId}: ${response.status}`);
     return null;
   }
@@ -458,6 +668,7 @@ async function processTask(task, credentials) {
   const filters = task.watch_filters || task.jewelry_filters || task.gemstone_filters || {};
   const subcatCount = filters.subcategories?.length || 0;
   console.log(`\nProcessing: ${task.name} (${task.item_type})`);
+  console.log(`  💲 Price filters: min=$${task.min_price || 'none'}, max=$${task.max_price || 'none'}`);
   if (subcatCount > 0) {
     console.log(`  📂 Searching ${subcatCount} subcategories`);
   }
@@ -493,9 +704,9 @@ async function processTask(task, credentials) {
 
   try {
     const token = await getEbayToken(credentials);
-    const items = await searchEbay(task, token);
+    const items = await searchEbayAllMetals(task, token, credentials);
 
-    console.log(`  Found ${items.length} items`);
+    console.log(`  Found ${items.length} total items`);
 
     if (items.length === 0) return;
 
@@ -508,8 +719,7 @@ async function processTask(task, credentials) {
 
       // Skip if under min price or over max price
       if (task.min_price && price < task.min_price) {
-        console.log(`  💰 SKIPPED (price $${price} < min $${task.min_price}): ${item.title.substring(0, 30)}...`);
-        continue;
+        continue; // Silently skip items below min price
       }
       if (task.max_price && price > task.max_price) continue;
 
@@ -544,13 +754,15 @@ async function processTask(task, credentials) {
       }
 
       // For jewelry tasks, fetch item details and check item specifics
+      let itemDetails = null;
+      let specs = {};
       if (task.item_type === 'jewelry') {
-        const itemDetails = await fetchItemDetails(item.itemId, token);
+        itemDetails = await fetchItemDetails(item.itemId, token, credentials);
         if (!itemDetails) {
           continue; // Skip if we couldn't fetch details
         }
 
-        const specs = extractItemSpecifics(itemDetails);
+        specs = extractItemSpecifics(itemDetails);
         const specsCheck = passesItemSpecificsFilter(specs, filters);
 
         if (!specsCheck.pass) {
@@ -598,6 +810,29 @@ async function processTask(task, credentials) {
         match.dial_colour = 'Unknown';
       } else if (task.item_type === 'jewelry') {
         match.metal_type = 'Unknown';
+
+        // Extract karat and weight from title and item specifics
+        const karat = extractKarat(item.title, specs);
+        const weightG = extractWeight(item.title, specs);
+
+        if (karat) {
+          match.karat = karat;
+        }
+        if (weightG) {
+          match.weight_g = weightG;
+        }
+
+        // Calculate melt value if we have karat and weight
+        if (karat && weightG) {
+          const goldPrices = await getGoldPrices();
+          if (goldPrices) {
+            const meltValue = calculateMeltValue(karat, weightG, goldPrices);
+            if (meltValue) {
+              match.melt_value = meltValue;
+              match.profit_scrap = meltValue - price;
+            }
+          }
+        }
       } else if (task.item_type === 'gemstone') {
         match.shape = 'Unknown';
         match.colour = 'Unknown';
@@ -610,7 +845,7 @@ async function processTask(task, credentials) {
 
       if (!error) {
         newMatches++;
-        console.log(`  + NEW: $${price} - ${item.title.substring(0, 50)}...`);
+        console.log(`  ✅ SAVED: $${price} (min=$${task.min_price || 'none'}) - ${item.title.substring(0, 50)}...`);
       } else if (error.code === '23505') {
         // Unique constraint violation - duplicate, just skip silently
         continue;
@@ -628,7 +863,21 @@ async function processTask(task, credentials) {
     console.log(`  Saved ${newMatches} new matches`);
 
   } catch (error) {
-    console.error(`  Error: ${error.message}`);
+    // Handle rate limiting specially - mark key and retry with different key
+    if (error instanceof RateLimitError) {
+      markKeyRateLimited(error.credentials.app_id, error.credentials.label);
+
+      // Try to get another key and retry once
+      try {
+        const newCredentials = await getEbayCredentials(error.credentials.app_id);
+        console.log(`  🔄 Retrying with different key: ${newCredentials.label || 'API Key'}`);
+        return await processTask(task, newCredentials);
+      } catch (retryError) {
+        console.error(`  ❌ Retry failed: ${retryError.message}`);
+      }
+    } else {
+      console.error(`  Error: ${error.message}`);
+    }
   }
 }
 

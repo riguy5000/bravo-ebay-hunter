@@ -19,9 +19,11 @@ interface EbayApiKey {
 
 interface EbayApiKeysListProps {
   keys: EbayApiKey[];
+  onEdit: (index: number) => void;
+  onDelete: (index: number) => void;
 }
 
-export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys }) => {
+export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys, onEdit, onDelete }) => {
   const [testingKeys, setTestingKeys] = useState<Set<string>>(new Set());
 
   const testApiKey = async (apiKey: EbayApiKey) => {
@@ -128,10 +130,10 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys }) => {
                     <TestTube className="h-4 w-4" />
                     {testingKeys.has(apiKey.app_id) ? 'Testing...' : 'Test'}
                   </Button>
-                  <Button size="sm" variant="ghost">
+                  <Button size="sm" variant="ghost" onClick={() => onEdit(index)}>
                     <Edit className="h-4 w-4" />
                   </Button>
-                  <Button size="sm" variant="ghost">
+                  <Button size="sm" variant="ghost" onClick={() => onDelete(index)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

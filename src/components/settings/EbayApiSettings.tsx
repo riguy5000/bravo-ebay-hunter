@@ -17,6 +17,7 @@ export const EbayApiSettings = () => {
   const { settings, loading: settingsLoading, updateSetting } = useSettings();
   const { settings: userSettings, loading: userLoading, updateSettings } = useUserSettings();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   if (settingsLoading || userLoading) {
@@ -25,6 +26,35 @@ export const EbayApiSettings = () => {
 
   const ebayKeys = settings.ebay_keys?.keys || [];
   const rotationStrategy = settings.ebay_keys?.rotation_strategy || 'round_robin';
+
+  const handleEdit = (index: number) => {
+    setEditingIndex(index);
+    setShowAddForm(true);
+  };
+
+  const handleDelete = async (index: number) => {
+    const keyToDelete = ebayKeys[index];
+    if (!confirm(`Are you sure you want to delete API key set "${keyToDelete.label}"?`)) {
+      return;
+    }
+
+    try {
+      const updatedKeys = ebayKeys.filter((_, i) => i !== index);
+      await updateSetting('ebay_keys', {
+        keys: updatedKeys,
+        rotation_strategy: rotationStrategy
+      });
+      toast.success(`API key set "${keyToDelete.label}" deleted successfully`);
+    } catch (error: any) {
+      console.error('Error deleting API key:', error);
+      toast.error('Failed to delete API key set: ' + error.message);
+    }
+  };
+
+  const handleFormClose = () => {
+    setShowAddForm(false);
+    setEditingIndex(null);
+  };
 
   const handleApiVersionUpdate = async (version: string) => {
     setSaving(true);
@@ -104,16 +134,18 @@ export const EbayApiSettings = () => {
               <EbayKeyRotationSettings 
                 currentStrategy={rotationStrategy}
               />
-              <EbayApiKeysList keys={ebayKeys} />
+              <EbayApiKeysList keys={ebayKeys} onEdit={handleEdit} onDelete={handleDelete} />
             </div>
           )}
         </CardContent>
       </Card>
 
       {showAddForm && (
-        <AddEbayApiKeyForm 
-          onClose={() => setShowAddForm(false)}
-          onSuccess={() => setShowAddForm(false)}
+        <AddEbayApiKeyForm
+          onClose={handleFormClose}
+          onSuccess={handleFormClose}
+          editingKey={editingIndex !== null ? ebayKeys[editingIndex] : undefined}
+          editingIndex={editingIndex}
         />
       )}
 

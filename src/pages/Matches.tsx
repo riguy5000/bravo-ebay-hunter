@@ -3,8 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useMatches, type Match } from '@/hooks/useMatches';
-import { Eye, ShoppingCart, RotateCcw, Package, Brain, TrendingUp, RefreshCw, Watch, Gem, CircleDot, Radio } from 'lucide-react';
+import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react';
 
 const Matches = () => {
   const { taskGroups, loading, totalCount, updateMatch, refetch } = useMatches();
@@ -47,6 +48,20 @@ const Matches = () => {
     }
   };
 
+  // Calculate priority based on profit margin percentage
+  const getPriority = (listedPrice: number, meltValue: number | undefined) => {
+    if (!meltValue || !listedPrice || listedPrice === 0) return null;
+    const profitMargin = ((meltValue - listedPrice) / listedPrice) * 100;
+
+    if (profitMargin > 50) {
+      return { level: 'High', color: 'bg-green-100 text-green-800 border-green-300', icon: <CheckCircle className="h-3 w-3" />, margin: profitMargin };
+    } else if (profitMargin >= 25) {
+      return { level: 'Medium', color: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: <AlertCircle className="h-3 w-3" />, margin: profitMargin };
+    } else {
+      return { level: 'Low', color: 'bg-red-100 text-red-800 border-red-300', icon: <AlertTriangle className="h-3 w-3" />, margin: profitMargin };
+    }
+  };
+
   const handleStatusUpdate = async (match: Match, newStatus: string, itemType: string) => {
     try {
       await updateMatch(match.id, itemType, { status: newStatus as any });
@@ -55,80 +70,193 @@ const Matches = () => {
     }
   };
 
-  const renderAIAnalysis = (match: Match) => {
-    if (!match.ai_score && !match.ai_reasoning) return null;
+  const renderJewelryTable = (matches: Match[], itemType: string) => (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-gray-50">
+            <TableHead className="w-[100px]">Priority</TableHead>
+            <TableHead className="w-[120px]">Item ID</TableHead>
+            <TableHead className="min-w-[250px]">Title</TableHead>
+            <TableHead className="w-[60px]">Karat</TableHead>
+            <TableHead className="w-[80px]">Weight</TableHead>
+            <TableHead className="w-[100px]">Price</TableHead>
+            <TableHead className="w-[100px]">Break Even</TableHead>
+            <TableHead className="w-[100px]">Offer (50%)</TableHead>
+            <TableHead className="w-[100px]">Profit</TableHead>
+            <TableHead className="w-[80px]">Status</TableHead>
+            <TableHead className="w-[100px]">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {matches.map((match) => {
+            const meltValue = 'melt_value' in match ? match.melt_value : undefined;
+            const suggestedOffer = meltValue ? meltValue * 0.5 : null;
+            const priority = getPriority(match.listed_price, meltValue);
+            const profitScrap = 'profit_scrap' in match ? match.profit_scrap : undefined;
+            const karat = 'karat' in match ? match.karat : undefined;
+            const weightG = 'weight_g' in match ? match.weight_g : undefined;
 
-    return (
-      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-        <div className="flex items-center gap-2 mb-2">
-          <Brain className="h-4 w-4 text-blue-600" />
-          <span className="text-sm font-medium text-blue-800">AI Analysis</span>
-          {match.ai_score && (
-            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-              Quality: {match.ai_score}/100
-            </Badge>
-          )}
-        </div>
-        {match.ai_reasoning && (
-          <p className="text-xs text-blue-700">{match.ai_reasoning}</p>
-        )}
+            return (
+              <TableRow key={match.id} className="hover:bg-gray-50">
+                <TableCell>
+                  {priority ? (
+                    <Badge variant="outline" className={`${priority.color} flex items-center gap-1 text-xs whitespace-nowrap`}>
+                      {priority.icon}
+                      {priority.level}
+                    </Badge>
+                  ) : (
+                    <span className="text-gray-400 text-xs">N/A</span>
+                  )}
+                </TableCell>
+                <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
+                <TableCell>
+                  <div className="max-w-[300px]">
+                    {match.ebay_url ? (
+                      <a
+                        href={match.ebay_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium truncate block text-blue-600 hover:text-blue-800 hover:underline"
+                        title={match.ebay_title}
+                      >
+                        {match.ebay_title}
+                      </a>
+                    ) : (
+                      <p className="text-sm font-medium truncate" title={match.ebay_title}>
+                        {match.ebay_title}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      {new Date(match.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </TableCell>
+                <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
+                <TableCell>{weightG ? `${weightG.toFixed(1)}g` : '-'}</TableCell>
+                <TableCell className="font-semibold">${match.listed_price?.toLocaleString()}</TableCell>
+                <TableCell className="text-green-700 font-semibold">
+                  {meltValue ? `$${meltValue.toFixed(0)}` : '-'}
+                </TableCell>
+                <TableCell className="text-blue-700 font-semibold">
+                  {suggestedOffer ? `$${suggestedOffer.toFixed(0)}` : '-'}
+                </TableCell>
+                <TableCell className={`font-semibold ${profitScrap && profitScrap > 0 ? 'text-green-700' : 'text-red-700'}`}>
+                  {profitScrap ? `$${profitScrap.toFixed(0)}` : '-'}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
+                    {match.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    {match.ebay_url && (
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" asChild>
+                        <a href={match.ebay_url} target="_blank" rel="noopener noreferrer" title="View Listing">
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    )}
+                    {match.status === 'new' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
+                        title="Mark Purchased"
+                      >
+                        <ShoppingCart className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
 
-        {'profit_scrap' in match && match.profit_scrap && (
-          <div className="flex items-center gap-2 mt-2 text-xs">
-            <TrendingUp className="h-3 w-3 text-green-600" />
-            <span className="text-green-700">
-              Scrap Profit: ${match.profit_scrap.toFixed(2)}
-              {match.melt_value && ` (Melt: $${match.melt_value.toFixed(2)})`}
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderMatchCard = (match: Match, itemType: string) => (
-    <div key={match.id} className="border rounded-lg p-4 space-y-3">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <h3 className="font-medium text-sm">{match.ebay_title}</h3>
-          <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-            <span className="font-semibold">${match.listed_price?.toLocaleString()}</span>
-            {match.buy_format && (
-              <Badge variant="outline" className="text-xs">
-                {match.buy_format}
-              </Badge>
-            )}
-            {match.seller_feedback && <span>Feedback: {match.seller_feedback}</span>}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            Found: {new Date(match.created_at).toLocaleDateString()}
-          </div>
-        </div>
-        <Badge variant="secondary" className={`${getStatusColor(match.status)} flex items-center gap-1`}>
-          {getStatusIcon(match.status)}
-          {match.status}
-        </Badge>
-      </div>
-
-      {renderAIAnalysis(match)}
-
-      <div className="flex gap-2 pt-2">
-        {match.ebay_url && (
-          <Button size="sm" variant="outline" asChild>
-            <a href={match.ebay_url} target="_blank" rel="noopener noreferrer">
-              View Listing
-            </a>
-          </Button>
-        )}
-        {match.status === 'new' && (
-          <Button
-            size="sm"
-            onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
-          >
-            Mark Purchased
-          </Button>
-        )}
-      </div>
+  const renderGenericTable = (matches: Match[], itemType: string) => (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-gray-50">
+            <TableHead className="w-[120px]">Item ID</TableHead>
+            <TableHead className="min-w-[300px]">Title</TableHead>
+            <TableHead className="w-[100px]">Price</TableHead>
+            <TableHead className="w-[100px]">Format</TableHead>
+            <TableHead className="w-[100px]">Feedback</TableHead>
+            <TableHead className="w-[80px]">Status</TableHead>
+            <TableHead className="w-[100px]">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {matches.map((match) => (
+            <TableRow key={match.id} className="hover:bg-gray-50">
+              <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
+              <TableCell>
+                <div>
+                  {match.ebay_url ? (
+                    <a
+                      href={match.ebay_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium truncate max-w-[350px] block text-blue-600 hover:text-blue-800 hover:underline"
+                      title={match.ebay_title}
+                    >
+                      {match.ebay_title}
+                    </a>
+                  ) : (
+                    <p className="text-sm font-medium truncate max-w-[350px]" title={match.ebay_title}>
+                      {match.ebay_title}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    {new Date(match.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </TableCell>
+              <TableCell className="font-semibold">${match.listed_price?.toLocaleString()}</TableCell>
+              <TableCell>
+                <Badge variant="outline" className="text-xs">
+                  {match.buy_format || 'N/A'}
+                </Badge>
+              </TableCell>
+              <TableCell>{match.seller_feedback || '-'}</TableCell>
+              <TableCell>
+                <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
+                  {match.status}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1">
+                  {match.ebay_url && (
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" asChild>
+                      <a href={match.ebay_url} target="_blank" rel="noopener noreferrer" title="View Listing">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  )}
+                  {match.status === 'new' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                      onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
+                      title="Mark Purchased"
+                    >
+                      <ShoppingCart className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 
@@ -201,13 +329,13 @@ const Matches = () => {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-0">
                   {group.matches.length > 0 ? (
-                    <div className="space-y-4">
-                      {group.matches.map((match) => renderMatchCard(match, group.task.item_type))}
-                    </div>
+                    group.task.item_type === 'jewelry'
+                      ? renderJewelryTable(group.matches, group.task.item_type)
+                      : renderGenericTable(group.matches, group.task.item_type)
                   ) : (
-                    <div className="text-sm text-gray-500 py-4 text-center">
+                    <div className="text-sm text-gray-500 py-8 text-center">
                       No matches found yet. The worker will scan eBay for items matching this task's criteria.
                     </div>
                   )}

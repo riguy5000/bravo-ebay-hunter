@@ -11,12 +11,138 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
+// Cache for eBay OAuth token
+let cachedToken: { token: string; expiresAt: number } | null = null;
+
+// Get eBay OAuth token (with caching)
+const getEbayToken = async (): Promise<string | null> => {
+  // Check cache first
+  if (cachedToken && cachedToken.expiresAt > Date.now()) {
+    return cachedToken.token;
+  }
+
+  try {
+    // Get eBay credentials from settings
+    const { data: settings, error } = await supabase
+      .from('settings')
+      .select('value_json')
+      .eq('key', 'ebay_keys')
+      .single();
+
+    if (error || !settings?.value_json) {
+      console.error('❌ No eBay API keys configured');
+      return null;
+    }
+
+    const config = settings.value_json as { keys: any[] };
+    const availableKeys = config.keys.filter((k: any) => k.status !== 'rate_limited' && k.status !== 'error');
+    const keyToUse = availableKeys.length > 0 ? availableKeys[0] : config.keys[0];
+
+    if (!keyToUse) {
+      console.error('❌ No eBay API keys available');
+      return null;
+    }
+
+    // Get OAuth token
+    const credentials = btoa(`${keyToUse.app_id}:${keyToUse.cert_id}`);
+    const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${credentials}`
+      },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        scope: 'https://api.ebay.com/oauth/api_scope'
+      })
+    });
+
+    if (!response.ok) {
+      console.error('❌ Failed to get eBay OAuth token:', response.status);
+      return null;
+    }
+
+    const tokenData = await response.json();
+    cachedToken = {
+      token: tokenData.access_token,
+      expiresAt: Date.now() + (tokenData.expires_in * 1000) - 60000 // Refresh 1 min early
+    };
+
+    return cachedToken.token;
+  } catch (error) {
+    console.error('❌ Error getting eBay token:', error);
+    return null;
+  }
+};
+
+// Fetch item details from eBay
+const fetchItemDetails = async (itemId: string, token: string): Promise<any | null> => {
+  try {
+    const url = `https://api.ebay.com/buy/browse/v1/item/${itemId}`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      console.log(`⚠️ Failed to fetch details for ${itemId}: ${response.status}`);
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error(`❌ Error fetching item details for ${itemId}:`, error);
+    return null;
+  }
+};
+
+// Extract item specifics into a simple object
+const extractItemSpecifics = (itemDetails: any): Record<string, string> => {
+  if (!itemDetails?.localizedAspects) return {};
+
+  const specs: Record<string, string> = {};
+  for (const aspect of itemDetails.localizedAspects) {
+    // Normalize the name to lowercase for easier matching
+    specs[aspect.name.toLowerCase()] = aspect.value;
+  }
+  return specs;
+};
+
+// Check if item passes the item specifics filters
+const passesItemSpecificsFilter = (specs: Record<string, string>, filters: any): { pass: boolean; reason: string | null } => {
+  // Check Base Metal / Metal for bad metals (plated, filled, etc.)
+  const baseMetal = specs['base metal']?.toLowerCase() || '';
+  const metal = specs['metal']?.toLowerCase() || '';
+
+  const badMetals = ['plated', 'filled', 'steel', 'brass', 'bronze', 'copper', 'alloy', 'tone'];
+  for (const bad of badMetals) {
+    if (baseMetal.includes(bad) || metal.includes(bad)) {
+      return { pass: false, reason: `Base Metal/Metal contains "${bad}"` };
+    }
+  }
+
+  // Check Main Stone if user selected "No Stone" or similar
+  if (filters?.main_stones?.includes('No Stone') || filters?.main_stone === 'None') {
+    const mainStone = specs['main stone']?.toLowerCase() || '';
+    // If there's a main stone listed and it's not "none" or empty, reject
+    if (mainStone && mainStone !== 'none' && mainStone !== 'no stone') {
+      return { pass: false, reason: `Has main stone: "${specs['main stone']}"` };
+    }
+  }
+
+  return { pass: true, reason: null };
+};
+
 interface Task {
   id: string;
   user_id: string;
   name: string;
   item_type: 'watch' | 'jewelry' | 'gemstone';
   status: 'active' | 'paused' | 'stopped';
+  min_price?: number;
   max_price?: number;
   price_percentage?: number;
   price_delta_type?: string;
@@ -37,9 +163,9 @@ interface Task {
   updated_at: string;
 }
 
-const buildSearchKeywords = (task: Task): string => {
+const buildSearchKeywords = (task: Task, metalOverride: string | null = null): string => {
   let keywords = '';
-  
+
   // Build search keywords from task type and filters
   switch (task.item_type) {
     case 'watch':
@@ -53,7 +179,10 @@ const buildSearchKeywords = (task: Task): string => {
       break;
     case 'jewelry':
       keywords = 'jewelry';
-      if (task.jewelry_filters?.metal?.length > 0) {
+      // Use metalOverride if provided, otherwise use first metal from filters
+      if (metalOverride) {
+        keywords = `${metalOverride} jewelry`;
+      } else if (task.jewelry_filters?.metal?.length > 0) {
         keywords = `${task.jewelry_filters.metal[0]} jewelry`;
       }
       if (task.jewelry_filters?.categories?.length > 0) {
@@ -73,7 +202,7 @@ const buildSearchKeywords = (task: Task): string => {
       }
       break;
   }
-  
+
   return keywords || task.name.toLowerCase();
 };
 
@@ -205,62 +334,79 @@ const createMatchRecord = (task: Task, item: any, aiAnalysis?: any) => {
 
 const processTask = async (task: Task) => {
   console.log(`🔄 Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}, Interval: ${task.poll_interval}s - UNLIMITED MODE`);
-  
+
   try {
     // Calculate date filter for continuous monitoring
     const lastRunDate = task.last_run ? new Date(task.last_run) : new Date(Date.now() - 24 * 60 * 60 * 1000); // Default to 24 hours ago
     const dateFrom = lastRunDate.toISOString();
-    
-    // Build comprehensive search parameters with date filtering
-    const searchParams = {
-      keywords: buildSearchKeywords(task),
-      maxPrice: task.max_price,
-      listingType: task.listing_format || ['Auction', 'Fixed Price (BIN)'],
-      minFeedback: task.min_seller_feedback || 0,
-      itemLocation: task.item_location,
-      dateFrom: dateFrom, // CRITICAL: Only get new items since last run
-      dateTo: task.date_to,
-      itemType: task.item_type,
-      typeSpecificFilters: task.item_type === 'watch' ? task.watch_filters :
-                          task.item_type === 'jewelry' ? task.jewelry_filters :
-                          task.item_type === 'gemstone' ? task.gemstone_filters : null,
-      condition: getConditionsFromFilters(task)
-    };
 
-    console.log('🎯 Search params (UNLIMITED with date filter):', JSON.stringify(searchParams, null, 2));
+    // Determine metals to search for (for jewelry tasks with multiple metals)
+    const metals = task.item_type === 'jewelry' && task.jewelry_filters?.metal?.length > 1
+      ? task.jewelry_filters.metal
+      : [null]; // null means use default behavior
 
-    // Call the eBay search function
-    const searchResponse = await supabase.functions.invoke('ebay-search', {
-      body: searchParams
-    });
-
-    if (searchResponse.error) {
-      console.error('❌ Error calling eBay search:', searchResponse.error);
-      console.error('Error details:', JSON.stringify(searchResponse.error, null, 2));
-      
-      // Update task last_run even on error
-      await supabase
-        .from('tasks')
-        .update({ 
-          last_run: new Date().toISOString(),
-        })
-        .eq('id', task.id);
-        
-      throw new Error(`eBay search failed: ${searchResponse.error.message || 'Unknown error'}`);
+    if (metals.length > 1) {
+      console.log(`🔧 Searching for ${metals.length} metals: ${metals.join(', ')}`);
     }
 
-    const { items } = searchResponse.data;
-    console.log(`📦 Found ${items?.length || 0} NEW items for task ${task.name} (since ${dateFrom})`);
+    // Collect all items from all metal searches
+    const allItems: any[] = [];
+    const seenItemIds = new Set<string>();
 
-    if (!items || items.length === 0) {
+    for (const metal of metals) {
+      // Build search parameters for this metal
+      const searchParams = {
+        keywords: buildSearchKeywords(task, metal),
+        maxPrice: task.max_price,
+        listingType: task.listing_format || ['Auction', 'Fixed Price (BIN)'],
+        minFeedback: task.min_seller_feedback || 0,
+        itemLocation: task.item_location,
+        dateFrom: dateFrom,
+        dateTo: task.date_to,
+        itemType: task.item_type,
+        typeSpecificFilters: task.item_type === 'watch' ? task.watch_filters :
+                            task.item_type === 'jewelry' ? task.jewelry_filters :
+                            task.item_type === 'gemstone' ? task.gemstone_filters : null,
+        condition: getConditionsFromFilters(task)
+      };
+
+      const metalInfo = metal ? ` [${metal}]` : '';
+      console.log(`🎯 Search${metalInfo}: ${searchParams.keywords}`);
+
+      // Call the eBay search function
+      const searchResponse = await supabase.functions.invoke('ebay-search', {
+        body: searchParams
+      });
+
+      if (searchResponse.error) {
+        console.error(`❌ Error calling eBay search${metalInfo}:`, searchResponse.error);
+        continue; // Continue with other metals if one fails
+      }
+
+      const { items } = searchResponse.data;
+      console.log(`📦 Found ${items?.length || 0} items${metalInfo}`);
+
+      // Add unique items only (deduplicate by itemId)
+      for (const item of items || []) {
+        if (!seenItemIds.has(item.itemId)) {
+          seenItemIds.add(item.itemId);
+          allItems.push(item);
+        }
+      }
+    }
+
+    const items = allItems;
+    console.log(`📊 Total unique items across all searches: ${items.length} (since ${dateFrom})`);
+
+    if (items.length === 0) {
       console.log(`📭 No new items found for task ${task.name}`);
-      
+
       // Update task last_run
       await supabase
         .from('tasks')
         .update({ last_run: new Date().toISOString() })
         .eq('id', task.id);
-        
+
       return;
     }
 
@@ -277,6 +423,13 @@ const processTask = async (task: Task) => {
       console.log(`🔍 Processing item ${analyzedItems}/${items.length}: ${item.title}`);
       console.log(`💰 Price: $${item.price}, Format: ${item.listingType || 'Unknown'}`);
       
+      // Skip if price is too low (min_price filter)
+      if (task.min_price && item.price < task.min_price) {
+        console.log(`💰 Skipping item ${item.itemId} - price too low: $${item.price} < $${task.min_price}`);
+        excludedItems++;
+        continue;
+      }
+
       // Skip if price is too high
       if (task.max_price && item.price > task.max_price) {
         console.log(`💰 Skipping item ${item.itemId} - price too high: $${item.price} > $${task.max_price}`);
@@ -330,13 +483,40 @@ const processTask = async (task: Task) => {
       // AI Analysis - DISABLED for performance (re-enable when ready)
       // const aiAnalysis = await analyzeItemWithAI(task, item);
       const aiAnalysis = null; // Disabled - saves items faster without AI scoring
-      
+
       // Smart exclusion logic
       const exclusionCheck = shouldExcludeItem(task, item, aiAnalysis);
       if (exclusionCheck.exclude) {
         console.log(`🚫 Excluding item: ${exclusionCheck.reason} - ${item.title}`);
         excludedItems++;
         continue;
+      }
+
+      // For jewelry items, fetch item details and check item specifics
+      if (task.item_type === 'jewelry') {
+        const filters = task.jewelry_filters || {};
+
+        // Only fetch details if we have filters that need item specifics checking
+        const needsSpecsCheck = filters.main_stones?.includes('No Stone') ||
+                                filters.main_stone === 'None' ||
+                                filters.metal?.length > 0;
+
+        if (needsSpecsCheck) {
+          const token = await getEbayToken();
+          if (token) {
+            const itemDetails = await fetchItemDetails(item.itemId, token);
+            if (itemDetails) {
+              const specs = extractItemSpecifics(itemDetails);
+              const specsCheck = passesItemSpecificsFilter(specs, filters);
+
+              if (!specsCheck.pass) {
+                console.log(`❌ REJECTED (${specsCheck.reason}): ${item.title.substring(0, 50)}...`);
+                excludedItems++;
+                continue;
+              }
+            }
+          }
+        }
       }
 
       // Create new match record
