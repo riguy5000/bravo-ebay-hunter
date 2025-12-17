@@ -14,7 +14,8 @@
     "pm2:status": "pm2 status",
     "cleanup:stale": "node cleanup-stale.js",
     "cleanup:stale:dry": "node cleanup-stale.js --dry-run",
-    "cleanup:matches": "node clear-matches.js"
+    "cleanup:matches": "node clear-matches.js",
+    "usage": "node usage.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

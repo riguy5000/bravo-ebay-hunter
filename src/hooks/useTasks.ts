@@ -20,6 +20,7 @@ export interface Task {
   gemstone_filters?: any;
   // New V2 fields
   exclude_keywords?: string[];
+  max_detail_fetches?: number;
   price_delta_type?: string;
   price_delta_value?: number;
   auction_alert?: boolean;
@@ -48,10 +49,10 @@ export const useTasks = () => {
     if (!user) return;
 
     try {
+      // Fetch all tasks (shared across all users)
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -140,7 +141,6 @@ export const useTasks = () => {
       .from('tasks')
       .update(updates)
       .eq('id', id)
-      .eq('user_id', user.id)
       .select()
       .single();
 
@@ -178,24 +178,21 @@ export const useTasks = () => {
   const deleteTask = async (id: string) => {
     if (!user) return;
 
-    // Get the task to check if it has a cron job
-    const taskToDelete = tasks.find(t => t.id === id);
-    
-    // If task is active, unschedule its cron job first
-    if (taskToDelete?.status === 'active') {
-      try {
-        await manageCronJob(id, 'unschedule');
-      } catch (cronError) {
-        console.error('Failed to unschedule cron job before deletion:', cronError);
-        // Continue with deletion even if cron cleanup fails
-      }
+    // Always try to unschedule the cron job before deletion (regardless of status)
+    // This prevents orphaned cron jobs if the task was active or had a lingering cron job
+    try {
+      console.log(`Unscheduling cron job for task ${id} before deletion...`);
+      await manageCronJob(id, 'unschedule');
+      console.log(`Cron job unscheduled successfully for task ${id}`);
+    } catch (cronError) {
+      console.error('Failed to unschedule cron job before deletion:', cronError);
+      // Continue with deletion even if cron cleanup fails - the cron job might not exist
     }
 
     const { error } = await supabase
       .from('tasks')
       .delete()
-      .eq('id', id)
-      .eq('user_id', user.id);
+      .eq('id', id);
 
     if (error) {
       console.error('Error deleting task:', error);
@@ -205,6 +202,28 @@ export const useTasks = () => {
     setTasks(prev => prev.filter(task => task.id !== id));
   };
 
+  // Clean up orphaned cron jobs (cron jobs that reference deleted tasks)
+  const cleanupOrphanedCronJobs = async () => {
+    try {
+      console.log('Cleaning up orphaned cron jobs...');
+
+      const { data, error } = await supabase.functions.invoke('cron-cleanup', {
+        body: { action: 'cleanup-orphaned' }
+      });
+
+      if (error) {
+        console.error('Error cleaning up orphaned cron jobs:', error);
+        throw error;
+      }
+
+      console.log('Orphaned cron jobs cleanup result:', data);
+      return data;
+    } catch (error) {
+      console.error('Failed to cleanup orphaned cron jobs:', error);
+      throw error;
+    }
+  };
+
   return {
     tasks,
     loading,
@@ -212,5 +231,6 @@ export const useTasks = () => {
     updateTask,
     deleteTask,
     refetch: fetchTasks,
+    cleanupOrphanedCronJobs,
   };
 };

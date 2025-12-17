@@ -12,13 +12,34 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
+interface CleanupRequest {
+  action?: 'cleanup-orphaned' | 'cleanup-all';
+}
+
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    console.log('🧹 Starting aggressive cron cleanup process...');
+    let requestBody: CleanupRequest = {};
+    try {
+      requestBody = await req.json();
+    } catch {
+      // No body provided, use default behavior
+    }
+
+    const action = requestBody.action || 'cleanup-all';
+    console.log(`🧹 Starting cron cleanup process (action: ${action})...`);
+
+    // STEP 0: Find all task-related cron jobs from cron.job table
+    const { data: cronJobs, error: cronError } = await supabase.rpc('get_task_cron_jobs');
+
+    if (cronError) {
+      console.log('Note: Could not query cron.job table directly, using fallback method');
+    } else {
+      console.log(`📋 Found ${cronJobs?.length || 0} task-related cron jobs in database`);
+    }
 
     // STEP 1: Get all existing tasks to identify what should be scheduled
     const { data: existingTasks, error: tasksError } = await supabase
@@ -30,26 +51,44 @@ const handler = async (req: Request): Promise<Response> => {
       throw tasksError;
     }
 
+    const existingTaskIds = new Set(existingTasks?.map(task => task.id) || []);
     const activeTasks = existingTasks?.filter(task => task.status === 'active') || [];
     console.log(`📋 Found ${existingTasks?.length || 0} total tasks, ${activeTasks.length} active`);
 
-    // STEP 2: Aggressively clean up ALL existing cron jobs first
+    // STEP 2: Build list of task IDs to clean up
+    let taskIdsToCleanup: string[] = [];
+    let orphanedTaskIds: string[] = [];
+
+    // If we got cron jobs from the database, extract task IDs from job names
+    if (cronJobs && cronJobs.length > 0) {
+      for (const job of cronJobs) {
+        // Job names are like "task_9c900f0e-f64c-43f1-a6f4-a8316fc1da62"
+        const match = job.jobname?.match(/^task_(.+)$/);
+        if (match) {
+          const taskId = match[1];
+          if (!existingTaskIds.has(taskId)) {
+            orphanedTaskIds.push(taskId);
+            console.log(`🔍 Found orphaned cron job for deleted task: ${taskId}`);
+          }
+          taskIdsToCleanup.push(taskId);
+        }
+      }
+    }
+
+    // For cleanup-orphaned action, only clean up orphaned jobs
+    // For cleanup-all action, clean up everything
+    if (action === 'cleanup-orphaned') {
+      taskIdsToCleanup = orphanedTaskIds;
+      console.log(`🎯 Cleanup-orphaned: Will remove ${orphanedTaskIds.length} orphaned cron jobs`);
+    } else {
+      // Add all existing task IDs to ensure we clean everything
+      taskIdsToCleanup = [...new Set([...taskIdsToCleanup, ...(existingTasks?.map(task => task.id) || [])])];
+      console.log(`🗑️ Cleanup-all: Will attempt to clean up ${taskIdsToCleanup.length} cron jobs`);
+    }
+
     let cleanupCount = 0;
-    
-    // List of all possible task IDs that might have cron jobs (from logs and current tasks)
-    const allPossibleTaskIds = [
-      '98ddbb89-d9fd-41aa-ac24-bd57fb666c05', // From logs
-      '52ef4333-80c0-4be1-8b49-9df97a614d57', // From logs  
-      'a8de30eb-cbdc-4860-861d-8f122f43cea1', // Current Gold Scrap Scanner
-      ...(existingTasks?.map(task => task.id) || []) // All current tasks
-    ];
 
-    // Remove duplicates
-    const uniqueTaskIds = [...new Set(allPossibleTaskIds)];
-    
-    console.log(`🗑️ Attempting to clean up cron jobs for ${uniqueTaskIds.length} potential task IDs...`);
-
-    for (const taskId of uniqueTaskIds) {
+    for (const taskId of taskIdsToCleanup) {
       try {
         console.log(`🗑️ Cleaning up cron job for task: ${taskId}`);
         const { error: unscheduleError } = await supabase.rpc('unschedule_task_cron', {
@@ -99,20 +138,28 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    console.log(`🎯 AGGRESSIVE Cleanup Summary:`);
-    console.log(`- Total tasks found: ${existingTasks?.length || 0}`);
+    console.log(`🎯 Cleanup Summary (${action}):`);
+    console.log(`- Total tasks in database: ${existingTasks?.length || 0}`);
     console.log(`- Active tasks: ${activeTasks.length}`);
+    console.log(`- Orphaned cron jobs found: ${orphanedTaskIds.length}`);
     console.log(`- Cron jobs cleaned: ${cleanupCount}`);
-    console.log(`- Task states reset: ${existingTasks?.length || 0}`);
-    console.log(`🚫 ALL CRON JOBS STOPPED - eBay API rate limiting should resolve in 1-2 minutes`);
+    if (action === 'cleanup-all') {
+      console.log(`- Task states reset: ${existingTasks?.length || 0}`);
+    }
+    console.log(`✅ Cleanup completed successfully`);
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: true,
-      message: `Aggressive cleanup completed - ALL cron jobs stopped`,
+      action,
+      message: action === 'cleanup-orphaned'
+        ? `Cleaned up ${cleanupCount} orphaned cron jobs`
+        : `Aggressive cleanup completed - ${cleanupCount} cron jobs stopped`,
       totalTasks: existingTasks?.length || 0,
       activeTasks: activeTasks.length,
+      orphanedJobsFound: orphanedTaskIds.length,
+      orphanedTaskIds,
       cronJobsCleaned: cleanupCount,
-      tasksReset: existingTasks?.length || 0,
+      tasksReset: action === 'cleanup-all' ? (existingTasks?.length || 0) : 0,
       recommendation: "Wait 2-3 minutes before testing eBay API to allow rate limits to reset",
       existingTasks: existingTasks?.map(t => ({ id: t.id, name: t.name, status: t.status })) || []
     }), {

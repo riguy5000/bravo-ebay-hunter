@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -83,93 +84,81 @@ export interface TaskWithMatches {
   matchCount: number;
 }
 
+// Fetch function extracted for React Query
+const fetchMatchesData = async (): Promise<{ groups: TaskWithMatches[]; totalCount: number }> => {
+  const [tasksResult, watchData, jewelryData, gemstoneData] = await Promise.all([
+    supabase
+      .from('tasks')
+      .select('id, user_id, name, item_type, status, max_price, created_at')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('matches_watch')
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('matches_jewelry')
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('matches_gemstone')
+      .select('*')
+      .order('created_at', { ascending: false })
+  ]);
+
+  if (tasksResult.error) console.error('Error fetching tasks:', tasksResult.error);
+  if (watchData.error) console.error('Error fetching watch matches:', watchData.error);
+  if (jewelryData.error) console.error('Error fetching jewelry matches:', jewelryData.error);
+  if (gemstoneData.error) console.error('Error fetching gemstone matches:', gemstoneData.error);
+
+  const tasks = tasksResult.data || [];
+  const allMatches: Match[] = [
+    ...((watchData.data as WatchMatch[]) || []),
+    ...((jewelryData.data as JewelryMatch[]) || []),
+    ...((gemstoneData.data as GemstoneMatch[]) || [])
+  ];
+
+  // Group matches by task_id
+  const matchesByTaskId = new Map<string, Match[]>();
+  for (const match of allMatches) {
+    const existing = matchesByTaskId.get(match.task_id) || [];
+    existing.push(match);
+    matchesByTaskId.set(match.task_id, existing);
+  }
+
+  // Build task groups with matches
+  const groups: TaskWithMatches[] = tasks.map(task => {
+    const matches = matchesByTaskId.get(task.id) || [];
+    // Sort matches by created_at descending (newest first)
+    matches.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return {
+      task,
+      matches,
+      matchCount: matches.length
+    };
+  });
+
+  return { groups, totalCount: allMatches.length };
+};
+
 export const useMatches = () => {
   const { user } = useAuth();
-  const [taskGroups, setTaskGroups] = useState<TaskWithMatches[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (user) {
-      fetchMatchesByTask();
-    }
-  }, [user]);
+  // Use React Query for caching - data persists when navigating away
+  const { data, isLoading: loading, refetch: queryRefetch } = useQuery({
+    queryKey: ['matches', user?.id],
+    queryFn: fetchMatchesData,
+    enabled: !!user,
+    staleTime: 1000 * 60 * 5, // Data stays fresh for 5 minutes
+    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes
+  });
 
-  const fetchMatchesByTask = async () => {
-    if (!user) return;
-
-    try {
-      setLoading(true);
-
-      // Fetch tasks and all matches in parallel
-      const [tasksResult, watchData, jewelryData, gemstoneData] = await Promise.all([
-        supabase
-          .from('tasks')
-          .select('id, user_id, name, item_type, status, max_price, created_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('matches_watch')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('matches_jewelry')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('matches_gemstone')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-      ]);
-
-      if (tasksResult.error) console.error('Error fetching tasks:', tasksResult.error);
-      if (watchData.error) console.error('Error fetching watch matches:', watchData.error);
-      if (jewelryData.error) console.error('Error fetching jewelry matches:', jewelryData.error);
-      if (gemstoneData.error) console.error('Error fetching gemstone matches:', gemstoneData.error);
-
-      const tasks = tasksResult.data || [];
-      const allMatches: Match[] = [
-        ...((watchData.data as WatchMatch[]) || []),
-        ...((jewelryData.data as JewelryMatch[]) || []),
-        ...((gemstoneData.data as GemstoneMatch[]) || [])
-      ];
-
-      // Group matches by task_id
-      const matchesByTaskId = new Map<string, Match[]>();
-      for (const match of allMatches) {
-        const existing = matchesByTaskId.get(match.task_id) || [];
-        existing.push(match);
-        matchesByTaskId.set(match.task_id, existing);
-      }
-
-      // Build task groups with matches
-      const groups: TaskWithMatches[] = tasks.map(task => {
-        const matches = matchesByTaskId.get(task.id) || [];
-        // Sort matches by created_at descending (newest first)
-        matches.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        return {
-          task,
-          matches,
-          matchCount: matches.length
-        };
-      });
-
-      setTaskGroups(groups);
-      setTotalCount(allMatches.length);
-
-    } catch (error) {
-      console.error('Error in fetchMatchesByTask:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const taskGroups = data?.groups || [];
+  const totalCount = data?.totalCount || 0;
 
   const refetch = useCallback(() => {
-    fetchMatchesByTask();
-  }, [user]);
+    queryRefetch();
+  }, [queryRefetch]);
 
   // Real-time subscriptions for live updates
   useEffect(() => {
@@ -177,26 +166,35 @@ export const useMatches = () => {
 
     const channels: RealtimeChannel[] = [];
 
-    // Helper to add a new match to the appropriate task group
+    // Helper to add a new match to the React Query cache
     const handleNewMatch = (newMatch: Match) => {
-      setTaskGroups(prev => {
-        return prev.map(group => {
-          if (group.task.id === newMatch.task_id) {
-            // Check if match already exists (avoid duplicates)
-            if (group.matches.some(m => m.id === newMatch.id)) {
-              return group;
+      queryClient.setQueryData<{ groups: TaskWithMatches[]; totalCount: number }>(
+        ['matches', user.id],
+        (oldData) => {
+          if (!oldData) return oldData;
+
+          const newGroups = oldData.groups.map(group => {
+            if (group.task.id === newMatch.task_id) {
+              // Check if match already exists (avoid duplicates)
+              if (group.matches.some(m => m.id === newMatch.id)) {
+                return group;
+              }
+              // Add new match at the beginning (newest first)
+              return {
+                ...group,
+                matches: [newMatch, ...group.matches],
+                matchCount: group.matchCount + 1
+              };
             }
-            // Add new match at the beginning (newest first)
-            return {
-              ...group,
-              matches: [newMatch, ...group.matches],
-              matchCount: group.matchCount + 1
-            };
-          }
-          return group;
-        });
-      });
-      setTotalCount(prev => prev + 1);
+            return group;
+          });
+
+          return {
+            groups: newGroups,
+            totalCount: oldData.totalCount + 1
+          };
+        }
+      );
     };
 
     // Subscribe to each matches table
@@ -210,8 +208,7 @@ export const useMatches = () => {
           {
             event: 'INSERT',
             schema: 'public',
-            table: table,
-            filter: `user_id=eq.${user.id}`
+            table: table
           },
           (payload) => {
             console.log(`🔔 New ${table} match:`, payload.new);
@@ -233,7 +230,7 @@ export const useMatches = () => {
         supabase.removeChannel(channel);
       });
     };
-  }, [user]);
+  }, [user, queryClient]);
 
   const updateMatch = async (id: string, itemType: string, updates: Partial<Match>) => {
     if (!user) return;
@@ -252,11 +249,22 @@ export const useMatches = () => {
       throw error;
     }
 
-    // Update the match in the task groups
-    setTaskGroups(prev => prev.map(group => ({
-      ...group,
-      matches: group.matches.map(match => match.id === id ? { ...match, ...(data as Match) } : match)
-    })));
+    // Update the match in the React Query cache
+    queryClient.setQueryData<{ groups: TaskWithMatches[]; totalCount: number }>(
+      ['matches', user.id],
+      (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          groups: oldData.groups.map(group => ({
+            ...group,
+            matches: group.matches.map(match =>
+              match.id === id ? { ...match, ...(data as Match) } : match
+            )
+          }))
+        };
+      }
+    );
 
     return data;
   };

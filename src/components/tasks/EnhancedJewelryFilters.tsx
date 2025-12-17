@@ -4,6 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MultiSelectAspectFilter } from './MultiSelectAspectFilter';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+
+// Standard eBay conditions (these are NOT aspects - they're a separate eBay concept)
+const EBAY_CONDITIONS = [
+  { value: 'New', label: 'New', description: 'Brand new, unused item' },
+  { value: 'Pre-owned', label: 'Pre-owned', description: 'Previously owned/used item' },
+  { value: 'For parts or not working', label: 'For Parts / Not Working', description: 'Item for parts or repair' },
+];
 
 interface EnhancedJewelryFiltersProps {
   filters: any;
@@ -88,15 +96,34 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
             placeholder="Select jewelry types..."
           />
 
-          <MultiSelectAspectFilter
-            title="Conditions"
-            categoryId={categoryId}
-            fallbackCategoryId={fallbackCategory}
-            aspectName="Condition"
-            selectedValues={filters.conditions || []}
-            onChange={(values) => handleChange('conditions', values)}
-            placeholder="Select conditions..."
-          />
+          {/* Conditions - hardcoded since they're not aspects */}
+          <div className="space-y-2">
+            <Label>Conditions</Label>
+            <div className="space-y-2 p-3 border rounded-md">
+              {EBAY_CONDITIONS.map((condition) => {
+                const selectedConditions = filters.conditions || [];
+                const isChecked = selectedConditions.includes(condition.value);
+                return (
+                  <div key={condition.value} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`condition-${condition.value}`}
+                      checked={isChecked}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          handleChange('conditions', [...selectedConditions, condition.value]);
+                        } else {
+                          handleChange('conditions', selectedConditions.filter((c: string) => c !== condition.value));
+                        }
+                      }}
+                    />
+                    <Label htmlFor={`condition-${condition.value}`} className="text-sm cursor-pointer">
+                      {condition.label}
+                    </Label>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           <MultiSelectAspectFilter
             title="Brands"

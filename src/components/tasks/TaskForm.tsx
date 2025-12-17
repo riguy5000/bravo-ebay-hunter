@@ -44,7 +44,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   const [pollInterval, setPollInterval] = useState('300');
   const [minSellerFeedback, setMinSellerFeedback] = useState('0');
   const [excludeKeywords, setExcludeKeywords] = useState('');
-  
+  const [maxDetailFetches, setMaxDetailFetches] = useState('50');
+
   // Expanded listing format options
   const [listingFormats, setListingFormats] = useState<string[]>(['Fixed Price (BIN)', 'Auction']);
   
@@ -84,6 +85,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setMinSellerFeedback(editingTask.min_seller_feedback?.toString() || '0');
       setExcludeKeywords(editingTask.exclude_keywords?.join(', ') || '');
       setListingFormats(editingTask.listing_format || ['Fixed Price (BIN)', 'Auction']);
+      setMaxDetailFetches(editingTask.max_detail_fetches?.toString() || '50');
       
       // Safely load type-specific filters with proper fallbacks and validation
       const safeWatchFilters = editingTask.watch_filters && typeof editingTask.watch_filters === 'object' && !Array.isArray(editingTask.watch_filters) ? editingTask.watch_filters : {};
@@ -191,6 +193,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         listing_format: listingFormats,
         min_seller_feedback: minSellerFeedback ? parseInt(minSellerFeedback) : 0,
         exclude_keywords: excludeKeywords ? excludeKeywords.split(',').map(k => k.trim()).filter(k => k) : [],
+        max_detail_fetches: maxDetailFetches ? parseInt(maxDetailFetches) : 50,
         watch_filters: itemType === 'watch' ? cleanWatchFilters : undefined,
         jewelry_filters: itemType === 'jewelry' ? cleanJewelryFilters : undefined,
         gemstone_filters: itemType === 'gemstone' ? cleanGemstoneFilters : undefined,
@@ -363,6 +366,22 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               />
               <p className="text-xs text-gray-500">
                 How often to search eBay (5 seconds to 1 hour). Note: Metal prices update separately on a daily schedule.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maxDetailFetches">Max Items Per Poll</Label>
+              <Input
+                id="maxDetailFetches"
+                type="number"
+                value={maxDetailFetches}
+                onChange={(e) => setMaxDetailFetches(e.target.value)}
+                placeholder="50"
+                min="1"
+                max="500"
+              />
+              <p className="text-xs text-gray-500">
+                Maximum item details to fetch per poll cycle. Lower = fewer API calls. Set to 0 for unlimited.
               </p>
             </div>
 
