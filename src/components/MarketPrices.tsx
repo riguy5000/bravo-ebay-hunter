@@ -99,8 +99,8 @@ export const MarketPrices = () => {
                 )}
 
                 <div className="text-xs text-gray-500 space-y-1">
-                  {price.bid && <div>Bid: {formatPrice(price.bid, price.currency)}</div>}
-                  {price.ask && <div>Ask: {formatPrice(price.ask, price.currency)}</div>}
+                  {price.high > 0 && <div>High: {formatPrice(price.high, price.currency)}</div>}
+                  {price.low > 0 && <div>Low: {formatPrice(price.low, price.currency)}</div>}
                 </div>
                 
                 {price.priceGram24k && (
