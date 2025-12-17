@@ -49,9 +49,9 @@ const Matches = () => {
   };
 
   // Calculate priority based on profit margin percentage
-  const getPriority = (listedPrice: number, meltValue: number | undefined) => {
-    if (!meltValue || !listedPrice || listedPrice === 0) return null;
-    const profitMargin = ((meltValue - listedPrice) / listedPrice) * 100;
+  const getPriority = (totalCost: number, meltValue: number | undefined) => {
+    if (!meltValue || !totalCost || totalCost === 0) return null;
+    const profitMargin = ((meltValue - totalCost) / totalCost) * 100;
 
     if (profitMargin > 50) {
       return { level: 'High', color: 'bg-green-100 text-green-800 border-green-300', icon: <CheckCircle className="h-3 w-3" />, margin: profitMargin };
@@ -80,7 +80,7 @@ const Matches = () => {
             <TableHead className="min-w-[250px]">Title</TableHead>
             <TableHead className="w-[60px]">Karat</TableHead>
             <TableHead className="w-[80px]">Weight</TableHead>
-            <TableHead className="w-[100px]">Price</TableHead>
+            <TableHead className="w-[120px]">Total Cost</TableHead>
             <TableHead className="w-[100px]">Break Even (97%)</TableHead>
             <TableHead className="w-[100px]">Offer (87%)</TableHead>
             <TableHead className="w-[100px]">Profit</TableHead>
@@ -91,10 +91,12 @@ const Matches = () => {
         <TableBody>
           {matches.map((match) => {
             const meltValue = 'melt_value' in match ? match.melt_value : undefined;
+            const shippingCost = match.shipping_cost || 0;
+            const totalCost = match.listed_price + shippingCost;
             const breakEven = meltValue ? meltValue * 0.97 : null; // 97% of melt value (refiner payout)
             const suggestedOffer = meltValue ? meltValue * 0.87 : null; // 87% of melt value (your offer)
-            const profit = breakEven && match.listed_price ? breakEven - match.listed_price : null;
-            const priority = getPriority(match.listed_price, breakEven ?? undefined);
+            const profit = breakEven ? breakEven - totalCost : null;
+            const priority = getPriority(totalCost, breakEven ?? undefined);
             const karat = 'karat' in match ? match.karat : undefined;
             const weightG = 'weight_g' in match ? match.weight_g : undefined;
 
@@ -135,7 +137,17 @@ const Matches = () => {
                 </TableCell>
                 <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
                 <TableCell>{weightG ? `${weightG.toFixed(1)}g` : '-'}</TableCell>
-                <TableCell className="font-semibold">${match.listed_price?.toLocaleString()}</TableCell>
+                <TableCell>
+                  <div className="font-semibold">${totalCost.toLocaleString()}</div>
+                  {shippingCost > 0 && (
+                    <div className="text-xs text-gray-500">
+                      ${match.listed_price?.toLocaleString()} + ${shippingCost.toLocaleString()} ship
+                    </div>
+                  )}
+                  {shippingCost === 0 && (
+                    <div className="text-xs text-green-600">Free shipping</div>
+                  )}
+                </TableCell>
                 <TableCell className="text-green-700 font-semibold">
                   {breakEven ? `$${breakEven.toFixed(0)}` : '-'}
                 </TableCell>

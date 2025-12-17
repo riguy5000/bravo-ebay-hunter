@@ -12,6 +12,7 @@ export interface BaseMatch {
   ebay_title: string;
   ebay_url?: string;
   listed_price: number;
+  shipping_cost?: number;
   currency?: string;
   buy_format?: string;
   seller_feedback?: number;
