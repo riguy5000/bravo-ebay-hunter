@@ -1,6 +1,109 @@
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// ============================================
+// File Logging Setup
+// ============================================
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const logsDir = path.join(__dirname, 'logs');
+
+// Create logs directory if it doesn't exist
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+
+// Create log file with timestamp
+const logFileName = `worker-${new Date().toISOString().replace(/[:.]/g, '-')}.log`;
+const logFilePath = path.join(logsDir, logFileName);
+const logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+
+// Store original console methods
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+
+// Helper to format log messages
+function formatLogMessage(args) {
+  const timestamp = new Date().toISOString();
+  const message = args.map(arg =>
+    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+  ).join(' ');
+  return `[${timestamp}] ${message}`;
+}
+
+// Override console.log to also write to file
+console.log = (...args) => {
+  const formattedMessage = formatLogMessage(args);
+  logStream.write(formattedMessage + '\n');
+  originalConsoleLog.apply(console, args);
+};
+
+// Override console.error to also write to file
+console.error = (...args) => {
+  const formattedMessage = '[ERROR] ' + formatLogMessage(args);
+  logStream.write(formattedMessage + '\n');
+  originalConsoleError.apply(console, args);
+};
+
+console.log(`📝 Logging to: ${logFilePath}`);
+
+// ============================================
+// Memory & Performance Monitoring
+// ============================================
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function getMemoryStats() {
+  const mem = process.memoryUsage();
+  return {
+    heapUsed: formatBytes(mem.heapUsed),
+    heapTotal: formatBytes(mem.heapTotal),
+    rss: formatBytes(mem.rss),
+    external: formatBytes(mem.external),
+    heapUsedRaw: mem.heapUsed,
+    rssRaw: mem.rss
+  };
+}
+
+function logMemoryStats(context = '') {
+  const stats = getMemoryStats();
+  const prefix = context ? `[${context}] ` : '';
+  console.log(`📊 ${prefix}Memory: Heap ${stats.heapUsed}/${stats.heapTotal} | RSS ${stats.rss} | External ${stats.external}`);
+  return stats;
+}
+
+// Track poll cycle performance
+let pollCycleCount = 0;
+let totalPollTime = 0;
+let maxPollTime = 0;
+let minPollTime = Infinity;
+
+function logPollPerformance(durationMs) {
+  pollCycleCount++;
+  totalPollTime += durationMs;
+  maxPollTime = Math.max(maxPollTime, durationMs);
+  minPollTime = Math.min(minPollTime, durationMs);
+
+  const avgTime = totalPollTime / pollCycleCount;
+  console.log(`⏱️ Poll #${pollCycleCount} took ${durationMs.toFixed(0)}ms (avg: ${avgTime.toFixed(0)}ms, min: ${minPollTime.toFixed(0)}ms, max: ${maxPollTime.toFixed(0)}ms)`);
+}
+
+// Log memory every 5 minutes
+setInterval(() => {
+  logMemoryStats('Periodic');
+}, 5 * 60 * 1000);
+
+// Log startup memory
+console.log('🚀 Worker starting...');
+logMemoryStats('Startup');
 
 // ============================================
 // Environment Validation
@@ -44,6 +147,106 @@ class RateLimitError extends Error {
 // Track if we're shutting down
 let isShuttingDown = false;
 let pollInterval = null;
+
+// Slack webhook URL (optional - for notifications)
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
+
+// Shopping API test function - defined here but called at end of file
+// (needs getEbayCredentials and getEbayToken to be defined first)
+
+// ============================================
+// Slack Notifications
+// ============================================
+async function sendSlackNotification(match, item, karat, weightG, shippingCost, meltValue) {
+  if (!SLACK_WEBHOOK_URL) return; // Skip if no webhook configured
+
+  try {
+    const totalCost = match.listed_price + shippingCost;
+    const breakEven = meltValue ? meltValue * 0.97 : null;
+    const profit = breakEven ? breakEven - totalCost : null;
+    const profitPct = profit && totalCost > 0 ? ((profit / totalCost) * 100).toFixed(0) : null;
+
+    const shippingText = shippingCost > 0
+      ? `$${match.listed_price} + $${shippingCost} shipping = *$${totalCost}*`
+      : `*$${totalCost}* (free shipping)`;
+
+    const message = {
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "🎯 New Gold Deal Found!",
+            emoji: true
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*${match.ebay_title.substring(0, 100)}${match.ebay_title.length > 100 ? '...' : ''}*`
+          }
+        },
+        {
+          type: "section",
+          fields: [
+            {
+              type: "mrkdwn",
+              text: `*💰 Price:*\n${shippingText}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*📊 Break-even:*\n${breakEven ? `$${breakEven.toFixed(0)}` : 'N/A'}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*✨ Karat:*\n${karat ? `${karat}K` : 'Unknown'}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*⚖️ Weight:*\n${weightG ? `${weightG.toFixed(1)}g` : 'Unknown'}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*💵 Profit:*\n${profit ? `$${profit.toFixed(0)} (${profitPct}%)` : 'N/A'}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*🏷️ Seller:*\n${item.seller?.feedbackScore || 'N/A'} feedback`
+            }
+          ]
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "🔗 View on eBay",
+                emoji: true
+              },
+              url: match.ebay_url,
+              style: "primary"
+            }
+          ]
+        }
+      ]
+    };
+
+    const response = await fetch(SLACK_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+
+    if (!response.ok) {
+      console.log(`  ⚠️ Slack notification failed: ${response.status}`);
+    }
+  } catch (error) {
+    console.log(`  ⚠️ Slack notification error: ${error.message}`);
+  }
+}
 
 // ============================================
 // Rate Limiting (eBay allows 5,000 calls/day)
@@ -97,9 +300,9 @@ async function logApiUsage(apiKeyLabel, callType, endpoint = null) {
 // Auto-Exclusions for Jewelry
 // ============================================
 
-// ⚙️ TOGGLE: Require karat markers (10k, 14k, etc.) for gold jewelry
-// Set to false to disable karat requirement and go back to previous behavior
-const REQUIRE_KARAT_MARKERS = true;
+// ⚙️ TOGGLE: Require karat markers (10k, 14k, etc.) in TITLE for gold jewelry
+// Set to false to check metal purity in item specifics instead (more API calls but catches more items)
+const REQUIRE_KARAT_MARKERS = false;
 
 // Valid karat markers that indicate real gold
 // Note: Removed hallmark numbers (375, 585, 750, etc.) as they're often misused by cheap jewelry sellers
@@ -141,8 +344,110 @@ function extractKarat(title, itemSpecifics = {}) {
   return null;
 }
 
-// Extract weight from title (in grams)
-function extractWeight(title, itemSpecifics = {}) {
+// Detect the primary metal type from title and item specifics
+// Returns: 'gold', 'silver', 'platinum', 'palladium', or null
+function detectMetalType(title, itemSpecifics = {}) {
+  const titleLower = title.toLowerCase();
+  const metal = (itemSpecifics['metal'] || itemSpecifics['material'] || itemSpecifics['metal type'] || '').toLowerCase();
+  const metalPurity = (itemSpecifics['metal purity'] || '').toLowerCase();
+  const combined = `${titleLower} ${metal} ${metalPurity}`;
+
+  // Check for platinum first (most valuable)
+  if (combined.includes('platinum') || combined.includes('plat') ||
+      metalPurity.includes('950') || metalPurity.includes('900') || metalPurity.includes('850')) {
+    // Make sure it's not "platinum plated"
+    if (!combined.includes('plated') && !combined.includes('plate')) {
+      return 'platinum';
+    }
+  }
+
+  // Check for gold (check karat markers)
+  if (combined.match(/\b(10|14|18|22|24)\s*k(t|arat)?\b/i) ||
+      combined.includes('gold') || combined.includes('yellow gold') ||
+      combined.includes('white gold') || combined.includes('rose gold')) {
+    // Make sure it's not plated/filled
+    if (!combined.includes('plated') && !combined.includes('filled') &&
+        !combined.includes('vermeil') && !combined.includes('gold tone')) {
+      return 'gold';
+    }
+  }
+
+  // Check for silver
+  if (combined.includes('sterling') || combined.includes('.925') ||
+      combined.includes('925 silver') || metalPurity.includes('925') ||
+      metalPurity.includes('999') || metalPurity.includes('900') ||
+      (combined.includes('silver') && !combined.includes('plated'))) {
+    // Make sure it's not silver plated
+    if (!combined.includes('silver plated') && !combined.includes('silver-plated')) {
+      return 'silver';
+    }
+  }
+
+  // Check for palladium
+  if (combined.includes('palladium')) {
+    return 'palladium';
+  }
+
+  return null;
+}
+
+// Extract silver purity from title or item specifics
+// Common values: 999 (fine), 925 (sterling), 900 (coin), 800 (European)
+function extractSilverPurity(title, itemSpecifics = {}) {
+  const titleLower = title.toLowerCase();
+  const metalPurity = (itemSpecifics['metal purity'] || '').toLowerCase();
+  const combined = `${titleLower} ${metalPurity}`;
+
+  // Check for specific purity markers
+  if (combined.includes('999') || combined.includes('fine silver') || combined.includes('pure silver')) {
+    return 999;
+  }
+  if (combined.includes('925') || combined.includes('sterling') || combined.includes('.925')) {
+    return 925;
+  }
+  if (combined.includes('900') || combined.includes('coin silver')) {
+    return 900;
+  }
+  if (combined.includes('800')) {
+    return 800;
+  }
+
+  // Default to sterling (925) if just "silver" is mentioned
+  if (combined.includes('silver')) {
+    return 925;
+  }
+
+  return null;
+}
+
+// Extract platinum purity from title or item specifics
+// Common values: 950 (most jewelry), 900, 850
+function extractPlatinumPurity(title, itemSpecifics = {}) {
+  const titleLower = title.toLowerCase();
+  const metalPurity = (itemSpecifics['metal purity'] || '').toLowerCase();
+  const combined = `${titleLower} ${metalPurity}`;
+
+  // Check for specific purity markers
+  if (combined.includes('950') || combined.includes('pt950')) {
+    return 950;
+  }
+  if (combined.includes('900') || combined.includes('pt900')) {
+    return 900;
+  }
+  if (combined.includes('850') || combined.includes('pt850')) {
+    return 850;
+  }
+
+  // Default to 950 if just "platinum" is mentioned (most common for jewelry)
+  if (combined.includes('platinum') || combined.includes('plat')) {
+    return 950;
+  }
+
+  return null;
+}
+
+// Extract weight from title, item specifics, or description (in grams)
+function extractWeight(title, itemSpecifics = {}, description = '') {
   // Check item specifics first - eBay uses many different field names
   // Priority order: most specific → most general
   const weightSpec = itemSpecifics['total weight'] ||
@@ -154,7 +459,15 @@ function extractWeight(title, itemSpecifics = {}) {
                      itemSpecifics['total carat weight'] ||
                      itemSpecifics['item weight (approx.)'] ||
                      itemSpecifics['approximate weight'] ||
-                     itemSpecifics['metal weight'] || '';
+                     itemSpecifics['metal weight'] ||
+                     itemSpecifics['chain weight'] ||
+                     itemSpecifics['necklace weight'] ||
+                     itemSpecifics['ring weight'] ||
+                     itemSpecifics['bracelet weight'] ||
+                     itemSpecifics['gold weight'] ||
+                     itemSpecifics['total metal weight'] ||
+                     itemSpecifics['net weight'] ||
+                     itemSpecifics['jewelry weight'] || '';
 
   if (weightSpec) {
     const specLower = weightSpec.toLowerCase();
@@ -188,17 +501,250 @@ function extractWeight(title, itemSpecifics = {}) {
   const titleLower = title.toLowerCase();
 
   // Pattern for grams (more permissive)
-  const gramMatch = titleLower.match(/([\d.]+)\s*(?:g|gr|gram|grams)\b/i);
+  let gramMatch = titleLower.match(/([\d.]+)\s*(?:g|gr|gram|grams)\b/i);
   if (gramMatch) return parseFloat(gramMatch[1]);
 
   // Pattern for oz
-  const ozMatch = titleLower.match(/([\d.]+)\s*(?:oz|ounce|ounces)\b/i);
+  let ozMatch = titleLower.match(/([\d.]+)\s*(?:oz|ounce|ounces)\b/i);
   if (ozMatch) return parseFloat(ozMatch[1]) * 28.3495;
 
   // Pattern for dwt
-  const dwtMatch = titleLower.match(/([\d.]+)\s*(?:dwt|pennyweight)/i);
+  let dwtMatch = titleLower.match(/([\d.]+)\s*(?:dwt|pennyweight)/i);
   if (dwtMatch) return parseFloat(dwtMatch[1]) * 1.555;
 
+  // Check description for weight (strip HTML first)
+  if (description) {
+    const cleanDesc = description.replace(/<[^>]*>/g, ' ').toLowerCase();
+
+    // Look for weight patterns in description
+    // More specific patterns first: "weight: X.Xg", "weighs X.X grams", etc.
+    const weightPatterns = [
+      /(?:weight|weighs|wt)[:\s]+(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i,
+      /(\d+\.?\d*)\s*(?:g|gr|gram|grams)\s*(?:total|weight)/i,
+      /(?:total|approx\.?|approximately)\s*(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i,
+      /(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i,
+    ];
+
+    for (const pattern of weightPatterns) {
+      const match = cleanDesc.match(pattern);
+      if (match) {
+        const value = parseFloat(match[1]);
+        if (value > 0 && value < 1000) { // Sanity check
+          console.log(`    📏 Found weight ${value}g in description`);
+          return value;
+        }
+      }
+    }
+
+    // Check for oz in description
+    ozMatch = cleanDesc.match(/(?:weight|weighs|wt)?[:\s]*(\d+\.?\d*)\s*(?:oz|ounce|ounces)\b/i);
+    if (ozMatch) {
+      const value = parseFloat(ozMatch[1]) * 28.3495;
+      console.log(`    📏 Found weight ${ozMatch[1]}oz (${value.toFixed(2)}g) in description`);
+      return value;
+    }
+
+    // Check for dwt in description
+    dwtMatch = cleanDesc.match(/(?:weight|weighs|wt)?[:\s]*(\d+\.?\d*)\s*(?:dwt|pennyweight)/i);
+    if (dwtMatch) {
+      const value = parseFloat(dwtMatch[1]) * 1.555;
+      console.log(`    📏 Found weight ${dwtMatch[1]}dwt (${value.toFixed(2)}g) in description`);
+      return value;
+    }
+  }
+
+  return null;
+}
+
+// ============================================
+// WATCH-SPECIFIC EXTRACTION FUNCTIONS
+// ============================================
+
+// Extract watch case material from item specifics
+function extractWatchCaseMaterial(title, itemSpecifics = {}) {
+  // Check item specifics first (most reliable)
+  const caseMaterial = itemSpecifics['case material'] ||
+                       itemSpecifics['case/bezel material'] ||
+                       itemSpecifics['material'] || '';
+  if (caseMaterial) {
+    return caseMaterial;
+  }
+
+  // Try to extract from title
+  const titleLower = title.toLowerCase();
+  const materials = [
+    'stainless steel', 'steel', 'titanium', 'gold', 'rose gold', 'white gold',
+    'yellow gold', 'platinum', 'ceramic', 'carbon fiber', 'bronze', 'brass',
+    'plastic', 'resin', 'aluminum', 'silver'
+  ];
+
+  for (const material of materials) {
+    if (titleLower.includes(material)) {
+      // Capitalize first letter of each word
+      return material.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+  }
+
+  return null;
+}
+
+// Extract watch band/strap material from item specifics
+function extractWatchBandMaterial(title, itemSpecifics = {}) {
+  // Check item specifics first
+  const bandMaterial = itemSpecifics['band material'] ||
+                       itemSpecifics['band/strap material'] ||
+                       itemSpecifics['strap material'] ||
+                       itemSpecifics['bracelet material'] || '';
+  if (bandMaterial) {
+    return bandMaterial;
+  }
+
+  // Try to extract from title
+  const titleLower = title.toLowerCase();
+  const materials = [
+    'leather', 'rubber', 'silicone', 'nato', 'nylon', 'canvas',
+    'stainless steel', 'steel', 'mesh', 'bracelet', 'gold', 'titanium'
+  ];
+
+  for (const material of materials) {
+    if (titleLower.includes(material + ' band') ||
+        titleLower.includes(material + ' strap') ||
+        titleLower.includes(material + ' bracelet')) {
+      return material.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+  }
+
+  return null;
+}
+
+// Extract watch movement type from item specifics
+function extractWatchMovement(title, itemSpecifics = {}) {
+  // Check item specifics first
+  const movement = itemSpecifics['movement'] ||
+                   itemSpecifics['watch movement'] ||
+                   itemSpecifics['movement type'] || '';
+  if (movement) {
+    return movement;
+  }
+
+  // Try to extract from title
+  const titleLower = title.toLowerCase();
+  const movements = [
+    { pattern: /automatic/i, value: 'Automatic' },
+    { pattern: /self[- ]?wind/i, value: 'Automatic' },
+    { pattern: /mechanical/i, value: 'Mechanical' },
+    { pattern: /manual[- ]?wind/i, value: 'Manual' },
+    { pattern: /hand[- ]?wound/i, value: 'Manual' },
+    { pattern: /quartz/i, value: 'Quartz' },
+    { pattern: /solar/i, value: 'Solar' },
+    { pattern: /kinetic/i, value: 'Kinetic' },
+    { pattern: /eco[- ]?drive/i, value: 'Eco-Drive' },
+    { pattern: /spring drive/i, value: 'Spring Drive' }
+  ];
+
+  for (const { pattern, value } of movements) {
+    if (pattern.test(title)) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+// Extract watch dial color from item specifics
+function extractWatchDialColor(title, itemSpecifics = {}) {
+  // Check item specifics first
+  const dialColor = itemSpecifics['dial color'] ||
+                    itemSpecifics['dial colour'] ||
+                    itemSpecifics['face color'] || '';
+  if (dialColor) {
+    return dialColor;
+  }
+
+  // Try to extract from title - look for "X dial" pattern
+  const titleLower = title.toLowerCase();
+  const colorMatch = titleLower.match(/(black|white|blue|green|silver|gold|grey|gray|red|brown|champagne|mother of pearl|mop)\s*dial/i);
+  if (colorMatch) {
+    const color = colorMatch[1];
+    return color.charAt(0).toUpperCase() + color.slice(1);
+  }
+
+  return null;
+}
+
+// Extract watch year/manufacture date from item specifics
+function extractWatchYear(title, itemSpecifics = {}) {
+  // Check item specifics first (multiple possible field names)
+  const yearFields = [
+    'year manufactured', 'year', 'year of manufacture',
+    'manufacture year', 'model year', 'production year'
+  ];
+
+  for (const field of yearFields) {
+    const value = itemSpecifics[field];
+    if (value) {
+      // Try to extract 4-digit year
+      const yearMatch = value.match(/(\d{4})/);
+      if (yearMatch) {
+        const year = parseInt(yearMatch[1]);
+        if (year >= 1800 && year <= new Date().getFullYear() + 1) {
+          return year;
+        }
+      }
+    }
+  }
+
+  // Try to extract from title (e.g., "1965 Rolex", "Rolex 2020", etc.)
+  const yearMatch = title.match(/\b(19[0-9]{2}|20[0-2][0-9])\b/);
+  if (yearMatch) {
+    const year = parseInt(yearMatch[1]);
+    if (year >= 1900 && year <= new Date().getFullYear() + 1) {
+      return year;
+    }
+  }
+
+  return null;
+}
+
+// Extract watch brand from item specifics
+function extractWatchBrand(title, itemSpecifics = {}) {
+  // Check item specifics first
+  const brand = itemSpecifics['brand'] || '';
+  if (brand && brand.toLowerCase() !== 'unbranded') {
+    return brand;
+  }
+
+  // Common watch brands to look for in title
+  const brands = [
+    'Rolex', 'Omega', 'Patek Philippe', 'Audemars Piguet', 'Vacheron Constantin',
+    'Jaeger-LeCoultre', 'IWC', 'Cartier', 'Breitling', 'TAG Heuer', 'Tudor',
+    'Panerai', 'Hublot', 'Zenith', 'Grand Seiko', 'Seiko', 'Citizen', 'Casio',
+    'Tissot', 'Longines', 'Hamilton', 'Oris', 'Bell & Ross', 'Nomos',
+    'Sinn', 'Fortis', 'Junghans', 'Movado', 'Bulova', 'Timex', 'Fossil',
+    'Michael Kors', 'Invicta', 'Orient', 'Rado', 'Maurice Lacroix',
+    'Frederique Constant', 'Baume & Mercier', 'Chopard', 'Girard-Perregaux'
+  ];
+
+  const titleLower = title.toLowerCase();
+  for (const b of brands) {
+    if (titleLower.includes(b.toLowerCase())) {
+      return b;
+    }
+  }
+
+  return null;
+}
+
+// Extract watch model from item specifics
+function extractWatchModel(title, itemSpecifics = {}) {
+  // Check item specifics first
+  const model = itemSpecifics['model'] || itemSpecifics['model number'] || '';
+  if (model) {
+    return model;
+  }
+
+  // Model extraction from title is complex and brand-specific
+  // Return null for now - can be enhanced later
   return null;
 }
 
@@ -207,8 +753,8 @@ let metalPricesCache = null;
 let metalPricesCacheTime = 0;
 const METAL_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-// Get gold prices from database
-async function getGoldPrices() {
+// Get ALL metal prices from database (gold, silver, platinum, palladium)
+async function getMetalPrices() {
   const now = Date.now();
   if (metalPricesCache && (now - metalPricesCacheTime) < METAL_CACHE_TTL) {
     return metalPricesCache;
@@ -217,26 +763,36 @@ async function getGoldPrices() {
   try {
     const { data, error } = await supabase
       .from('metal_prices')
-      .select('metal, price_gram_10k, price_gram_14k, price_gram_18k, price_gram_24k')
-      .eq('metal', 'Gold')
-      .single();
+      .select('metal, price_gram_10k, price_gram_14k, price_gram_18k, price_gram_24k');
 
-    if (error || !data) {
-      console.log('  ⚠️ Could not fetch gold prices');
+    if (error || !data || data.length === 0) {
+      console.log('  ⚠️ Could not fetch metal prices');
       return null;
     }
 
-    metalPricesCache = data;
+    // Convert to a map by metal name for easy access
+    const pricesMap = {};
+    data.forEach(row => {
+      pricesMap[row.metal] = row;
+    });
+
+    metalPricesCache = pricesMap;
     metalPricesCacheTime = now;
-    return data;
+    return pricesMap;
   } catch (err) {
-    console.log('  ⚠️ Error fetching gold prices:', err.message);
+    console.log('  ⚠️ Error fetching metal prices:', err.message);
     return null;
   }
 }
 
-// Calculate melt value based on karat, weight, and current gold price
-function calculateMeltValue(karat, weightG, goldPrices) {
+// Legacy function for backward compatibility
+async function getGoldPrices() {
+  const prices = await getMetalPrices();
+  return prices?.Gold || null;
+}
+
+// Calculate melt value for GOLD based on karat, weight, and current gold price
+function calculateGoldMeltValue(karat, weightG, goldPrices) {
   if (!karat || !weightG || !goldPrices) return null;
 
   const pricePerGram = {
@@ -250,6 +806,39 @@ function calculateMeltValue(karat, weightG, goldPrices) {
   if (!pricePerGram) return null;
 
   return weightG * pricePerGram;
+}
+
+// Calculate melt value for SILVER based on purity, weight, and current silver price
+// Common purities: 999 (fine silver), 925 (sterling), 900 (coin silver), 800 (European)
+function calculateSilverMeltValue(purity, weightG, silverPrices) {
+  if (!purity || !weightG || !silverPrices) return null;
+
+  // Silver uses 24k price as the base (pure silver)
+  const purePrice = silverPrices.price_gram_24k;
+  if (!purePrice) return null;
+
+  // Calculate based on purity percentage
+  const purityFraction = purity / 1000; // e.g., 925 -> 0.925
+  return weightG * purePrice * purityFraction;
+}
+
+// Calculate melt value for PLATINUM based on purity, weight, and current platinum price
+// Common purities: 950 (most jewelry), 900, 850
+function calculatePlatinumMeltValue(purity, weightG, platinumPrices) {
+  if (!purity || !weightG || !platinumPrices) return null;
+
+  // Platinum uses 24k price as the base (pure platinum)
+  const purePrice = platinumPrices.price_gram_24k;
+  if (!purePrice) return null;
+
+  // Calculate based on purity percentage
+  const purityFraction = purity / 1000; // e.g., 950 -> 0.95
+  return weightG * purePrice * purityFraction;
+}
+
+// Legacy function for backward compatibility
+function calculateMeltValue(karat, weightG, goldPrices) {
+  return calculateGoldMeltValue(karat, weightG, goldPrices);
 }
 
 // Costume/fashion jewelry keywords to always exclude
@@ -388,16 +977,23 @@ const healthServer = http.createServer((req, res) => {
   }
 });
 
-healthServer.listen(HEALTH_PORT, () => {
-  console.log(`Health check: http://localhost:${HEALTH_PORT}/health`);
-});
+// Only start health server and show banner if not in test mode
+const isTestMode = process.argv.includes('--test-shopping') ||
+                   process.argv.includes('--test-browse') ||
+                   process.argv.includes('--test-both');
 
-console.log('='.repeat(50));
-console.log('eBay Hunter Worker Starting...');
-console.log(`Poll interval: ${POLL_INTERVAL / 1000} seconds`);
-console.log(`Max concurrent tasks: ${MAX_CONCURRENT_TASKS}`);
-console.log(`Stagger delay: ${STAGGER_DELAY}ms between tasks`);
-console.log('='.repeat(50));
+if (!isTestMode) {
+  healthServer.listen(HEALTH_PORT, () => {
+    console.log(`Health check: http://localhost:${HEALTH_PORT}/health`);
+  });
+
+  console.log('='.repeat(50));
+  console.log('eBay Hunter Worker Starting...');
+  console.log(`Poll interval: ${POLL_INTERVAL / 1000} seconds`);
+  console.log(`Max concurrent tasks: ${MAX_CONCURRENT_TASKS}`);
+  console.log(`Stagger delay: ${STAGGER_DELAY}ms between tasks`);
+  console.log('='.repeat(50));
+}
 
 // Mark a key as rate-limited (local tracking with auto-reset)
 function markKeyRateLimited(appId, label) {
@@ -440,7 +1036,11 @@ async function getAllEbayCredentials() {
   return config.keys;
 }
 
+// Round-robin key rotation index
+let keyRotationIndex = 0;
+
 // Get eBay API credentials from Supabase settings
+// Uses round-robin rotation to spread load across all keys
 async function getEbayCredentials(excludeAppId = null) {
   const allKeys = await getAllEbayCredentials();
 
@@ -467,9 +1067,10 @@ async function getEbayCredentials(excludeAppId = null) {
     throw new Error('No available eBay API credentials');
   }
 
-  // Use random selection from available keys
-  const index = Math.floor(Math.random() * availableKeys.length);
-  return availableKeys[index];
+  // Use round-robin rotation to spread load across all keys
+  const selectedKey = availableKeys[keyRotationIndex % availableKeys.length];
+  keyRotationIndex = (keyRotationIndex + 1) % availableKeys.length;
+  return selectedKey;
 }
 
 // Get eBay OAuth token
@@ -526,6 +1127,11 @@ function buildSearchUrl(task, metalOverride = null) {
     keywords = `${metalOverride} ${keywords}`;
   } else if (filters.metal?.length > 0) {
     keywords = `${filters.metal[0]} ${keywords}`;
+  }
+  // Add model keywords (e.g., "Speedmaster", "Seamaster", "Black Bay")
+  if (filters.model_keywords?.length > 0) {
+    keywords += ` ${filters.model_keywords.join(' ')}`;
+    console.log(`  🏷️ Model keywords: ${filters.model_keywords.join(', ')}`);
   }
   if (filters.keywords) {
     keywords += ` ${filters.keywords}`;
@@ -595,48 +1201,141 @@ function buildSearchUrl(task, metalOverride = null) {
     }
   }
 
-  // Build aspect filters for jewelry-specific attributes
+  // Build aspect filters for item-specific attributes
   // NOTE: eBay's aspect_filter only works for ONE category at a time
   // When searching across multiple subcategories, aspect filtering only applies to the specified categoryId
   // This means aspect filtering is limited when searching across multiple categories
   const aspectFilters = [];
 
   // Use first subcategory for aspect filtering (limited effectiveness across multiple categories)
-  const aspectCategoryId = filters.subcategories?.[0] || filters.leafCategoryId || '164331';
+  // Default category depends on item type
+  const defaultAspectCategory = task.item_type === 'watch' ? '14324' : '164331';
+  const aspectCategoryId = filters.subcategories?.[0] || filters.leafCategoryId || defaultAspectCategory;
 
-  // Main Stone filter (e.g., "No Stone", "Diamond", etc.)
-  if (filters.main_stones?.length > 0) {
-    const stoneValues = filters.main_stones.join('|');
-    aspectFilters.push(`Main Stone:{${stoneValues}}`);
-    console.log(`  💎 Aspect filter - Main Stone: ${filters.main_stones.join(', ')}`);
+  // ============================================
+  // WATCH-SPECIFIC ASPECT FILTERS
+  // ============================================
+  if (task.item_type === 'watch') {
+    // Helper function to add aspect filter
+    const addWatchAspectFilter = (filterKey, aspectName, logIcon = '⌚') => {
+      if (filters[filterKey]?.length > 0) {
+        const values = filters[filterKey].join('|');
+        aspectFilters.push(`${aspectName}:{${values}}`);
+        console.log(`  ${logIcon} Aspect filter - ${aspectName}: ${filters[filterKey].join(', ')}`);
+      }
+    };
+
+    // Primary filters
+    addWatchAspectFilter('brands', 'Brand', '🏷️');
+    addWatchAspectFilter('movements', 'Movement', '⚙️');
+    addWatchAspectFilter('models', 'Model', '📋');
+    addWatchAspectFilter('departments', 'Department', '👤');
+    addWatchAspectFilter('styles', 'Style', '🎨');
+    addWatchAspectFilter('types', 'Type', '⌚');
+
+    // Case & Display
+    addWatchAspectFilter('case_materials', 'Case Material', '🔩');
+    addWatchAspectFilter('case_sizes', 'Case Size', '📐');
+    addWatchAspectFilter('case_colors', 'Case Color', '🎨');
+    addWatchAspectFilter('case_finishes', 'Case Finish', '✨');
+    addWatchAspectFilter('case_thicknesses', 'Case Thickness', '📏');
+    addWatchAspectFilter('watch_shapes', 'Watch Shape', '⬡');
+    addWatchAspectFilter('displays', 'Display', '🖥️');
+    addWatchAspectFilter('casebacks', 'Caseback', '🔙');
+
+    // Dial & Bezel
+    addWatchAspectFilter('dial_colors', 'Dial Color', '🎨');
+    addWatchAspectFilter('dial_patterns', 'Dial Pattern', '🔲');
+    addWatchAspectFilter('indices', 'Indices', '🔢');
+    addWatchAspectFilter('bezel_colors', 'Bezel Color', '🎨');
+    addWatchAspectFilter('bezel_types', 'Bezel Type', '⭕');
+
+    // Band/Strap
+    addWatchAspectFilter('band_materials', 'Band Material', '🔗');
+    addWatchAspectFilter('band_colors', 'Band Color', '🎨');
+    addWatchAspectFilter('band_types', 'Band Type', '⌚');
+    addWatchAspectFilter('band_widths', 'Band Width', '📏');
+    addWatchAspectFilter('lug_widths', 'Lug Width', '📏');
+    addWatchAspectFilter('closures', 'Closure', '🔒');
+    addWatchAspectFilter('max_wrist_sizes', 'Max. Wrist Size', '📏');
+
+    // Features & Specs
+    addWatchAspectFilter('features', 'Features', '⭐');
+    addWatchAspectFilter('water_resistances', 'Water Resistance', '💧');
+    addWatchAspectFilter('jewel_counts', 'Number of Jewels', '💎');
+    addWatchAspectFilter('handedness', 'Handedness', '✋');
+    addWatchAspectFilter('countries_of_origin', 'Country/Region of Manufacture', '🌍');
+
+    // Year & Condition
+    addWatchAspectFilter('years_manufactured', 'Year Manufactured', '📅');
+    addWatchAspectFilter('vintage', 'Vintage', '🕰️');
+    addWatchAspectFilter('conditions', 'Condition', '📦');
+    addWatchAspectFilter('handmade', 'Handmade', '🤲');
+
+    // Included Items & Documentation
+    addWatchAspectFilter('with_box', 'With Original Box/Packaging', '📦');
+    addWatchAspectFilter('with_papers', 'With Papers', '📄');
+    addWatchAspectFilter('with_manual', 'With Manual/Booklet', '📖');
+    addWatchAspectFilter('with_service_records', 'With Service Records', '🔧');
+    addWatchAspectFilter('seller_warranty', 'Seller Warranty', '🛡️');
+
+    // Legacy single-value filters (for backward compatibility)
+    if (!filters.movements?.length && filters.movement) {
+      aspectFilters.push(`Movement:{${filters.movement}}`);
+      console.log(`  ⚙️ Aspect filter - Movement: ${filters.movement}`);
+    }
+    if (!filters.case_materials?.length && filters.case_material) {
+      aspectFilters.push(`Case Material:{${filters.case_material}}`);
+      console.log(`  🔩 Aspect filter - Case Material: ${filters.case_material}`);
+    }
+    if (!filters.brands?.length && filters.brand) {
+      aspectFilters.push(`Brand:{${filters.brand}}`);
+      console.log(`  🏷️ Aspect filter - Brand: ${filters.brand}`);
+    }
+    if (filters.watch_type) {
+      aspectFilters.push(`Type:{${filters.watch_type}}`);
+      console.log(`  ⌚ Aspect filter - Type: ${filters.watch_type}`);
+    }
   }
 
-  // Metal Purity filter (e.g., "10k", "14k", "18k", "24k")
-  if (filters.metal_purity?.length > 0) {
-    const purityValues = filters.metal_purity.join('|');
-    aspectFilters.push(`Metal Purity:{${purityValues}}`);
-    console.log(`  ✨ Aspect filter - Metal Purity: ${filters.metal_purity.join(', ')}`);
-  }
+  // ============================================
+  // JEWELRY-SPECIFIC ASPECT FILTERS
+  // ============================================
+  if (task.item_type === 'jewelry') {
+    // Main Stone filter (e.g., "No Stone", "Diamond", etc.)
+    if (filters.main_stones?.length > 0) {
+      const stoneValues = filters.main_stones.join('|');
+      aspectFilters.push(`Main Stone:{${stoneValues}}`);
+      console.log(`  💎 Aspect filter - Main Stone: ${filters.main_stones.join(', ')}`);
+    }
 
-  // Brand filter
-  if (filters.brands?.length > 0) {
-    const brandValues = filters.brands.join('|');
-    aspectFilters.push(`Brand:{${brandValues}}`);
-    console.log(`  🏷️ Aspect filter - Brand: ${filters.brands.join(', ')}`);
-  }
+    // Metal Purity filter (e.g., "10k", "14k", "18k", "24k")
+    if (filters.metal_purity?.length > 0) {
+      const purityValues = filters.metal_purity.join('|');
+      aspectFilters.push(`Metal Purity:{${purityValues}}`);
+      console.log(`  ✨ Aspect filter - Metal Purity: ${filters.metal_purity.join(', ')}`);
+    }
 
-  // Era filter (Vintage, Antique, etc.)
-  if (filters.era?.length > 0) {
-    const eraValues = filters.era.join('|');
-    aspectFilters.push(`Era:{${eraValues}}`);
-    console.log(`  📅 Aspect filter - Era: ${filters.era.join(', ')}`);
-  }
+    // Brand filter
+    if (filters.brands?.length > 0) {
+      const brandValues = filters.brands.join('|');
+      aspectFilters.push(`Brand:{${brandValues}}`);
+      console.log(`  🏷️ Aspect filter - Brand: ${filters.brands.join(', ')}`);
+    }
 
-  // Setting Style filter
-  if (filters.setting_style?.length > 0) {
-    const settingValues = filters.setting_style.join('|');
-    aspectFilters.push(`Setting Style:{${settingValues}}`);
-    console.log(`  💍 Aspect filter - Setting Style: ${filters.setting_style.join(', ')}`);
+    // Era filter (Vintage, Antique, etc.)
+    if (filters.era?.length > 0) {
+      const eraValues = filters.era.join('|');
+      aspectFilters.push(`Era:{${eraValues}}`);
+      console.log(`  📅 Aspect filter - Era: ${filters.era.join(', ')}`);
+    }
+
+    // Setting Style filter
+    if (filters.setting_style?.length > 0) {
+      const settingValues = filters.setting_style.join('|');
+      aspectFilters.push(`Setting Style:{${settingValues}}`);
+      console.log(`  💍 Aspect filter - Setting Style: ${filters.setting_style.join(', ')}`);
+    }
   }
 
   // Add aspect_filter to params if we have any
@@ -654,16 +1353,21 @@ function buildSearchUrl(task, metalOverride = null) {
 }
 
 // Search eBay (single search with optional metal override)
-async function searchEbay(task, token, credentials, metalOverride = null) {
+// Now gets fresh credentials for each call (round-robin rotation)
+async function searchEbay(task, metalOverride = null) {
   // Check rate limit before making call
   if (!rateLimiter.canMakeCall()) {
     console.log('  ⚠️ Daily rate limit reached. Skipping search.');
     return [];
   }
 
+  // Get fresh credentials (round-robin rotation)
+  const credentials = await getEbayCredentials();
+  const token = await getEbayToken(credentials);
+
   const url = buildSearchUrl(task, metalOverride);
   const metalInfo = metalOverride ? ` [${metalOverride}]` : '';
-  console.log(`  🔍 Search${metalInfo}: ${url.substring(0, 150)}...`);
+  console.log(`  🔍 Search${metalInfo} [${credentials.label || 'Key'}]: ${url.substring(0, 120)}...`);
 
   const response = await fetch(url, {
     headers: {
@@ -692,23 +1396,24 @@ async function searchEbay(task, token, credentials, metalOverride = null) {
 }
 
 // Search eBay for all selected metals and combine results
-async function searchEbayAllMetals(task, token, credentials) {
+// Each search uses round-robin key rotation
+async function searchEbayAllMetals(task) {
   const filters = task.jewelry_filters || {};
   const metals = filters.metal || [];
 
   // If no metals selected or not a jewelry task, do a single search
   if (task.item_type !== 'jewelry' || metals.length <= 1) {
-    return await searchEbay(task, token, credentials);
+    return await searchEbay(task);
   }
 
   console.log(`  🔧 Searching for ${metals.length} metals: ${metals.join(', ')}`);
 
-  // Search for each metal type
+  // Search for each metal type (each search rotates to next API key)
   const allItems = [];
   const seenItemIds = new Set();
 
   for (const metal of metals) {
-    const items = await searchEbay(task, token, credentials, metal);
+    const items = await searchEbay(task, metal);
     console.log(`  📦 Found ${items.length} items for ${metal}`);
 
     // Add unique items only (deduplicate by itemId)
@@ -784,7 +1489,8 @@ function getCacheStats() {
 }
 
 // Fetch item details (including item specifics) from eBay - with caching
-async function fetchItemDetails(itemId, token, credentials) {
+// Now gets fresh credentials for each call (round-robin rotation)
+async function fetchItemDetails(itemId) {
   // Check cache first
   const cached = await getCachedItemDetails(itemId);
   if (cached) {
@@ -797,6 +1503,10 @@ async function fetchItemDetails(itemId, token, credentials) {
   if (!rateLimiter.canMakeCall()) {
     return null;
   }
+
+  // Get fresh credentials (round-robin rotation)
+  const credentials = await getEbayCredentials();
+  const token = await getEbayToken(credentials);
 
   const url = `https://api.ebay.com/buy/browse/v1/item/${itemId}`;
 
@@ -828,6 +1538,105 @@ async function fetchItemDetails(itemId, token, credentials) {
   await cacheItemDetails(itemId, itemDetails);
 
   return itemDetails;
+}
+
+// Fetch multiple item details in a single API call (up to 20 items)
+// Returns a Map of itemId -> itemDetails
+async function fetchItemDetailsBulk(itemIds) {
+  if (!itemIds || itemIds.length === 0) return new Map();
+
+  const results = new Map();
+  const uncachedIds = [];
+
+  // Check cache first for all items
+  for (const itemId of itemIds) {
+    const cached = await getCachedItemDetails(itemId);
+    if (cached) {
+      cacheStats.hits++;
+      results.set(itemId, cached);
+    } else {
+      uncachedIds.push(itemId);
+    }
+  }
+
+  // If all items were cached, return early
+  if (uncachedIds.length === 0) {
+    console.log(`    📦 Bulk fetch: All ${itemIds.length} items from cache`);
+    return results;
+  }
+
+  // Fetch uncached items in batches of 20 (eBay limit)
+  const BATCH_SIZE = 20;
+  const batches = [];
+  for (let i = 0; i < uncachedIds.length; i += BATCH_SIZE) {
+    batches.push(uncachedIds.slice(i, i + BATCH_SIZE));
+  }
+
+  console.log(`    📦 Bulk fetch: ${uncachedIds.length} items in ${batches.length} batch(es), ${results.size} from cache`);
+
+  for (const batch of batches) {
+    if (!rateLimiter.canMakeCall()) {
+      console.log(`    ⚠️ Rate limit reached, skipping batch`);
+      break;
+    }
+
+    try {
+      // Get fresh credentials (round-robin rotation)
+      const credentials = await getEbayCredentials();
+      const token = await getEbayToken(credentials);
+
+      // Build comma-separated item IDs for bulk request
+      const itemIdsParam = batch.join(',');
+      const url = `https://api.ebay.com/buy/browse/v1/item?item_ids=${encodeURIComponent(itemIdsParam)}`;
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      rateLimiter.recordCall();
+      logApiUsage(credentials.label || credentials.app_id, 'item_detail_bulk', 'browse/item/bulk');
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          console.log(`    ⚠️ Rate limited (429) during bulk fetch`);
+          break;
+        }
+        console.log(`    ⚠️ Bulk fetch failed: ${response.status}`);
+        continue;
+      }
+
+      const data = await response.json();
+
+      // Process returned items
+      if (data.items && Array.isArray(data.items)) {
+        for (const item of data.items) {
+          if (item.itemId) {
+            results.set(item.itemId, item);
+            // Cache for next time
+            await cacheItemDetails(item.itemId, item);
+            cacheStats.misses++;
+          }
+        }
+        console.log(`    ✅ Bulk batch returned ${data.items.length} items`);
+      }
+
+      // Handle any errors for specific items
+      if (data.errors && Array.isArray(data.errors)) {
+        for (const error of data.errors) {
+          console.log(`    ⚠️ Bulk fetch error for item: ${error.message || 'Unknown error'}`);
+        }
+      }
+
+    } catch (err) {
+      console.log(`    ⚠️ Bulk fetch error: ${err.message}`);
+    }
+  }
+
+  return results;
 }
 
 // Extract item specifics into a simple object
@@ -869,11 +1678,28 @@ function passesItemSpecificsFilter(specs, filters, aspectFiltersActive = {}) {
   const metal = specs['metal']?.toLowerCase() || '';
 
   // If base metal contains "plated", "filled", or non-gold metals, reject
-  const badMetals = ['plated', 'filled', 'steel', 'brass', 'bronze', 'copper', 'alloy', 'tone'];
+  const badMetals = ['plated', 'filled', 'steel', 'brass', 'bronze', 'copper', 'alloy'];
   for (const bad of badMetals) {
     if (baseMetal.includes(bad) || metal.includes(bad)) {
       return { pass: false, reason: `Base Metal/Metal contains "${bad}"` };
     }
+  }
+
+  // Check for "gold tone" / "goldtone" specifically (fake gold), but NOT "two-tone" or "tri-tone" (real gold)
+  const isFakeTone = (value) => {
+    if (!value) return false;
+    // Reject "gold tone", "goldtone", "silvertone" etc., but allow "two-tone", "tri-tone", "two tone"
+    return (value.includes('tone') &&
+            !value.includes('two-tone') &&
+            !value.includes('two tone') &&
+            !value.includes('tri-tone') &&
+            !value.includes('tri tone') &&
+            !value.includes('bicolor') &&
+            !value.includes('tricolor'));
+  };
+
+  if (isFakeTone(baseMetal) || isFakeTone(metal)) {
+    return { pass: false, reason: `Base Metal/Metal appears to be fake tone (not two-tone/tri-tone gold)` };
   }
 
   // Always check Main Stone in post-processing
@@ -1045,11 +1871,16 @@ function passesItemSpecificsFilter(specs, filters, aspectFiltersActive = {}) {
 
   // Check Weight (min/max in grams) with smart unit conversion
   // Check in order: specs → title → description
-  // Look for various weight field names eBay might use
+  // Look for various weight field names eBay might use (many sellers use different names)
   const weightSpec = specs['total weight'] || specs['item weight'] || specs['weight'] ||
                      specs['gram weight'] || specs['total gram weight'] || specs['metal weight(grams)'] ||
                      specs['total carat weight'] || specs['item weight (approx.)'] ||
-                     specs['approximate weight'] || specs['metal weight'] || '';
+                     specs['approximate weight'] || specs['metal weight'] ||
+                     specs['chain weight'] || specs['necklace weight'] || specs['ring weight'] ||
+                     specs['bracelet weight'] || specs['earring weight'] || specs['pendant weight'] ||
+                     specs['gold weight'] || specs['silver weight'] || specs['platinum weight'] ||
+                     specs['total metal weight'] || specs['net weight'] || specs['gross weight'] ||
+                     specs['jewelry weight'] || '';
 
   // Debug: log all spec keys that contain "weight" to help identify field names
   const weightKeys = Object.keys(specs).filter(k => k.includes('weight'));
@@ -1076,6 +1907,16 @@ function passesItemSpecificsFilter(specs, filters, aspectFiltersActive = {}) {
     if (itemWeight) {
       weightSource = `description`;
     }
+    // Debug: log if description exists but no weight found
+    if (!itemWeight && (filters.weight_min || filters.weight_max)) {
+      console.log(`    📝 Description exists (${cleanDesc.length} chars) but no weight parsed`);
+      // Log first 200 chars to help debug
+      if (cleanDesc.length > 0) {
+        console.log(`    📝 Description preview: "${cleanDesc.substring(0, 200).replace(/\s+/g, ' ')}..."`);
+      }
+    }
+  } else if (!itemWeight && !specs._description && (filters.weight_min || filters.weight_max)) {
+    console.log(`    📝 No description returned from API for weight extraction`);
   }
 
   if (itemWeight && itemWeight > 0) {
@@ -1096,7 +1937,8 @@ function getTableName(itemType) {
 }
 
 // Process a single task
-async function processTask(task, credentials) {
+// API keys are now rotated per-call, not per-task
+async function processTask(task) {
   // Reset cache stats for this task
   resetCacheStats();
 
@@ -1128,8 +1970,12 @@ async function processTask(task, credentials) {
     console.log(`  🚫 Auto-excluding costume jewelry (${COSTUME_JEWELRY_EXCLUSIONS.length} terms)`);
 
     // Log karat requirement status
-    if (REQUIRE_KARAT_MARKERS && filters.metal?.some(m => m.toLowerCase().includes('gold'))) {
-      console.log(`  ✅ Requiring karat markers (10k, 14k, 18k, etc.)`);
+    if (filters.metal?.some(m => m.toLowerCase().includes('gold'))) {
+      if (REQUIRE_KARAT_MARKERS) {
+        console.log(`  ✅ Requiring karat markers in TITLE (10k, 14k, 18k, etc.)`);
+      } else {
+        console.log(`  🔍 Checking karat in item specifics (not requiring in title)`);
+      }
     }
 
     // Auto-exclude metals not selected (if any metals are selected)
@@ -1148,8 +1994,8 @@ async function processTask(task, credentials) {
   }
 
   try {
-    const token = await getEbayToken(credentials);
-    const items = await searchEbayAllMetals(task, token, credentials);
+    // Each API call now gets its own credentials with round-robin rotation
+    const items = await searchEbayAllMetals(task);
 
     console.log(`  Found ${items.length} total items`);
 
@@ -1167,28 +2013,35 @@ async function processTask(task, credentials) {
 
     // Pre-fetch rejected item IDs to skip them (saves API calls)
     const { data: rejectedItems } = await supabase
-      .from('ebay_rejected_items')
-      .select('ebay_item_id')
+      .from('rejected_items')
+      .select('ebay_listing_id')
       .eq('task_id', task.id)
       .gt('expires_at', new Date().toISOString());
-    const rejectedItemIds = new Set((rejectedItems || []).map(r => r.ebay_item_id));
+    const rejectedItemIds = new Set((rejectedItems || []).map(r => r.ebay_listing_id));
+
+    // Log cache status
+    console.log(`  📋 Cache status: ${matchedItemIds.size} matched, ${rejectedItemIds.size} rejected (in cache)`);
 
     // Track skipped items for logging
     let skippedMatched = 0;
     let skippedRejected = 0;
+    let newRejections = 0; // Track items rejected this poll
     let detailFetchCount = 0;
     const maxDetailFetches = task.max_detail_fetches || 0; // 0 = unlimited
+
+    // Track processed item IDs for debugging (first 10)
+    const processedItemIds = [];
 
     if (maxDetailFetches > 0) {
       console.log(`  🔒 Max detail fetches per poll: ${maxDetailFetches}`);
     }
 
+    // ============================================
+    // PHASE 1: Filter items and collect candidates for detail fetching
+    // ============================================
+    const candidateItems = []; // Items that pass initial filters and need details
+
     for (const item of items) {
-      // Check if we've hit the detail fetch limit
-      if (maxDetailFetches > 0 && detailFetchCount >= maxDetailFetches) {
-        console.log(`  ⏹️ Reached max detail fetch limit (${maxDetailFetches}), stopping`);
-        break;
-      }
       // Skip if already matched (no need to re-process)
       if (matchedItemIds.has(item.itemId)) {
         skippedMatched++;
@@ -1200,6 +2053,7 @@ async function processTask(task, credentials) {
         skippedRejected++;
         continue;
       }
+
       // Extract price
       const price = parseFloat(item.price?.value || 0);
 
@@ -1239,12 +2093,50 @@ async function processTask(task, credentials) {
         }
       }
 
-      // For jewelry tasks, fetch item details and check item specifics
+      // This item passes initial filters - add to candidates
+      candidateItems.push({ item, price, titleLower });
+    }
+
+    console.log(`  📋 ${candidateItems.length} items passed initial filters (need details)`);
+
+    // ============================================
+    // PHASE 2: Bulk fetch item details for all candidates
+    // ============================================
+    let itemDetailsMap = new Map();
+
+    if (task.item_type === 'jewelry' && candidateItems.length > 0) {
+      // Apply max detail fetch limit
+      let itemsToFetch = candidateItems;
+      if (maxDetailFetches > 0 && candidateItems.length > maxDetailFetches) {
+        console.log(`  🔒 Limiting to ${maxDetailFetches} items (from ${candidateItems.length})`);
+        itemsToFetch = candidateItems.slice(0, maxDetailFetches);
+      }
+
+      const itemIds = itemsToFetch.map(c => c.item.itemId);
+      itemDetailsMap = await fetchItemDetailsBulk(itemIds);
+      detailFetchCount = itemIds.length; // Count all fetched items
+    }
+
+    // ============================================
+    // PHASE 3: Process each candidate with pre-fetched details
+    // ============================================
+    for (const { item, price, titleLower } of candidateItems) {
+      // Check if we've hit the detail fetch limit
+      if (maxDetailFetches > 0 && processedItemIds.length >= maxDetailFetches) {
+        console.log(`  ⏹️ Reached max detail fetch limit (${maxDetailFetches}), stopping`);
+        break;
+      }
+
+      // For jewelry tasks, use pre-fetched item details
       let itemDetails = null;
       let specs = {};
       if (task.item_type === 'jewelry') {
-        itemDetails = await fetchItemDetails(item.itemId, token, credentials);
-        detailFetchCount++; // Count this fetch (even if it fails)
+        itemDetails = itemDetailsMap.get(item.itemId);
+
+        // Track first 10 processed item IDs for debugging
+        if (processedItemIds.length < 10) {
+          processedItemIds.push(item.itemId);
+        }
         if (!itemDetails) {
           continue; // Skip if we couldn't fetch details
         }
@@ -1260,13 +2152,14 @@ async function processTask(task, credentials) {
 
           // Cache the rejection so we don't re-check this item
           try {
-            await supabase.from('ebay_rejected_items').upsert({
-              ebay_item_id: item.itemId,
+            await supabase.from('rejected_items').upsert({
               task_id: task.id,
+              ebay_listing_id: item.itemId,
               rejection_reason: specsCheck.reason,
               rejected_at: new Date().toISOString(),
-              expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days
-            }, { onConflict: 'ebay_item_id' });
+              expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() // 48 hours
+            }, { onConflict: 'task_id,ebay_listing_id' });
+            newRejections++;
           } catch (e) {
             // Don't let cache errors break the flow
           }
@@ -1304,19 +2197,128 @@ async function processTask(task, credentials) {
         status: 'new'
       };
 
+      // Variables for Slack notification (set in jewelry block)
+      let karat = null;
+      let weightG = null;
+      let meltValue = null;
+      let metalType = null;
+      let purity = null;
+
       // Add type-specific fields
       if (task.item_type === 'watch') {
-        match.case_material = 'Unknown';
-        match.band_material = 'Unknown';
-        match.movement = 'Unknown';
-        match.dial_colour = 'Unknown';
+        // Extract watch-specific details from item specifics
+        const caseMaterial = extractWatchCaseMaterial(item.title, specs);
+        const bandMaterial = extractWatchBandMaterial(item.title, specs);
+        const movement = extractWatchMovement(item.title, specs);
+        const dialColor = extractWatchDialColor(item.title, specs);
+        const watchYear = extractWatchYear(item.title, specs);
+        const watchBrand = extractWatchBrand(item.title, specs);
+        const watchModel = extractWatchModel(item.title, specs);
+
+        // Store extracted values
+        match.case_material = caseMaterial || 'Unknown';
+        match.band_material = bandMaterial || 'Unknown';
+        match.movement = movement || 'Unknown';
+        match.dial_colour = dialColor || 'Unknown';
+        if (watchYear) match.year_manufactured = watchYear;
+        if (watchBrand) match.brand = watchBrand;
+        if (watchModel) match.model = watchModel;
+
+        // Log extracted watch details
+        console.log(`    ⌚ Watch details: Brand=${watchBrand || '?'}, Movement=${movement || '?'}, Case=${caseMaterial || '?'}, Year=${watchYear || '?'}`);
+
+        // Year range filtering (post-processing)
+        const filters = task.watch_filters || {};
+        if (filters.year_from || filters.year_to) {
+          if (watchYear) {
+            const yearFrom = filters.year_from || 0;
+            const yearTo = filters.year_to || 9999;
+            if (watchYear < yearFrom || watchYear > yearTo) {
+              const reason = `Year ${watchYear} outside range ${yearFrom}-${yearTo}`;
+              console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+
+              // Cache the rejection
+              try {
+                await supabase.from('rejected_items').upsert({
+                  task_id: task.id,
+                  ebay_listing_id: item.itemId,
+                  rejection_reason: reason,
+                  expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+                }, { onConflict: 'task_id,ebay_listing_id' });
+              } catch (e) {
+                // Ignore cache errors
+              }
+              continue;
+            }
+          } else {
+            // If year filter is set but we couldn't extract year, log it but don't reject
+            console.log(`    ⚠️ Year filter set but couldn't extract year from: ${item.title.substring(0, 40)}...`);
+          }
+        }
+
+        // Case material post-filtering (if specified in filters but not matched by eBay API)
+        if (filters.case_material && caseMaterial) {
+          const filterMaterial = filters.case_material.toLowerCase();
+          const itemMaterial = caseMaterial.toLowerCase();
+          if (!itemMaterial.includes(filterMaterial) && !filterMaterial.includes(itemMaterial)) {
+            const reason = `Case material "${caseMaterial}" doesn't match filter "${filters.case_material}"`;
+            console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+
+            try {
+              await supabase.from('rejected_items').upsert({
+                task_id: task.id,
+                ebay_listing_id: item.itemId,
+                rejection_reason: reason,
+                expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+              }, { onConflict: 'task_id,ebay_listing_id' });
+            } catch (e) {
+              // Ignore cache errors
+            }
+            continue;
+          }
+        }
       } else if (task.item_type === 'jewelry') {
         match.metal_type = 'Unknown';
 
-        // Extract karat and weight from title and item specifics
-        const karat = extractKarat(item.title, specs);
-        const weightG = extractWeight(item.title, specs);
+        // Detect metal type (gold, silver, platinum, palladium)
+        const description = itemDetails?.description || '';
+        metalType = detectMetalType(item.title, specs);
+        weightG = extractWeight(item.title, specs, description);
 
+        // Extract purity based on metal type
+        if (metalType === 'gold') {
+          karat = extractKarat(item.title, specs);
+          purity = karat;
+          if (!karat) {
+            console.log(`    ⚠️ No karat found for gold - will save for manual review: ${item.title.substring(0, 40)}...`);
+          }
+        } else if (metalType === 'silver') {
+          purity = extractSilverPurity(item.title, specs);
+          console.log(`    🥈 Silver detected (purity: ${purity || 'unknown'}): ${item.title.substring(0, 40)}...`);
+        } else if (metalType === 'platinum') {
+          purity = extractPlatinumPurity(item.title, specs);
+          console.log(`    💎 Platinum detected (purity: ${purity || 'unknown'}): ${item.title.substring(0, 40)}...`);
+        } else if (metalType === 'palladium') {
+          purity = 950; // Default palladium purity
+          console.log(`    🔷 Palladium detected: ${item.title.substring(0, 40)}...`);
+        } else {
+          console.log(`    ⚠️ Unknown metal type - will save for manual review: ${item.title.substring(0, 40)}...`);
+        }
+
+        // Debug: log if we couldn't find weight
+        if (!weightG) {
+          console.log(`    ⚠️ No weight found for: ${item.title.substring(0, 50)}...`);
+          if (description) {
+            console.log(`    📝 Description available (${description.length} chars)`);
+          } else {
+            console.log(`    📝 No description from API`);
+          }
+        }
+
+        // Store extracted values in match
+        if (metalType) {
+          match.metal_type = metalType.charAt(0).toUpperCase() + metalType.slice(1); // Capitalize
+        }
         if (karat) {
           match.karat = karat;
         }
@@ -1324,16 +2326,52 @@ async function processTask(task, credentials) {
           match.weight_g = weightG;
         }
 
-        // Calculate melt value if we have karat and weight
-        if (karat && weightG) {
-          const goldPrices = await getGoldPrices();
-          if (goldPrices) {
-            const meltValue = calculateMeltValue(karat, weightG, goldPrices);
+        // Calculate melt value based on metal type
+        if (purity && weightG) {
+          const metalPrices = await getMetalPrices();
+          if (metalPrices) {
+            // Calculate melt value based on detected metal type
+            if (metalType === 'gold' && metalPrices.Gold) {
+              meltValue = calculateGoldMeltValue(karat, weightG, metalPrices.Gold);
+            } else if (metalType === 'silver' && metalPrices.Silver) {
+              meltValue = calculateSilverMeltValue(purity, weightG, metalPrices.Silver);
+            } else if (metalType === 'platinum' && metalPrices.Platinum) {
+              meltValue = calculatePlatinumMeltValue(purity, weightG, metalPrices.Platinum);
+            } else if (metalType === 'palladium' && metalPrices.Palladium) {
+              // Use platinum calculation logic for palladium (similar purity system)
+              meltValue = calculatePlatinumMeltValue(purity, weightG, metalPrices.Palladium);
+            }
+
             if (meltValue) {
               match.melt_value = meltValue;
               // Profit = melt value - (listed price + shipping)
               const totalCost = price + shippingCost;
               match.profit_scrap = meltValue - totalCost;
+
+              // Reject items where break-even is not more than 50% of cost
+              // This ensures you can recover at least 50% of your cost from melt value
+              const breakEven = meltValue * 0.97;
+              const profitMarginPct = ((breakEven - totalCost) / totalCost) * 100;
+              if (breakEven <= totalCost * 0.5) {
+                const reason = `Low margin ${profitMarginPct.toFixed(0)}% - break-even $${breakEven.toFixed(0)} <= 50% of cost $${totalCost.toFixed(0)}`;
+                console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+
+                // Cache the rejection so we don't re-fetch details for this item
+                try {
+                  await supabase.from('rejected_items').upsert({
+                    task_id: task.id,
+                    ebay_listing_id: item.itemId,
+                    rejection_reason: reason,
+                    rejected_at: new Date().toISOString(),
+                    expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() // 48 hours
+                  }, { onConflict: 'task_id,ebay_listing_id' });
+                  newRejections++;
+                } catch (e) {
+                  // Don't let cache errors break the flow
+                }
+
+                continue;
+              }
             }
           }
         }
@@ -1350,6 +2388,11 @@ async function processTask(task, credentials) {
       if (!error) {
         newMatches++;
         console.log(`  ✅ SAVED: $${price} (min=$${task.min_price || 'none'}) - ${item.title.substring(0, 50)}...`);
+
+        // Send Slack notification for jewelry matches
+        if (task.item_type === 'jewelry') {
+          await sendSlackNotification(match, item, karat, weightG, shippingCost, meltValue);
+        }
       } else if (error.code === '23505') {
         // Unique constraint violation - duplicate, just skip silently
         continue;
@@ -1367,29 +2410,35 @@ async function processTask(task, credentials) {
     console.log(`  Saved ${newMatches} new matches`);
 
     // Log skip stats
-    if (skippedMatched > 0 || skippedRejected > 0) {
+    if (skippedMatched > 0 || skippedRejected > 0 || newRejections > 0) {
       console.log(`  ⏭️ Skipped: ${skippedMatched} already matched, ${skippedRejected} previously rejected`);
+      if (newRejections > 0) {
+        console.log(`  🚫 Cached ${newRejections} new rejections (will skip for 48h)`);
+      }
     }
 
     // Log cache stats for jewelry tasks (where we fetch item details)
     if (task.item_type === 'jewelry') {
       const stats = getCacheStats();
       console.log(`  📦 Cache stats: ${stats.hits} hits, ${stats.misses} misses (${stats.hitRate}% hit rate)`);
+
+      // Log first 10 processed item IDs for debugging duplicate processing
+      if (processedItemIds.length > 0) {
+        console.log(`  🔍 First ${processedItemIds.length} items processed this poll:`);
+        processedItemIds.forEach((id, idx) => {
+          console.log(`      ${idx + 1}. ${id}`);
+        });
+        console.log(`  💡 If these IDs are the same each poll, the rejection cache is not working.`);
+        console.log(`  💡 If they're different each poll, the cache IS working and you're progressing through the list.`);
+      }
     }
 
   } catch (error) {
-    // Handle rate limiting specially - mark key and retry with different key
+    // Handle rate limiting specially - mark key so it's skipped in rotation
     if (error instanceof RateLimitError) {
       markKeyRateLimited(error.credentials.app_id, error.credentials.label);
-
-      // Try to get another key and retry once
-      try {
-        const newCredentials = await getEbayCredentials(error.credentials.app_id);
-        console.log(`  🔄 Retrying with different key: ${newCredentials.label || 'API Key'}`);
-        return await processTask(task, newCredentials);
-      } catch (retryError) {
-        console.error(`  ❌ Retry failed: ${retryError.message}`);
-      }
+      // Next API call will automatically use a different key (round-robin)
+      console.error(`  ⚠️ Rate limited, will use different key for next calls`);
     } else {
       console.error(`  Error: ${error.message}`);
     }
@@ -1400,12 +2449,13 @@ async function processTask(task, credentials) {
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Helper: process a batch of tasks with staggered starts
-async function processTaskBatch(tasks, credentials) {
+// API keys are rotated per-call automatically
+async function processTaskBatch(tasks) {
   const promises = tasks.map((task, index) => {
     return new Promise(async (resolve) => {
       // Stagger the start of each task
       await delay(index * STAGGER_DELAY);
-      await processTask(task, credentials);
+      await processTask(task);
       resolve();
     });
   });
@@ -1423,12 +2473,12 @@ async function cleanupExpiredCache() {
       .lt('expires_at', new Date().toISOString())
       .select('ebay_item_id');
 
-    // Clean up expired rejected items cache
+    // Clean up expired rejected items cache (new table)
     const { data: rejectedData } = await supabase
-      .from('ebay_rejected_items')
+      .from('rejected_items')
       .delete()
       .lt('expires_at', new Date().toISOString())
-      .select('ebay_item_id');
+      .select('ebay_listing_id');
 
     const cacheCount = cacheData?.length || 0;
     const rejectedCount = rejectedData?.length || 0;
@@ -1443,15 +2493,13 @@ async function cleanupExpiredCache() {
 
 // Main polling loop
 async function poll() {
+  const pollStartTime = Date.now();
   lastPollTime = new Date().toISOString();
   lastPollStatus = 'running';
 
   try {
     // Cleanup expired cache entries periodically
     await cleanupExpiredCache();
-
-    // Get eBay credentials
-    const credentials = await getEbayCredentials();
 
     // Fetch active tasks
     const { data: tasks, error } = await supabase
@@ -1469,9 +2517,17 @@ async function poll() {
       return;
     }
 
-    console.log(`\n[${new Date().toLocaleTimeString()}] Processing ${tasks.length} active task(s) (staggered parallel)...`);
+    // Log available API keys count
+    try {
+      const allKeys = await getAllEbayCredentials();
+      const availableKeys = allKeys.filter(k => !isKeyRateLimited(k.app_id) && k.status !== 'rate_limited' && k.status !== 'error');
+      console.log(`\n[${new Date().toLocaleTimeString()}] Processing ${tasks.length} active task(s) with ${availableKeys.length}/${allKeys.length} API keys available (round-robin)...`);
+    } catch (e) {
+      console.log(`\n[${new Date().toLocaleTimeString()}] Processing ${tasks.length} active task(s)...`);
+    }
 
     // Process tasks in batches with staggered parallel execution
+    // API keys are rotated per-call automatically
     for (let i = 0; i < tasks.length; i += MAX_CONCURRENT_TASKS) {
       const batch = tasks.slice(i, i + MAX_CONCURRENT_TASKS);
       const batchNum = Math.floor(i / MAX_CONCURRENT_TASKS) + 1;
@@ -1481,13 +2537,22 @@ async function poll() {
         console.log(`\n  Batch ${batchNum}/${totalBatches} (${batch.length} tasks):`);
       }
 
-      await processTaskBatch(batch, credentials);
+      await processTaskBatch(batch);
     }
 
     lastPollStatus = 'success';
   } catch (error) {
     console.error('Poll error:', error.message);
     lastPollStatus = `error: ${error.message}`;
+  } finally {
+    // Log performance and memory after each poll
+    const pollDuration = Date.now() - pollStartTime;
+    logPollPerformance(pollDuration);
+
+    // Log memory every 10 polls
+    if (pollCycleCount % 10 === 0) {
+      logMemoryStats(`After Poll #${pollCycleCount}`);
+    }
   }
 }
 
@@ -1525,8 +2590,25 @@ async function shutdown(signal) {
   console.log('Waiting for current operations to complete...');
   await new Promise(resolve => setTimeout(resolve, 2000));
 
+  // Log final performance summary
+  console.log(`\n${'─'.repeat(50)}`);
+  console.log('📈 PERFORMANCE SUMMARY');
+  console.log(`${'─'.repeat(50)}`);
+  console.log(`Total poll cycles: ${pollCycleCount}`);
+  if (pollCycleCount > 0) {
+    const avgTime = totalPollTime / pollCycleCount;
+    console.log(`Poll time - Avg: ${avgTime.toFixed(0)}ms | Min: ${minPollTime.toFixed(0)}ms | Max: ${maxPollTime.toFixed(0)}ms`);
+    console.log(`Total poll time: ${(totalPollTime / 1000).toFixed(1)}s`);
+  }
+  logMemoryStats('Final');
+  console.log(`${'─'.repeat(50)}`);
+
   console.log('Worker stopped.');
   console.log('='.repeat(50));
+
+  // Close log file stream
+  logStream.end();
+
   process.exit(0);
 }
 
@@ -1538,4 +2620,182 @@ process.on('uncaughtException', (err) => {
   shutdown('uncaughtException');
 });
 
-start();
+// ============================================
+// Browse API Test Function (for comparison)
+// ============================================
+async function testBrowseApiDescription(itemId) {
+  console.log(`\n🧪 Testing Browse API getItem for item: ${itemId}`);
+
+  try {
+    const credentials = await getEbayCredentials();
+    console.log(`   Using credentials: ${credentials.label || credentials.app_id}`);
+
+    const token = await getEbayToken(credentials);
+    if (!token) {
+      console.log('❌ Failed to get OAuth token');
+      return null;
+    }
+
+    const url = `https://api.ebay.com/buy/browse/v1/item/v1|${itemId}|0`;
+
+    console.log(`📡 Calling Browse API...`);
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      console.log(`❌ Browse API error: ${response.status}`);
+      const text = await response.text();
+      console.log(`Response: ${text.substring(0, 500)}`);
+      return null;
+    }
+
+    const item = await response.json();
+
+    console.log(`\n✅ SUCCESS! Got item data:`);
+    console.log(`   Title: ${item.title}`);
+    console.log(`   Price: $${item.price?.value}`);
+
+    // Check for description
+    if (item.description) {
+      const cleanDesc = item.description.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      console.log(`   Description length: ${item.description.length} chars`);
+      console.log(`   Description preview: "${cleanDesc.substring(0, 300)}..."`);
+
+      // Try to find weight
+      const weightMatch = cleanDesc.match(/(?:weight|weighs|wt)[:\s]+(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i) ||
+                          cleanDesc.match(/(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i);
+      if (weightMatch) {
+        console.log(`\n   🎯 FOUND WEIGHT: ${weightMatch[1]} grams`);
+      } else {
+        console.log(`\n   ⚠️ No weight pattern found in description`);
+      }
+    } else {
+      console.log(`   ❌ No description field returned`);
+    }
+
+    // Check item specifics
+    if (item.localizedAspects) {
+      console.log(`\n   Item Specifics (localizedAspects):`);
+      for (const spec of item.localizedAspects) {
+        console.log(`     - ${spec.name}: ${spec.value}`);
+      }
+    }
+
+    // Show all top-level keys to see what's available
+    console.log(`\n   Available fields: ${Object.keys(item).join(', ')}`);
+
+    return item;
+  } catch (error) {
+    console.log(`❌ Error: ${error.message}`);
+    return null;
+  }
+}
+
+// ============================================
+// Shopping API Test Function
+// ============================================
+async function testShoppingApiDescription(itemId) {
+  console.log(`\n🧪 Testing Shopping API GetSingleItem for item: ${itemId}`);
+
+  try {
+    // Get OAuth token (same as Browse API)
+    const credentials = await getEbayCredentials();
+    console.log(`   Using credentials: ${credentials.label || credentials.app_id}`);
+
+    const token = await getEbayToken(credentials);
+    if (!token) {
+      console.log('❌ Failed to get OAuth token');
+      return null;
+    }
+
+    const url = `https://open.api.ebay.com/shopping?callname=GetSingleItem&version=967&ItemID=${itemId}&IncludeSelector=Description,ItemSpecifics,Details&responseencoding=JSON`;
+
+    console.log(`📡 Calling Shopping API...`);
+
+    const response = await fetch(url, {
+      headers: {
+        'X-EBAY-API-IAF-TOKEN': token,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      console.log(`❌ Shopping API error: ${response.status}`);
+      const text = await response.text();
+      console.log(`Response: ${text.substring(0, 500)}`);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data.Ack === 'Failure') {
+      console.log(`❌ API returned failure:`, data.Errors);
+      return null;
+    }
+
+    const item = data.Item;
+    console.log(`\n✅ SUCCESS! Got item data:`);
+    console.log(`   Title: ${item.Title}`);
+    console.log(`   Price: $${item.ConvertedCurrentPrice?.Value || item.CurrentPrice?.Value}`);
+
+    // Check for description
+    if (item.Description) {
+      const cleanDesc = item.Description.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      console.log(`   Description length: ${item.Description.length} chars`);
+      console.log(`   Description preview: "${cleanDesc.substring(0, 300)}..."`);
+
+      // Try to find weight in description
+      const weightMatch = cleanDesc.match(/(?:weight|weighs|wt)[:\s]+(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i) ||
+                          cleanDesc.match(/(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i);
+      if (weightMatch) {
+        console.log(`\n   🎯 FOUND WEIGHT: ${weightMatch[1]} grams`);
+      } else {
+        console.log(`\n   ⚠️ No weight pattern found in description`);
+      }
+    } else {
+      console.log(`   ❌ No description returned`);
+    }
+
+    // Check item specifics
+    if (item.ItemSpecifics?.NameValueList) {
+      console.log(`\n   Item Specifics:`);
+      for (const spec of item.ItemSpecifics.NameValueList) {
+        console.log(`     - ${spec.Name}: ${spec.Value}`);
+      }
+    }
+
+    return data;
+  } catch (error) {
+    console.log(`❌ Error: ${error.message}`);
+    return null;
+  }
+}
+
+// Run test if called with test flags, otherwise start worker
+if (process.argv.includes('--test-shopping')) {
+  const itemId = process.argv[process.argv.indexOf('--test-shopping') + 1] || '397097599947';
+  testShoppingApiDescription(itemId).then(() => process.exit(0));
+} else if (process.argv.includes('--test-browse')) {
+  const itemId = process.argv[process.argv.indexOf('--test-browse') + 1] || '397097599947';
+  testBrowseApiDescription(itemId).then(() => process.exit(0));
+} else if (process.argv.includes('--test-both')) {
+  const itemId = process.argv[process.argv.indexOf('--test-both') + 1] || '397097599947';
+  (async () => {
+    console.log('='.repeat(50));
+    console.log('COMPARING BROWSE API vs SHOPPING API');
+    console.log('='.repeat(50));
+    await testBrowseApiDescription(itemId);
+    console.log('\n' + '-'.repeat(50) + '\n');
+    await testShoppingApiDescription(itemId);
+    console.log('\n' + '='.repeat(50));
+    process.exit(0);
+  })();
+} else {
+  start();
+}

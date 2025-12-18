@@ -127,10 +127,10 @@ const fetchMetalPrice = async (symbol: string, name: string) => {
 
 const storePricesInDatabase = async (prices: any[]) => {
   try {
-    // Clear existing prices
+    // Clear existing current prices
     await supabase.from('metal_prices').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
-    // Insert new prices
+    // Insert new current prices
     const dbPrices = prices.map(price => ({
       metal: price.metal,
       symbol: price.symbol,
@@ -154,8 +154,55 @@ const storePricesInDatabase = async (prices: any[]) => {
     } else {
       console.log('Successfully stored prices in database');
     }
+
+    // Also store in price history for charting
+    await storePriceHistory(prices);
+
   } catch (error) {
     console.error('Error in storePricesInDatabase:', error);
+  }
+};
+
+// Store prices in history table for charting
+const storePriceHistory = async (prices: any[]) => {
+  try {
+    // Check if we already have a record for today (to avoid duplicates)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const { data: existing } = await supabase
+      .from('metal_price_history')
+      .select('id')
+      .gte('recorded_at', today.toISOString())
+      .limit(1);
+
+    // Only store once per day to avoid bloating the table
+    if (existing && existing.length > 0) {
+      console.log('Price history already recorded for today, skipping');
+      return;
+    }
+
+    const historyRecords = prices.map(price => ({
+      metal: price.metal,
+      symbol: price.symbol,
+      price: price.price,
+      price_gram_24k: price.priceGram24k,
+      price_gram_18k: price.priceGram18k,
+      price_gram_14k: price.priceGram14k,
+      price_gram_10k: price.priceGram10k,
+      currency: price.currency,
+      source: 'swissquote'
+    }));
+
+    const { error } = await supabase.from('metal_price_history').insert(historyRecords);
+
+    if (error) {
+      console.error('Error storing price history:', error);
+    } else {
+      console.log('Successfully stored price history');
+    }
+  } catch (error) {
+    console.error('Error in storePriceHistory:', error);
   }
 };
 

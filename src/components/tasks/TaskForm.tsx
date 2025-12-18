@@ -43,7 +43,27 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   const [minPrice, setMinPrice] = useState('');
   const [pollInterval, setPollInterval] = useState('300');
   const [minSellerFeedback, setMinSellerFeedback] = useState('0');
-  const [excludeKeywords, setExcludeKeywords] = useState('');
+  const [excludeKeywords, setExcludeKeywords] = useState<string[]>([]);
+  const [customExcludeKeyword, setCustomExcludeKeyword] = useState('');
+
+  // Suggested exclude keywords for filtering out non-genuine items
+  const suggestedExcludeKeywords = [
+    { value: 'gold filled', label: 'Gold Filled', description: 'Not solid gold' },
+    { value: 'plated', label: 'Plated', description: 'Surface coating only' },
+    { value: 'vermeil', label: 'Vermeil', description: 'Gold over silver' },
+    { value: 'overlay', label: 'Overlay', description: 'Thin gold layer' },
+    { value: 'bonded', label: 'Bonded', description: 'Gold bonded to base metal' },
+    { value: 'clad', label: 'Clad', description: 'Gold cladding' },
+    { value: 'costume', label: 'Costume', description: 'Fashion jewelry' },
+    { value: 'fashion', label: 'Fashion', description: 'Not fine jewelry' },
+    { value: 'fake', label: 'Fake', description: 'Imitation' },
+    { value: 'faux', label: 'Faux', description: 'Imitation' },
+    { value: 'broken', label: 'Broken', description: 'Damaged items' },
+    { value: 'repair', label: 'Repair', description: 'Needs repair' },
+    { value: 'david yurman', label: 'David Yurman', description: 'Designer premium' },
+    { value: 'cartier', label: 'Cartier', description: 'Designer premium' },
+    { value: 'tiffany', label: 'Tiffany', description: 'Designer premium' },
+  ];
   const [maxDetailFetches, setMaxDetailFetches] = useState('50');
 
   // Expanded listing format options
@@ -83,7 +103,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setMinPrice(editingTask.min_price?.toString() || '');
       setPollInterval(editingTask.poll_interval?.toString() || '300');
       setMinSellerFeedback(editingTask.min_seller_feedback?.toString() || '0');
-      setExcludeKeywords(editingTask.exclude_keywords?.join(', ') || '');
+      setExcludeKeywords(editingTask.exclude_keywords || []);
       setListingFormats(editingTask.listing_format || ['Fixed Price (BIN)', 'Auction']);
       setMaxDetailFetches(editingTask.max_detail_fetches?.toString() || '50');
       
@@ -192,7 +212,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         poll_interval: intervalNum,
         listing_format: listingFormats,
         min_seller_feedback: minSellerFeedback ? parseInt(minSellerFeedback) : 0,
-        exclude_keywords: excludeKeywords ? excludeKeywords.split(',').map(k => k.trim()).filter(k => k) : [],
+        exclude_keywords: excludeKeywords,
         max_detail_fetches: maxDetailFetches ? parseInt(maxDetailFetches) : 50,
         watch_filters: itemType === 'watch' ? cleanWatchFilters : undefined,
         jewelry_filters: itemType === 'jewelry' ? cleanJewelryFilters : undefined,
@@ -397,17 +417,94 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="excludeKeywords">Exclude Keywords</Label>
-              <Input
-                id="excludeKeywords"
-                value={excludeKeywords}
-                onChange={(e) => setExcludeKeywords(e.target.value)}
-                placeholder="broken, damaged, repair"
-              />
-              <p className="text-xs text-gray-500">
-                Comma-separated keywords to exclude from results
+            <div className="space-y-2 col-span-2">
+              <Label>Exclude Keywords</Label>
+              <p className="text-xs text-gray-500 mb-2">
+                Select keywords to exclude from search results
               </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                {suggestedExcludeKeywords.map((keyword) => (
+                  <div key={keyword.value} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`exclude-${keyword.value}`}
+                      checked={excludeKeywords.includes(keyword.value)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setExcludeKeywords([...excludeKeywords, keyword.value]);
+                        } else {
+                          setExcludeKeywords(excludeKeywords.filter(k => k !== keyword.value));
+                        }
+                      }}
+                    />
+                    <label
+                      htmlFor={`exclude-${keyword.value}`}
+                      className="text-sm cursor-pointer"
+                      title={keyword.description}
+                    >
+                      {keyword.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+
+              {/* Custom keyword input */}
+              <div className="flex gap-2 mt-3">
+                <Input
+                  value={customExcludeKeyword}
+                  onChange={(e) => setCustomExcludeKeyword(e.target.value)}
+                  placeholder="Add custom keyword..."
+                  className="flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customExcludeKeyword.trim()) {
+                      e.preventDefault();
+                      const keyword = customExcludeKeyword.trim().toLowerCase();
+                      if (!excludeKeywords.includes(keyword)) {
+                        setExcludeKeywords([...excludeKeywords, keyword]);
+                      }
+                      setCustomExcludeKeyword('');
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (customExcludeKeyword.trim()) {
+                      const keyword = customExcludeKeyword.trim().toLowerCase();
+                      if (!excludeKeywords.includes(keyword)) {
+                        setExcludeKeywords([...excludeKeywords, keyword]);
+                      }
+                      setCustomExcludeKeyword('');
+                    }
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+
+              {/* Show selected custom keywords (not in suggested list) */}
+              {excludeKeywords.filter(k => !suggestedExcludeKeywords.some(s => s.value === k)).length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {excludeKeywords
+                    .filter(k => !suggestedExcludeKeywords.some(s => s.value === k))
+                    .map(keyword => (
+                      <span
+                        key={keyword}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-sm"
+                      >
+                        {keyword}
+                        <button
+                          type="button"
+                          onClick={() => setExcludeKeywords(excludeKeywords.filter(k => k !== keyword))}
+                          className="text-gray-500 hover:text-red-500"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
 

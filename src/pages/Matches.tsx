@@ -1,15 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useMatches, type Match } from '@/hooks/useMatches';
-import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle } from 'lucide-react';
+import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle, XCircle, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { toast } from 'sonner';
+import { MatchActions, type MatchStatus } from '@/components/matches/MatchActions';
+import { MatchDetailsPanel } from '@/components/matches/MatchDetailsPanel';
+import { useTasks } from '@/hooks/useTasks';
+
+const ITEMS_PER_PAGE_OPTIONS = [25, 50, 100, 200];
 
 const Matches = () => {
   const { taskGroups, loading, totalCount, updateMatch, refetch } = useMatches();
+  const { deleteTask } = useTasks();
   const [activeTaskId, setActiveTaskId] = useState<string>('');
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(50);
+
+  const handleDeleteTask = async (taskId: string, taskName: string) => {
+    if (confirm(`Are you sure you want to delete "${taskName}"? This will also delete all matches and remove its automatic schedule.`)) {
+      try {
+        await deleteTask(taskId);
+        toast.success('Task deleted successfully');
+        // Switch to another task if the deleted one was active
+        if (activeTaskId === taskId) {
+          const remaining = taskGroups.filter(g => g.task.id !== taskId);
+          setActiveTaskId(remaining[0]?.task.id || '');
+        }
+        refetch();
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to delete task');
+      }
+    }
+  };
 
   // Set default active task to first task with matches, or first task
   React.useEffect(() => {
@@ -19,12 +47,46 @@ const Matches = () => {
     }
   }, [taskGroups, activeTaskId]);
 
+  // Reset to page 1 when switching tasks
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTaskId]);
+
+  // Get active group and paginate matches
+  const activeGroup = useMemo(() => {
+    return taskGroups.find(g => g.task.id === activeTaskId);
+  }, [taskGroups, activeTaskId]);
+
+  const paginatedMatches = useMemo(() => {
+    if (!activeGroup) return [];
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return activeGroup.matches.slice(startIndex, endIndex);
+  }, [activeGroup, currentPage, itemsPerPage]);
+
+  const totalPages = useMemo(() => {
+    if (!activeGroup) return 1;
+    return Math.ceil(activeGroup.matches.length / itemsPerPage);
+  }, [activeGroup, itemsPerPage]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+    // Scroll to top of table
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleItemsPerPageChange = (value: string) => {
+    setItemsPerPage(parseInt(value));
+    setCurrentPage(1); // Reset to first page when changing items per page
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'new': return <Eye className="h-4 w-4" />;
       case 'purchased': return <ShoppingCart className="h-4 w-4" />;
       case 'reviewed': return <RotateCcw className="h-4 w-4" />;
       case 'offered': return <Package className="h-4 w-4" />;
+      case 'passed': return <XCircle className="h-4 w-4" />;
       default: return <Eye className="h-4 w-4" />;
     }
   };
@@ -35,8 +97,21 @@ const Matches = () => {
       case 'purchased': return 'bg-green-100 text-green-800';
       case 'reviewed': return 'bg-yellow-100 text-yellow-800';
       case 'offered': return 'bg-purple-100 text-purple-800';
+      case 'passed': return 'bg-gray-100 text-gray-600';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const toggleRowExpansion = (matchId: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(matchId)) {
+        next.delete(matchId);
+      } else {
+        next.add(matchId);
+      }
+      return next;
+    });
   };
 
   const getItemTypeIcon = (itemType: string) => {
@@ -62,11 +137,48 @@ const Matches = () => {
     }
   };
 
-  const handleStatusUpdate = async (match: Match, newStatus: string, itemType: string) => {
+  const handleStatusUpdate = async (
+    match: Match,
+    newStatus: MatchStatus,
+    itemType: string,
+    offerAmount?: number
+  ) => {
     try {
-      await updateMatch(match.id, itemType, { status: newStatus as any });
+      const updates: any = { status: newStatus };
+
+      // If offer amount provided, store it in the next available offer field
+      if (offerAmount && (newStatus === 'offered' || newStatus === 'purchased')) {
+        if (!match.offer1) updates.offer1 = offerAmount;
+        else if (!match.offer2) updates.offer2 = offerAmount;
+        else if (!match.offer3) updates.offer3 = offerAmount;
+        else if (!match.offer4) updates.offer4 = offerAmount;
+        else updates.offer5 = offerAmount;
+      }
+
+      await updateMatch(match.id, itemType, updates);
+
+      const statusMessages: Record<MatchStatus, string> = {
+        new: 'Reverted to new',
+        reviewed: 'Marked as reviewed',
+        offered: offerAmount ? `Offer of $${offerAmount.toFixed(2)} recorded` : 'Marked as offered',
+        purchased: offerAmount ? `Purchased for $${offerAmount.toFixed(2)}` : 'Marked as purchased',
+        passed: 'Marked as passed',
+      };
+
+      toast.success(statusMessages[newStatus]);
     } catch (error) {
       console.error('Failed to update match status:', error);
+      toast.error('Failed to update status');
+    }
+  };
+
+  const handleToggleChange = async (match: Match, itemType: string, field: string, value: boolean) => {
+    try {
+      await updateMatch(match.id, itemType, { [field]: value } as any);
+      toast.success(`${field.replace('_toggle', '').replace('_', ' ')} ${value ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      console.error('Failed to update toggle:', error);
+      toast.error('Failed to update');
     }
   };
 
@@ -100,82 +212,122 @@ const Matches = () => {
             const karat = 'karat' in match ? match.karat : undefined;
             const weightG = 'weight_g' in match ? match.weight_g : undefined;
 
+            const isExpanded = expandedRows.has(match.id);
+
             return (
-              <TableRow key={match.id} className="hover:bg-gray-50">
-                <TableCell>
-                  {priority ? (
-                    <Badge variant="outline" className={`${priority.color} flex items-center gap-1 text-xs whitespace-nowrap`}>
-                      {priority.icon}
-                      {priority.level}
-                    </Badge>
-                  ) : (
-                    <span className="text-gray-400 text-xs">N/A</span>
-                  )}
-                </TableCell>
-                <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
-                <TableCell>
-                  <div className="max-w-[300px]">
-                    {match.ebay_url ? (
-                      <a
-                        href={match.ebay_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium truncate block text-blue-600 hover:text-blue-800 hover:underline"
-                        title={match.ebay_title}
-                      >
-                        {match.ebay_title}
-                      </a>
+              <React.Fragment key={match.id}>
+                <TableRow className={`hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}>
+                  <TableCell>
+                    {priority ? (
+                      <Badge variant="outline" className={`${priority.color} flex items-center gap-1 text-xs whitespace-nowrap`}>
+                        {priority.icon}
+                        {priority.level}
+                      </Badge>
                     ) : (
-                      <p className="text-sm font-medium truncate" title={match.ebay_title}>
-                        {match.ebay_title}
-                      </p>
+                      <span className="text-gray-400 text-xs">N/A</span>
                     )}
-                    <p className="text-xs text-gray-500">
-                      {new Date(match.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                </TableCell>
-                <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
-                <TableCell>{weightG ? `${weightG.toFixed(1)}g` : '-'}</TableCell>
-                <TableCell>
-                  <div className="font-semibold">${totalCost.toLocaleString()}</div>
-                  {shippingCost > 0 && (
-                    <div className="text-xs text-gray-500">
-                      ${match.listed_price?.toLocaleString()} + ${shippingCost.toLocaleString()} ship
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
+                  <TableCell>
+                    <div className="max-w-[300px]">
+                      {match.ebay_url ? (
+                        <a
+                          href={match.ebay_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium truncate block text-blue-600 hover:text-blue-800 hover:underline"
+                          title={match.ebay_title}
+                        >
+                          {match.ebay_title}
+                        </a>
+                      ) : (
+                        <p className="text-sm font-medium truncate" title={match.ebay_title}>
+                          {match.ebay_title}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        Scanned: {new Date(match.found_at).toLocaleString()}
+                      </p>
                     </div>
-                  )}
-                  {shippingCost === 0 && (
-                    <div className="text-xs text-green-600">Free shipping</div>
-                  )}
-                </TableCell>
-                <TableCell className="text-green-700 font-semibold">
-                  {breakEven ? `$${breakEven.toFixed(0)}` : '-'}
-                </TableCell>
-                <TableCell className="text-blue-700 font-semibold">
-                  {suggestedOffer ? `$${suggestedOffer.toFixed(0)}` : '-'}
-                </TableCell>
-                <TableCell className={`font-semibold ${profit && profit > 0 ? 'text-green-700' : 'text-red-700'}`}>
-                  {profit ? `$${profit.toFixed(0)}` : '-'}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
-                    {match.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {match.status === 'new' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 w-8 p-0"
-                      onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
-                      title="Mark Purchased"
-                    >
-                      <ShoppingCart className="h-4 w-4" />
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
+                  </TableCell>
+                  <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
+                  <TableCell>{weightG ? `${weightG.toFixed(1)}g` : '-'}</TableCell>
+                  <TableCell>
+                    <div className="font-semibold">${totalCost.toLocaleString()}</div>
+                    {shippingCost > 0 && (
+                      <div className="text-xs text-gray-500">
+                        ${match.listed_price?.toLocaleString()} + ${shippingCost.toLocaleString()} ship
+                      </div>
+                    )}
+                    {shippingCost === 0 && (
+                      <div className="text-xs text-green-600">Free shipping</div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-green-700 font-semibold">
+                    {breakEven ? `$${breakEven.toFixed(0)}` : '-'}
+                  </TableCell>
+                  <TableCell className="text-blue-700 font-semibold">
+                    {suggestedOffer ? `$${suggestedOffer.toFixed(0)}` : '-'}
+                  </TableCell>
+                  <TableCell className={`font-semibold ${profit && profit > 0 ? 'text-green-700' : 'text-red-700'}`}>
+                    {profit ? (
+                      <div>
+                        <div>${profit.toFixed(0)}</div>
+                        <div className="text-xs opacity-75">
+                          {totalCost > 0 ? `${((profit / totalCost) * 100).toFixed(0)}%` : '-'}
+                        </div>
+                      </div>
+                    ) : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
+                      {match.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <MatchActions
+                      matchId={match.id}
+                      currentStatus={match.status}
+                      itemType={itemType}
+                      suggestedOffer={suggestedOffer ?? undefined}
+                      currentOffers={{
+                        offer1: match.offer1,
+                        offer2: match.offer2,
+                        offer3: match.offer3,
+                        offer4: match.offer4,
+                        offer5: match.offer5,
+                      }}
+                      onStatusChange={(newStatus, offerAmount) =>
+                        handleStatusUpdate(match, newStatus, itemType, offerAmount)
+                      }
+                      onExpandDetails={() => toggleRowExpansion(match.id)}
+                    />
+                  </TableCell>
+                </TableRow>
+                {isExpanded && (
+                  <MatchDetailsPanel
+                    matchId={match.id}
+                    offers={{
+                      offer1: match.offer1,
+                      offer2: match.offer2,
+                      offer3: match.offer3,
+                      offer4: match.offer4,
+                      offer5: match.offer5,
+                    }}
+                    toggles={{
+                      purchased_toggle: match.purchased_toggle,
+                      arrived_toggle: match.arrived_toggle,
+                      return_toggle: match.return_toggle,
+                      shipped_back_toggle: match.shipped_back_toggle,
+                      refunded_toggle: match.refunded_toggle,
+                    }}
+                    onToggleChange={(field, value) =>
+                      handleToggleChange(match, itemType, field, value)
+                    }
+                    colSpan={11}
+                  />
+                )}
+              </React.Fragment>
             );
           })}
         </TableBody>
@@ -198,58 +350,92 @@ const Matches = () => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {matches.map((match) => (
-            <TableRow key={match.id} className="hover:bg-gray-50">
-              <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
-              <TableCell>
-                <div>
-                  {match.ebay_url ? (
-                    <a
-                      href={match.ebay_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium truncate max-w-[350px] block text-blue-600 hover:text-blue-800 hover:underline"
-                      title={match.ebay_title}
-                    >
-                      {match.ebay_title}
-                    </a>
-                  ) : (
-                    <p className="text-sm font-medium truncate max-w-[350px]" title={match.ebay_title}>
-                      {match.ebay_title}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500">
-                    {new Date(match.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-              </TableCell>
-              <TableCell className="font-semibold">${match.listed_price?.toLocaleString()}</TableCell>
-              <TableCell>
-                <Badge variant="outline" className="text-xs">
-                  {match.buy_format || 'N/A'}
-                </Badge>
-              </TableCell>
-              <TableCell>{match.seller_feedback || '-'}</TableCell>
-              <TableCell>
-                <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
-                  {match.status}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {match.status === 'new' && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0"
-                    onClick={() => handleStatusUpdate(match, 'purchased', itemType)}
-                    title="Mark Purchased"
-                  >
-                    <ShoppingCart className="h-4 w-4" />
-                  </Button>
+          {matches.map((match) => {
+            const isExpanded = expandedRows.has(match.id);
+
+            return (
+              <React.Fragment key={match.id}>
+                <TableRow className={`hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}>
+                  <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
+                  <TableCell>
+                    <div>
+                      {match.ebay_url ? (
+                        <a
+                          href={match.ebay_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium truncate max-w-[350px] block text-blue-600 hover:text-blue-800 hover:underline"
+                          title={match.ebay_title}
+                        >
+                          {match.ebay_title}
+                        </a>
+                      ) : (
+                        <p className="text-sm font-medium truncate max-w-[350px]" title={match.ebay_title}>
+                          {match.ebay_title}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        Scanned: {new Date(match.found_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-semibold">${match.listed_price?.toLocaleString()}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">
+                      {match.buy_format || 'N/A'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{match.seller_feedback || '-'}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
+                      {match.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <MatchActions
+                      matchId={match.id}
+                      currentStatus={match.status}
+                      itemType={itemType}
+                      currentOffers={{
+                        offer1: match.offer1,
+                        offer2: match.offer2,
+                        offer3: match.offer3,
+                        offer4: match.offer4,
+                        offer5: match.offer5,
+                      }}
+                      onStatusChange={(newStatus, offerAmount) =>
+                        handleStatusUpdate(match, newStatus, itemType, offerAmount)
+                      }
+                      onExpandDetails={() => toggleRowExpansion(match.id)}
+                    />
+                  </TableCell>
+                </TableRow>
+                {isExpanded && (
+                  <MatchDetailsPanel
+                    matchId={match.id}
+                    offers={{
+                      offer1: match.offer1,
+                      offer2: match.offer2,
+                      offer3: match.offer3,
+                      offer4: match.offer4,
+                      offer5: match.offer5,
+                    }}
+                    toggles={{
+                      purchased_toggle: match.purchased_toggle,
+                      arrived_toggle: match.arrived_toggle,
+                      return_toggle: match.return_toggle,
+                      shipped_back_toggle: match.shipped_back_toggle,
+                      refunded_toggle: match.refunded_toggle,
+                    }}
+                    onToggleChange={(field, value) =>
+                      handleToggleChange(match, itemType, field, value)
+                    }
+                    colSpan={7}
+                  />
                 )}
-              </TableCell>
-            </TableRow>
-          ))}
+              </React.Fragment>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -258,8 +444,6 @@ const Matches = () => {
   if (loading) {
     return <div className="p-6">Loading matches...</div>;
   }
-
-  const activeGroup = taskGroups.find(g => g.task.id === activeTaskId);
 
   return (
     <div className="space-y-6">
@@ -320,15 +504,97 @@ const Matches = () => {
                       <CardDescription>
                         {group.task.max_price && `Max price: $${group.task.max_price} • `}
                         {group.matchCount} {group.matchCount === 1 ? 'match' : 'matches'} found
+                        {group.matchCount > itemsPerPage && ` • Showing ${(currentPage - 1) * itemsPerPage + 1}-${Math.min(currentPage * itemsPerPage, group.matchCount)}`}
                       </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => handleDeleteTask(group.task.id, group.task.name)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Task
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
                   {group.matches.length > 0 ? (
-                    group.task.item_type === 'jewelry'
-                      ? renderJewelryTable(group.matches, group.task.item_type)
-                      : renderGenericTable(group.matches, group.task.item_type)
+                    <>
+                      {group.task.item_type === 'jewelry'
+                        ? renderJewelryTable(group.task.id === activeTaskId ? paginatedMatches : group.matches.slice(0, itemsPerPage), group.task.item_type)
+                        : renderGenericTable(group.task.id === activeTaskId ? paginatedMatches : group.matches.slice(0, itemsPerPage), group.task.item_type)
+                      }
+
+                      {/* Pagination Controls */}
+                      {group.matchCount > 25 && group.task.id === activeTaskId && (
+                        <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-600">Items per page:</span>
+                            <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+                              <SelectTrigger className="w-20 h-8">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ITEMS_PER_PAGE_OPTIONS.map(opt => (
+                                  <SelectItem key={opt} value={opt.toString()}>{opt}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(1)}
+                              disabled={currentPage === 1}
+                              className="h-8 w-8 p-0"
+                            >
+                              <ChevronsLeft className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(currentPage - 1)}
+                              disabled={currentPage === 1}
+                              className="h-8 w-8 p-0"
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                            </Button>
+
+                            <span className="px-3 text-sm text-gray-600">
+                              Page {currentPage} of {totalPages}
+                            </span>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(currentPage + 1)}
+                              disabled={currentPage === totalPages}
+                              className="h-8 w-8 p-0"
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(totalPages)}
+                              disabled={currentPage === totalPages}
+                              className="h-8 w-8 p-0"
+                            >
+                              <ChevronsRight className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <div className="text-sm text-gray-600">
+                            {(currentPage - 1) * itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, group.matchCount)} of {group.matchCount}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="text-sm text-gray-500 py-8 text-center">
                       No matches found yet. The worker will scan eBay for items matching this task's criteria.

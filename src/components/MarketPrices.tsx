@@ -108,6 +108,7 @@ export const MarketPrices = () => {
                     <div>24k: {formatPrice(price.priceGram24k, price.currency)}/g</div>
                     {price.priceGram18k && <div>18k: {formatPrice(price.priceGram18k, price.currency)}/g</div>}
                     {price.priceGram14k && <div>14k: {formatPrice(price.priceGram14k, price.currency)}/g</div>}
+                    {price.priceGram10k && <div>10k: {formatPrice(price.priceGram10k, price.currency)}/g</div>}
                   </div>
                 )}
               </div>

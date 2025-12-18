@@ -13,6 +13,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { MarketPrices } from '@/components/MarketPrices';
+import { PriceHistoryChart } from '@/components/PriceHistoryChart';
 
 const Dashboard = () => {
   // Mock data for demonstration
@@ -83,6 +84,9 @@ const Dashboard = () => {
 
       {/* Market Prices */}
       <MarketPrices />
+
+      {/* Price History Chart */}
+      <PriceHistoryChart />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
