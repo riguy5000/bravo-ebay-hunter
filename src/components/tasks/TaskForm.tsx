@@ -180,8 +180,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
     }
 
     const intervalNum = parseInt(pollInterval);
-    if (intervalNum < 5 || intervalNum > 3600) {
-      toast.error('eBay Poll Interval must be between 5 and 3600 seconds');
+    if (intervalNum < 1 || intervalNum > 3600) {
+      toast.error('eBay Poll Interval must be between 1 and 3600 seconds');
       return;
     }
 
@@ -379,13 +379,13 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                 type="number"
                 value={pollInterval}
                 onChange={(e) => setPollInterval(e.target.value)}
-                placeholder="300"
-                min="5"
+                placeholder="60"
+                min="1"
                 max="3600"
                 required
               />
               <p className="text-xs text-gray-500">
-                How often to search eBay (5 seconds to 1 hour). Note: Metal prices update separately on a daily schedule.
+                How often to search eBay (1 second to 1 hour). Warning: 1s polling uses API quota quickly!
               </p>
             </div>
 

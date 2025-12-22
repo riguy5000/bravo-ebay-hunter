@@ -15,7 +15,8 @@ interface EbayApiKey {
   cert_id: string;
   last_used?: string;
   status?: string;
-  success_rate?: number;
+  calls_today?: number;
+  calls_reset_date?: string;
 }
 
 interface AddEbayApiKeyFormProps {
@@ -102,7 +103,8 @@ export const AddEbayApiKeyForm: React.FC<AddEbayApiKeyFormProps> = ({ onClose, o
           cert_id: formData.cert_id.trim(),
           status: 'unknown' as const,
           last_used: null,
-          success_rate: null
+          calls_today: 0,
+          calls_reset_date: null
         };
         updatedKeys = [...currentKeys, newKey];
         toast.success(`API key set "${formData.label}" added successfully!`);

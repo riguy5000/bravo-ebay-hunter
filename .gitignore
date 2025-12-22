@@ -28,3 +28,6 @@ dist-ssr
 
 
 nul
+
+worker/.env
+.env.example

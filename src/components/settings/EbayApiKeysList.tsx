@@ -14,8 +14,11 @@ interface EbayApiKey {
   cert_id: string;
   last_used?: string;
   status?: 'active' | 'rate_limited' | 'error' | 'unknown';
-  success_rate?: number;
+  calls_today?: number;
+  calls_reset_date?: string;
 }
+
+const DAILY_RATE_LIMIT = 5000; // eBay Browse API daily limit per key
 
 interface EbayApiKeysListProps {
   keys: EbayApiKey[];
@@ -94,7 +97,7 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys, onEdit, 
             <TableHead>Dev ID</TableHead>
             <TableHead>Cert ID</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Success Rate</TableHead>
+            <TableHead>Daily Usage</TableHead>
             <TableHead>Last Used</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -108,10 +111,18 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys, onEdit, 
               <TableCell className="font-mono text-sm">{maskCredential(apiKey.cert_id)}</TableCell>
               <TableCell>{getStatusBadge(apiKey.status)}</TableCell>
               <TableCell>
-                {apiKey.success_rate !== undefined 
-                  ? `${Math.round(apiKey.success_rate)}%` 
-                  : 'N/A'
-                }
+                {(() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  const isToday = apiKey.calls_reset_date === today;
+                  const calls = isToday ? (apiKey.calls_today || 0) : 0;
+                  const percent = Math.round((calls / DAILY_RATE_LIMIT) * 100);
+                  const colorClass = percent >= 90 ? 'text-red-600' : percent >= 70 ? 'text-orange-500' : 'text-green-600';
+                  return (
+                    <span className={colorClass}>
+                      {calls.toLocaleString()} / {DAILY_RATE_LIMIT.toLocaleString()} ({percent}%)
+                    </span>
+                  );
+                })()}
               </TableCell>
               <TableCell>
                 {apiKey.last_used 

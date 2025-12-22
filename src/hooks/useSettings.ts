@@ -17,7 +17,8 @@ interface EbayKeysSettings {
     cert_id: string;
     status?: 'active' | 'rate_limited' | 'error' | 'unknown';
     last_used?: string;
-    success_rate?: number;
+    calls_today?: number;
+    calls_reset_date?: string;
   }>;
   rotation_strategy: string;
 }

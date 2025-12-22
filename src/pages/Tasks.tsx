@@ -95,7 +95,12 @@ const Tasks = () => {
           <h1 className="text-3xl font-bold text-gray-900">Search Tasks</h1>
           <p className="text-gray-600">Create and manage your automated eBay searches with AI analysis</p>
         </div>
-        <Button onClick={() => setShowCreateFlow(true)}>
+        <Button onClick={() => {
+          setEditingTaskId(null);
+          setSelectedTemplate(null);
+          setShowCustomForm(false);
+          setShowCreateFlow(true);
+        }}>
           <Plus className="h-4 w-4 mr-2" />
           Create Task
         </Button>

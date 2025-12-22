@@ -15,7 +15,7 @@ import { useTasks } from '@/hooks/useTasks';
 const ITEMS_PER_PAGE_OPTIONS = [25, 50, 100, 200];
 
 const Matches = () => {
-  const { taskGroups, loading, totalCount, updateMatch, refetch } = useMatches();
+  const { taskGroups, loading, isFetching, totalCount, updateMatch, refetch } = useMatches();
   const { deleteTask } = useTasks();
   const [activeTaskId, setActiveTaskId] = useState<string>('');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -459,9 +459,9 @@ const Matches = () => {
             <Radio className="h-3 w-3 animate-pulse" />
             Live
           </Badge>
-          <Button onClick={refetch} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+          <Button onClick={refetch} variant="outline" size="sm" disabled={isFetching}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+            {isFetching ? 'Refreshing...' : 'Refresh'}
           </Button>
         </div>
       </div>

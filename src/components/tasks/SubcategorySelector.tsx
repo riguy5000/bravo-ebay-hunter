@@ -19,7 +19,7 @@ interface SubcategorySelectorProps {
 const JEWELRY_SUBCATEGORIES: Record<string, Subcategory[]> = {
   fine: [
     { id: '164330', name: 'Fine Rings' },
-    { id: '164331', name: 'Fine Necklaces & Pendants' },
+    { id: '261993', name: 'Fine Necklaces & Pendants' },
     { id: '164332', name: 'Fine Earrings' },
     { id: '164333', name: 'Fine Bracelets' },
     { id: '164334', name: 'Fine Brooches & Pins' },

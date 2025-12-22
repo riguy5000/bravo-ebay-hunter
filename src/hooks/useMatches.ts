@@ -85,9 +85,12 @@ export interface TaskWithMatches {
   matchCount: number;
 }
 
+// Maximum matches to load per table (for performance)
+const MAX_MATCHES_PER_TABLE = 500;
+
 // Fetch function extracted for React Query
 const fetchMatchesData = async (): Promise<{ groups: TaskWithMatches[]; totalCount: number }> => {
-  const [tasksResult, watchData, jewelryData, gemstoneData] = await Promise.all([
+  const [tasksResult, watchData, jewelryData, gemstoneData, watchCount, jewelryCount, gemstoneCount] = await Promise.all([
     supabase
       .from('tasks')
       .select('id, user_id, name, item_type, status, max_price, created_at')
@@ -95,15 +98,22 @@ const fetchMatchesData = async (): Promise<{ groups: TaskWithMatches[]; totalCou
     supabase
       .from('matches_watch')
       .select('*')
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(MAX_MATCHES_PER_TABLE),
     supabase
       .from('matches_jewelry')
       .select('*')
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(MAX_MATCHES_PER_TABLE),
     supabase
       .from('matches_gemstone')
       .select('*')
       .order('created_at', { ascending: false })
+      .limit(MAX_MATCHES_PER_TABLE),
+    // Get counts for each table
+    supabase.from('matches_watch').select('id', { count: 'exact', head: true }),
+    supabase.from('matches_jewelry').select('id', { count: 'exact', head: true }),
+    supabase.from('matches_gemstone').select('id', { count: 'exact', head: true })
   ]);
 
   if (tasksResult.error) console.error('Error fetching tasks:', tasksResult.error);
@@ -138,7 +148,15 @@ const fetchMatchesData = async (): Promise<{ groups: TaskWithMatches[]; totalCou
     };
   });
 
-  return { groups, totalCount: allMatches.length };
+  // Use actual database counts (not limited counts)
+  const actualTotalCount = (watchCount.count || 0) + (jewelryCount.count || 0) + (gemstoneCount.count || 0);
+
+  // Log if results were truncated
+  if (actualTotalCount > allMatches.length) {
+    console.log(`📊 Matches loaded: ${allMatches.length} of ${actualTotalCount} total (limited to ${MAX_MATCHES_PER_TABLE} per table)`);
+  }
+
+  return { groups, totalCount: actualTotalCount };
 };
 
 export const useMatches = () => {
@@ -146,7 +164,7 @@ export const useMatches = () => {
   const queryClient = useQueryClient();
 
   // Use React Query for caching - data persists when navigating away
-  const { data, isLoading: loading, refetch: queryRefetch } = useQuery({
+  const { data, isLoading: loading, isFetching, refetch: queryRefetch } = useQuery({
     queryKey: ['matches', user?.id],
     queryFn: fetchMatchesData,
     enabled: !!user,
@@ -273,6 +291,7 @@ export const useMatches = () => {
   return {
     taskGroups,
     loading,
+    isFetching,
     totalCount,
     updateMatch,
     refetch,

@@ -49,10 +49,20 @@ interface EbayApiKey {
   cert_id: string;
   last_used?: string;
   status?: string;
-  success_rate?: number;
+  calls_today?: number;
+  calls_reset_date?: string;
   oauth_token?: string;
   token_expires_at?: string;
 }
+
+const DAILY_RATE_LIMIT = 5000; // eBay Browse API daily limit per key
+
+// Check if we need to reset the daily counter (new day)
+const shouldResetDailyCount = (resetDate?: string): boolean => {
+  if (!resetDate) return true;
+  const today = new Date().toISOString().split('T')[0];
+  return resetDate !== today;
+};
 
 interface OAuthTokenResponse {
   access_token: string;
@@ -167,6 +177,8 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
     if (fetchError || !settingsData) return;
 
     const config = settingsData.value_json as { keys: EbayApiKey[], rotation_strategy: string };
+    const today = new Date().toISOString().split('T')[0];
+
     const updatedKeys = config.keys.map(key => {
       if (key.app_id === keyToUpdate.app_id) {
         let newStatus = 'active';
@@ -174,11 +186,17 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
         else if (isAuthError) newStatus = 'auth_error';
         else if (!success) newStatus = 'error';
 
+        // Reset counter if it's a new day, otherwise increment
+        const needsReset = shouldResetDailyCount(key.calls_reset_date);
+        const currentCalls = needsReset ? 0 : (key.calls_today || 0);
+        const newCallCount = currentCalls + 1;
+
         return {
           ...key,
           last_used: new Date().toISOString(),
           status: newStatus,
-          success_rate: success ? Math.min(100, (key.success_rate || 0) + 5) : Math.max(0, (key.success_rate || 100) - 10),
+          calls_today: newCallCount,
+          calls_reset_date: today,
           oauth_token: keyToUpdate.oauth_token,
           token_expires_at: keyToUpdate.token_expires_at
         };
@@ -194,7 +212,9 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
         updated_at: new Date().toISOString()
       });
 
-    console.log(`Updated key "${keyToUpdate.label}" status:`, { success, isRateLimited, isAuthError });
+    const updatedKey = updatedKeys.find(k => k.app_id === keyToUpdate.app_id);
+    const usagePercent = updatedKey ? Math.round((updatedKey.calls_today || 0) / DAILY_RATE_LIMIT * 100) : 0;
+    console.log(`Updated key "${keyToUpdate.label}": ${updatedKey?.calls_today}/${DAILY_RATE_LIMIT} calls (${usagePercent}%)`);
   } catch (error) {
     console.error('Error updating key usage:', error);
   }

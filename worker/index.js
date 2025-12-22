@@ -119,9 +119,10 @@ if (missing.length > 0) {
 }
 
 // Configuration
-const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '10') * 1000; // Convert to ms
-const MAX_CONCURRENT_TASKS = parseInt(process.env.MAX_CONCURRENT_TASKS || '5'); // Max tasks to run at once
-const STAGGER_DELAY = parseInt(process.env.STAGGER_DELAY || '500'); // ms between each task start
+const MAIN_LOOP_INTERVAL = parseInt(process.env.MAIN_LOOP_INTERVAL || '1') * 1000; // Main loop runs every 1 second by default
+const MAX_CONCURRENT_TASKS = parseInt(process.env.MAX_CONCURRENT_TASKS || '3'); // Max tasks to run at once
+const STAGGER_DELAY = parseInt(process.env.STAGGER_DELAY || '200'); // ms between each task start
+const DEFAULT_POLL_INTERVAL = 60; // Default task poll interval in seconds if not specified
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -147,6 +148,9 @@ class RateLimitError extends Error {
 // Track if we're shutting down
 let isShuttingDown = false;
 let pollInterval = null;
+
+// Track currently running tasks to prevent concurrent execution of the same task
+const runningTasks = new Set();
 
 // Slack webhook URL (optional - for notifications)
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
@@ -249,6 +253,36 @@ async function sendSlackNotification(match, item, karat, weightG, shippingCost, 
 }
 
 // ============================================
+
+// Test seller notification
+const TEST_SELLER_ID = 'pe952597';
+async function sendTestSellerNotification(item, status, reason, karat, weightG, price, shippingCost, meltValue) {
+  if (!SLACK_WEBHOOK_URL) return;
+  const sellerName = item.seller?.username || 'unknown';
+  if (sellerName.toLowerCase() !== TEST_SELLER_ID.toLowerCase()) return;
+  try {
+    const detectedAt = new Date().toISOString();
+    const statusEmoji = status === 'SAVED' ? '✅' : '🧪';
+    const statusText = status === 'SAVED' ? 'SAVED AS MATCH' : 'REJECTED: ' + reason;
+    const message = {
+      blocks: [
+        { type: "header", text: { type: "plain_text", text: statusEmoji + " Test Listing Detected!", emoji: true } },
+        { type: "section", text: { type: "mrkdwn", text: "*" + item.title.substring(0, 100) + "*" } },
+        { type: "section", fields: [
+          { type: "mrkdwn", text: "*Status:* " + statusText },
+          { type: "mrkdwn", text: "*Detected At:* " + detectedAt },
+          { type: "mrkdwn", text: "*Price:* $" + price },
+          { type: "mrkdwn", text: "*Melt Value:* " + (meltValue ? "$" + meltValue.toFixed(0) : "N/A") },
+          { type: "mrkdwn", text: "*Karat:* " + (karat ? karat + "K" : "Unknown") },
+          { type: "mrkdwn", text: "*Weight:* " + (weightG ? weightG.toFixed(1) + "g" : "Unknown") }
+        ]},
+        { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "View on eBay", emoji: true }, url: item.itemWebUrl, style: "primary" }]}
+      ]
+    };
+    await fetch(SLACK_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(message) });
+  } catch (e) { console.log('Test notification error:', e.message); }
+}
+
 // Rate Limiting (eBay allows 5,000 calls/day)
 // ============================================
 const DAILY_LIMIT = parseInt(process.env.EBAY_DAILY_LIMIT || '4500'); // Leave buffer
@@ -281,8 +315,53 @@ const rateLimiter = {
 // ============================================
 // API Usage Tracking (logged to database)
 // ============================================
-async function logApiUsage(apiKeyLabel, callType, endpoint = null) {
+const DAILY_RATE_LIMIT = 5000; // eBay Browse API daily limit per key
+
+// Update API key's daily call count in settings
+async function updateKeyCallCount(appId) {
   try {
+    const { data, error: fetchError } = await supabase
+      .from('settings')
+      .select('value_json')
+      .eq('key', 'ebay_keys')
+      .single();
+
+    if (fetchError || !data?.value_json) return;
+
+    const config = data.value_json;
+    const today = new Date().toISOString().split('T')[0];
+
+    const updatedKeys = config.keys.map(key => {
+      if (key.app_id === appId) {
+        // Reset counter if it's a new day
+        const needsReset = key.calls_reset_date !== today;
+        const currentCalls = needsReset ? 0 : (key.calls_today || 0);
+        const newCallCount = currentCalls + 1;
+
+        return {
+          ...key,
+          calls_today: newCallCount,
+          calls_reset_date: today
+        };
+      }
+      return key;
+    });
+
+    await supabase
+      .from('settings')
+      .upsert({
+        key: 'ebay_keys',
+        value_json: { ...config, keys: updatedKeys },
+        updated_at: new Date().toISOString()
+      });
+  } catch (e) {
+    // Silent fail - don't break main flow
+  }
+}
+
+async function logApiUsage(apiKeyLabel, callType, endpoint = null, appId = null) {
+  try {
+    // Log to api_usage table for historical tracking
     const { error } = await supabase.from('api_usage').insert({
       api_key_label: apiKeyLabel || 'unknown',
       call_type: callType,
@@ -290,6 +369,11 @@ async function logApiUsage(apiKeyLabel, callType, endpoint = null) {
     });
     if (error) {
       console.log(`  ⚠️ API usage log failed: ${error.message}`);
+    }
+
+    // Update the key's daily call count if appId provided
+    if (appId) {
+      await updateKeyCallCount(appId);
     }
   } catch (e) {
     console.log(`  ⚠️ API usage log error: ${e.message}`);
@@ -316,31 +400,57 @@ const KARAT_MARKERS = [
 ];
 
 // Extract karat value from title or item specifics
+// DEBUG_KARAT: Set to true to enable verbose logging for karat extraction
+const DEBUG_KARAT = true;
+
 function extractKarat(title, itemSpecifics = {}) {
+  const debugLog = (msg) => { if (DEBUG_KARAT) console.log(`    🔬 [KARAT] ${msg}`); };
+
   const titleLower = title.toLowerCase();
 
   // Check item specifics first (more reliable)
   const metalPurity = itemSpecifics['metal purity']?.toLowerCase() || '';
+  debugLog(`Item specs "metal purity": "${metalPurity || '(not set)'}"`);
+
   if (metalPurity) {
-    const purityMatch = metalPurity.match(/(\d+)k/);
-    if (purityMatch) return parseInt(purityMatch[1]);
+    // Match patterns: 14k, 14K, 14kt, 14 karat, 9ct (British), etc.
+    const purityMatch = metalPurity.match(/(\d+)\s*(?:k|kt|karat|ct|carat)/i);
+    if (purityMatch) {
+      const karat = parseInt(purityMatch[1]);
+      debugLog(`Extracted ${karat}k from item specs`);
+      return karat;
+    } else {
+      debugLog(`Could not parse karat from: "${metalPurity}"`);
+    }
   }
 
   // Check title for karat markers
+  debugLog(`Checking title: "${title.substring(0, 60)}..."`);
+
+  // Valid karat values (including 9k for British gold)
+  const validKarats = [8, 9, 10, 14, 18, 22, 24];
+
   const karatPatterns = [
-    /(\d+)\s*k(?:t|arat)?(?:\s|$|[^a-z])/i,  // 10k, 14kt, 18 karat, etc.
+    { pattern: /(\d+)\s*k(?:t|arat)?(?:\s|$|[^a-z])/i, name: 'Xk/kt/karat' },
+    { pattern: /(\d+)\s*ct(?:\s|$|[^a-z])/i, name: 'Xct (British)' },        // British notation
+    { pattern: /(\d+)\s*carat(?:\s|$|[^a-z])/i, name: 'X carat' },
   ];
 
-  for (const pattern of karatPatterns) {
+  for (const { pattern, name } of karatPatterns) {
     const match = titleLower.match(pattern);
     if (match) {
       const karat = parseInt(match[1]);
-      if ([10, 14, 18, 22, 24].includes(karat)) {
+      debugLog(`Pattern "${name}" matched: ${karat}`);
+      if (validKarats.includes(karat)) {
+        debugLog(`Valid karat ${karat}k found in title`);
         return karat;
+      } else {
+        debugLog(`Karat ${karat} not in valid list: [${validKarats.join(', ')}]`);
       }
     }
   }
 
+  debugLog(`No karat pattern matched in title`);
   return null;
 }
 
@@ -447,29 +557,34 @@ function extractPlatinumPurity(title, itemSpecifics = {}) {
 }
 
 // Extract weight from title, item specifics, or description (in grams)
+// DEBUG_WEIGHT: Set to true to enable verbose logging for weight extraction
+const DEBUG_WEIGHT = true;
+
 function extractWeight(title, itemSpecifics = {}, description = '') {
+  const debugLog = (msg) => { if (DEBUG_WEIGHT) console.log(`    🔬 [WEIGHT] ${msg}`); };
+
   // Check item specifics first - eBay uses many different field names
   // Priority order: most specific → most general
-  const weightSpec = itemSpecifics['total weight'] ||
-                     itemSpecifics['gram weight'] ||
-                     itemSpecifics['total gram weight'] ||
-                     itemSpecifics['metal weight(grams)'] ||
-                     itemSpecifics['item weight'] ||
-                     itemSpecifics['weight'] ||
-                     itemSpecifics['total carat weight'] ||
-                     itemSpecifics['item weight (approx.)'] ||
-                     itemSpecifics['approximate weight'] ||
-                     itemSpecifics['metal weight'] ||
-                     itemSpecifics['chain weight'] ||
-                     itemSpecifics['necklace weight'] ||
-                     itemSpecifics['ring weight'] ||
-                     itemSpecifics['bracelet weight'] ||
-                     itemSpecifics['gold weight'] ||
-                     itemSpecifics['total metal weight'] ||
-                     itemSpecifics['net weight'] ||
-                     itemSpecifics['jewelry weight'] || '';
+  const weightFieldNames = [
+    'total weight', 'gram weight', 'total gram weight', 'metal weight(grams)',
+    'item weight', 'weight', 'total carat weight', 'item weight (approx.)',
+    'approximate weight', 'metal weight', 'chain weight', 'necklace weight',
+    'ring weight', 'bracelet weight', 'gold weight', 'total metal weight',
+    'net weight', 'jewelry weight'
+  ];
+
+  let weightSpec = '';
+  let foundField = '';
+  for (const field of weightFieldNames) {
+    if (itemSpecifics[field]) {
+      weightSpec = itemSpecifics[field];
+      foundField = field;
+      break;
+    }
+  }
 
   if (weightSpec) {
+    debugLog(`Found in item specs - "${foundField}": "${weightSpec}"`);
     const specLower = weightSpec.toLowerCase();
 
     // Try to extract grams (handles "1.8 Grams", "5g", "3.4 gr")
@@ -480,58 +595,105 @@ function extractWeight(title, itemSpecifics = {}, description = '') {
       const fieldNameImpliesGrams = ['gram weight', 'total gram weight', 'metal weight(grams)']
         .some(name => itemSpecifics[name]);
       if (gramMatch[2] || fieldNameImpliesGrams || specLower.includes('gram')) {
+        debugLog(`Extracted ${value}g from item specs (gram pattern)`);
+        console.log(`    📏 Weight fields found: ${foundField}="${weightSpec}"`);
         return value;
       }
       // If just a number with no unit context, still return it as grams (most common)
       if (!specLower.includes('oz') && !specLower.includes('dwt') && !specLower.includes('ct')) {
+        debugLog(`Extracted ${value}g from item specs (number only)`);
+        console.log(`    📏 Weight fields found: ${foundField}="${weightSpec}"`);
         return value;
       }
     }
 
     // Try to extract oz and convert to grams (1 oz = 28.3495g)
     const ozMatch = specLower.match(/([\d.]+)\s*(?:oz|ounce|ounces)/i);
-    if (ozMatch) return parseFloat(ozMatch[1]) * 28.3495;
+    if (ozMatch) {
+      const value = parseFloat(ozMatch[1]) * 28.3495;
+      debugLog(`Extracted ${ozMatch[1]}oz = ${value.toFixed(2)}g from item specs`);
+      return value;
+    }
 
     // Try to extract dwt (pennyweight) and convert to grams (1 dwt = 1.555g)
     const dwtMatch = specLower.match(/([\d.]+)\s*(?:dwt|pennyweight)/i);
-    if (dwtMatch) return parseFloat(dwtMatch[1]) * 1.555;
+    if (dwtMatch) {
+      const value = parseFloat(dwtMatch[1]) * 1.555;
+      debugLog(`Extracted ${dwtMatch[1]}dwt = ${value.toFixed(2)}g from item specs`);
+      return value;
+    }
+
+    debugLog(`Could not parse weight from spec value: "${weightSpec}"`);
+  } else {
+    debugLog(`No weight field in item specs. Available fields: ${Object.keys(itemSpecifics).filter(k => !k.startsWith('_')).join(', ')}`);
   }
 
   // Check title for weight
   const titleLower = title.toLowerCase();
+  debugLog(`Checking title: "${title.substring(0, 60)}..."`);
 
   // Pattern for grams (more permissive)
   let gramMatch = titleLower.match(/([\d.]+)\s*(?:g|gr|gram|grams)\b/i);
-  if (gramMatch) return parseFloat(gramMatch[1]);
+  if (gramMatch) {
+    debugLog(`Found ${gramMatch[1]}g in title`);
+    console.log(`    📏 Found weight ${gramMatch[1]}g in title`);
+    return parseFloat(gramMatch[1]);
+  }
 
   // Pattern for oz
   let ozMatch = titleLower.match(/([\d.]+)\s*(?:oz|ounce|ounces)\b/i);
-  if (ozMatch) return parseFloat(ozMatch[1]) * 28.3495;
+  if (ozMatch) {
+    const value = parseFloat(ozMatch[1]) * 28.3495;
+    debugLog(`Found ${ozMatch[1]}oz = ${value.toFixed(2)}g in title`);
+    return value;
+  }
 
   // Pattern for dwt
   let dwtMatch = titleLower.match(/([\d.]+)\s*(?:dwt|pennyweight)/i);
-  if (dwtMatch) return parseFloat(dwtMatch[1]) * 1.555;
+  if (dwtMatch) {
+    const value = parseFloat(dwtMatch[1]) * 1.555;
+    debugLog(`Found ${dwtMatch[1]}dwt = ${value.toFixed(2)}g in title`);
+    return value;
+  }
+
+  debugLog(`No weight pattern in title`);
 
   // Check description for weight (strip HTML first)
   if (description) {
-    const cleanDesc = description.replace(/<[^>]*>/g, ' ').toLowerCase();
+    debugLog(`Description length: ${description.length} chars`);
+
+    // Also decode HTML entities
+    const cleanDesc = description
+      .replace(/<[^>]*>/g, ' ')           // Strip HTML tags
+      .replace(/&nbsp;/gi, ' ')           // Replace non-breaking spaces
+      .replace(/&amp;/gi, '&')            // Replace ampersands
+      .replace(/&lt;/gi, '<')             // Replace less than
+      .replace(/&gt;/gi, '>')             // Replace greater than
+      .replace(/&#(\d+);/g, (m, n) => String.fromCharCode(n))  // Numeric entities
+      .replace(/\s+/g, ' ')               // Normalize whitespace
+      .toLowerCase();
+
+    debugLog(`Cleaned description preview: "${cleanDesc.substring(0, 150)}..."`);
 
     // Look for weight patterns in description
     // More specific patterns first: "weight: X.Xg", "weighs X.X grams", etc.
     const weightPatterns = [
-      /(?:weight|weighs|wt)[:\s]+(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i,
-      /(\d+\.?\d*)\s*(?:g|gr|gram|grams)\s*(?:total|weight)/i,
-      /(?:total|approx\.?|approximately)\s*(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i,
-      /(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i,
+      { pattern: /(?:weight|weighs|wt)[:\s]+(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i, name: 'weight: Xg' },
+      { pattern: /(\d+\.?\d*)\s*(?:g|gr|gram|grams)\s*(?:total|weight)/i, name: 'Xg total' },
+      { pattern: /(?:total|approx\.?|approximately)\s*(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i, name: 'approx Xg' },
+      { pattern: /(\d+\.?\d*)\s*(?:g|gr|gram|grams)\b/i, name: 'Xg anywhere' },
     ];
 
-    for (const pattern of weightPatterns) {
+    for (const { pattern, name } of weightPatterns) {
       const match = cleanDesc.match(pattern);
+      debugLog(`Pattern "${name}": ${match ? `MATCHED "${match[0]}"` : 'no match'}`);
       if (match) {
         const value = parseFloat(match[1]);
         if (value > 0 && value < 1000) { // Sanity check
           console.log(`    📏 Found weight ${value}g in description`);
           return value;
+        } else {
+          debugLog(`Value ${value} failed sanity check (0 < x < 1000)`);
         }
       }
     }
@@ -544,13 +706,17 @@ function extractWeight(title, itemSpecifics = {}, description = '') {
       return value;
     }
 
-    // Check for dwt in description
-    dwtMatch = cleanDesc.match(/(?:weight|weighs|wt)?[:\s]*(\d+\.?\d*)\s*(?:dwt|pennyweight)/i);
+    // Check for dwt in description (also handle "penny weight" with space)
+    dwtMatch = cleanDesc.match(/(?:weight|weighs|wt)?[:\s]*(\d+\.?\d*)\s*(?:dwt|penny\s*weight)/i);
     if (dwtMatch) {
       const value = parseFloat(dwtMatch[1]) * 1.555;
       console.log(`    📏 Found weight ${dwtMatch[1]}dwt (${value.toFixed(2)}g) in description`);
       return value;
     }
+
+    debugLog(`No weight pattern matched in description`);
+  } else {
+    debugLog(`No description provided`);
   }
 
   return null;
@@ -879,6 +1045,44 @@ const COSTUME_JEWELRY_EXCLUSIONS = [
   'goldtone',    // Not real gold
 ];
 
+// Jewelry tools, supplies, and equipment to exclude
+const JEWELRY_TOOLS_EXCLUSIONS = [
+  'welding',
+  'welder',
+  'soldering',
+  'solder',
+  'torch',
+  'pliers',
+  'mandrel',
+  'polishing',
+  'polisher',
+  'buffing',
+  'tumbler',
+  'jewelry making',
+  'jewelry tool',
+  'jewelry tools',
+  'craft supplies',
+  'beading',
+  'bead kit',
+  'findings',
+  'clasps lot',
+  'jump rings lot',
+  'wire wrap',
+  'display stand',
+  'jewelry box',
+  'jewelry case',
+  'ring sizer',
+  'loupe',
+  'magnifier',
+  'scale gram',
+  'test kit',
+  'acid test',
+  'repair kit',
+  'mold',
+  'casting',
+  'crucible',
+];
+
 // Map of metal categories to keywords that identify them in listings
 const METAL_KEYWORDS = {
   // Precious metals (gold)
@@ -923,7 +1127,16 @@ function getMetalExclusionKeywords(selectedMetals) {
   const exclusions = new Set();
   const selectedLower = selectedMetals.map(m => m.toLowerCase());
 
+  // Skip these metals when building exclusions - too aggressive
+  // Silver items often have gold components, or "silver" appears in titles for other reasons
+  const skipMetals = ['sterling silver', 'silver'];
+
   for (const [metalName, keywords] of Object.entries(METAL_KEYWORDS)) {
+    // Skip silver-related metals - too aggressive as exclusions
+    if (skipMetals.includes(metalName.toLowerCase())) {
+      continue;
+    }
+
     // Check if this metal (or a parent category) is selected
     const isSelected = selectedLower.some(selected =>
       metalName.toLowerCase().includes(selected) ||
@@ -989,7 +1202,7 @@ if (!isTestMode) {
 
   console.log('='.repeat(50));
   console.log('eBay Hunter Worker Starting...');
-  console.log(`Poll interval: ${POLL_INTERVAL / 1000} seconds`);
+  console.log(`Main loop interval: ${MAIN_LOOP_INTERVAL / 1000}s (checks for due tasks)`);
   console.log(`Max concurrent tasks: ${MAX_CONCURRENT_TASKS}`);
   console.log(`Stagger delay: ${STAGGER_DELAY}ms between tasks`);
   console.log('='.repeat(50));
@@ -1014,6 +1227,46 @@ function isKeyRateLimited(appId) {
     return false;
   }
   return true;
+}
+
+// Mark a key as having an authentication error (updates DB)
+async function markKeyAuthError(appId, label) {
+  console.log(`  ❌ Key "${label || appId}" has auth error (401). Marking as error status.`);
+
+  // Clear from token cache
+  tokenCache.delete(appId);
+
+  try {
+    // Get current keys from DB
+    const { data, error } = await supabase
+      .from('settings')
+      .select('value_json')
+      .eq('key', 'ebay_keys')
+      .single();
+
+    if (error || !data?.value_json?.keys) {
+      console.error(`  ⚠️ Could not update key status: ${error?.message || 'No keys found'}`);
+      return;
+    }
+
+    // Update the status of the key with the error
+    const updatedKeys = data.value_json.keys.map(k => {
+      if (k.app_id === appId) {
+        return { ...k, status: 'error' };
+      }
+      return k;
+    });
+
+    // Save back to DB
+    await supabase
+      .from('settings')
+      .update({ value_json: { ...data.value_json, keys: updatedKeys } })
+      .eq('key', 'ebay_keys');
+
+    console.log(`  ✅ Key "${label || appId}" marked as error in database`);
+  } catch (e) {
+    console.error(`  ⚠️ Failed to update key status: ${e.message}`);
+  }
 }
 
 // Get all available (non-rate-limited) eBay credentials
@@ -1096,6 +1349,10 @@ async function getEbayToken(credentials) {
   });
 
   if (!response.ok) {
+    // For 401 (unauthorized), mark the key as having an error so it's skipped
+    if (response.status === 401) {
+      await markKeyAuthError(credentials.app_id, credentials.label);
+    }
     throw new Error(`eBay token error: ${response.status}`);
   }
 
@@ -1117,16 +1374,22 @@ function buildSearchUrl(task, metalOverride = null) {
   // Get the type-specific filters
   const filters = task.watch_filters || task.jewelry_filters || task.gemstone_filters || {};
 
-  // Build keywords
-  let keywords = task.item_type;
+  // Build keywords - search by metal type only, rely on categoryIds filter for category
+  // We removed "jewelry" from keywords because it was excluding valid listings
+  // that don't have "jewelry" in their title (e.g., "14K Yellow Gold Chain 10g")
+  let keywords = '';
+
+  // Use metalOverride if provided (for multi-metal searches), otherwise use first metal from filters
+  if (metalOverride) {
+    keywords = metalOverride;
+  } else if (filters.metal?.length > 0) {
+    keywords = filters.metal[0];
+  } else {
+    // Fallback to item_type if no metal specified
+    keywords = task.item_type;
+  }
   if (filters.brands?.length > 0 || filters.brand) {
     keywords = `${filters.brands?.[0] || filters.brand} ${keywords}`;
-  }
-  // Use metalOverride if provided, otherwise use first metal from filters
-  if (metalOverride) {
-    keywords = `${metalOverride} ${keywords}`;
-  } else if (filters.metal?.length > 0) {
-    keywords = `${filters.metal[0]} ${keywords}`;
   }
   // Add model keywords (e.g., "Speedmaster", "Seamaster", "Black Bay")
   if (filters.model_keywords?.length > 0) {
@@ -1139,6 +1402,7 @@ function buildSearchUrl(task, metalOverride = null) {
 
   params.set('q', keywords);
   params.set('limit', '200');
+  params.set('sort', 'newlyListed');
 
   // Build filter string
   const filterParts = [];
@@ -1184,7 +1448,8 @@ function buildSearchUrl(task, metalOverride = null) {
   };
 
   // Get conditions from filters (can be single value or array)
-  let conditionValues = filters.condition || filters.conditions || [];
+  // Prefer 'conditions' array if it exists, otherwise fall back to singular 'condition'
+  let conditionValues = filters.conditions || filters.condition || [];
   if (typeof conditionValues === 'string') {
     conditionValues = [conditionValues];
   }
@@ -1380,10 +1645,14 @@ async function searchEbay(task, metalOverride = null) {
   // Record the API call
   rateLimiter.recordCall();
 
-  // Log to database for tracking
-  logApiUsage(credentials.label || credentials.app_id, 'search', 'browse/search');
+  // Log to database for tracking (includes updating key's daily call count)
+  logApiUsage(credentials.label || credentials.app_id, 'search', 'browse/search', credentials.app_id);
 
   if (!response.ok) {
+    // Log the actual response for debugging
+    const responseText = await response.text();
+    console.log(`  ⚠️ eBay API error - Status: ${response.status}, Response: ${responseText.substring(0, 200)}`);
+
     // Handle rate limiting (429) specially
     if (response.status === 429) {
       throw new RateLimitError(`eBay API rate limited (429)`, credentials);
@@ -1425,7 +1694,17 @@ async function searchEbayAllMetals(task) {
     }
   }
 
-  console.log(`  📊 Total unique items across all metals: ${allItems.length}`);
+  // IMPORTANT: Sort combined results by listing date (newest first)
+  // Without this, items from first metal search would always be processed before later metals
+  // even if the later metals have newer listings
+  allItems.sort((a, b) => {
+    // eBay provides itemCreationDate in ISO format
+    const dateA = a.itemCreationDate ? new Date(a.itemCreationDate) : new Date(0);
+    const dateB = b.itemCreationDate ? new Date(b.itemCreationDate) : new Date(0);
+    return dateB - dateA; // Newest first
+  });
+
+  console.log(`  📊 Total unique items across all metals: ${allItems.length} (sorted by listing date)`);
   return allItems;
 }
 
@@ -1520,8 +1799,8 @@ async function fetchItemDetails(itemId) {
 
   rateLimiter.recordCall();
 
-  // Log to database for tracking
-  logApiUsage(credentials.label || credentials.app_id, 'item_detail', 'browse/item');
+  // Log to database for tracking (includes updating key's daily call count)
+  logApiUsage(credentials.label || credentials.app_id, 'item_detail', 'browse/item', credentials.app_id);
 
   if (!response.ok) {
     // Handle rate limiting (429) specially
@@ -1598,14 +1877,37 @@ async function fetchItemDetailsBulk(itemIds) {
       });
 
       rateLimiter.recordCall();
-      logApiUsage(credentials.label || credentials.app_id, 'item_detail_bulk', 'browse/item/bulk');
+      logApiUsage(credentials.label || credentials.app_id, 'item_detail_bulk', 'browse/item/bulk', credentials.app_id);
 
       if (!response.ok) {
         if (response.status === 429) {
           console.log(`    ⚠️ Rate limited (429) during bulk fetch`);
           break;
         }
-        console.log(`    ⚠️ Bulk fetch failed: ${response.status}`);
+        // 403 = Permission denied - fall back to single item fetches
+        if (response.status === 403) {
+          console.log(`    ⚠️ Bulk API not authorized (403) - falling back to single item fetches...`);
+          // Fall back to single item fetches for this batch
+          for (const itemId of batch) {
+            if (!rateLimiter.canMakeCall()) break;
+            try {
+              const singleItem = await fetchItemDetails(itemId);
+              if (singleItem) {
+                results.set(itemId, singleItem);
+              }
+            } catch (e) {
+              // Skip failed items
+            }
+          }
+          continue;
+        }
+        // Log detailed error for other errors
+        try {
+          const errorBody = await response.text();
+          console.log(`    ⚠️ Bulk fetch failed: ${response.status} - ${errorBody.substring(0, 500)}`);
+        } catch (e) {
+          console.log(`    ⚠️ Bulk fetch failed: ${response.status}`);
+        }
         continue;
       }
 
@@ -1656,6 +1958,7 @@ const NO_STONE_VALUES = [
   'no stone',
   'none',
   'n/a',
+  'na',  // eBay often uses "NA" without slash
   'not applicable',
   'not specified',
   'unknown',
@@ -1664,10 +1967,29 @@ const NO_STONE_VALUES = [
   ''
 ];
 
+// Common stone keywords to detect in titles (when seller doesn't fill out specs)
+const STONE_KEYWORDS = [
+  'diamond', 'diamonds', 'morganite', 'sapphire', 'ruby', 'emerald',
+  'amethyst', 'topaz', 'opal', 'pearl', 'aquamarine', 'garnet',
+  'peridot', 'tanzanite', 'tourmaline', 'citrine', 'onyx', 'turquoise',
+  'moissanite', 'cz', 'cubic zirconia', 'zirconia', 'crystal', 'crystals',
+  'gemstone', 'gemstones', 'stone', 'stones', 'pave', 'pavé', 'halo',
+  'solitaire', 'three stone', '3 stone', 'birthstone',
+  'malachite', 'lapis', 'jade', 'coral', 'carnelian', 'agate', 'jasper',
+  'moonstone', 'labradorite', 'alexandrite', 'iolite', 'spinel', 'zircon'
+];
+
 // Check if a value indicates "no stone"
 function isNoStoneValue(value) {
   if (!value) return true; // Empty/missing means no stone
   return NO_STONE_VALUES.includes(value.toLowerCase().trim());
+}
+
+// Check if title contains stone keywords (backup check when specs are empty)
+function titleContainsStone(title) {
+  if (!title) return false;
+  const titleLower = title.toLowerCase();
+  return STONE_KEYWORDS.some(keyword => titleLower.includes(keyword));
 }
 
 // Check if item passes the item specifics filters
@@ -1702,35 +2024,37 @@ function passesItemSpecificsFilter(specs, filters, aspectFiltersActive = {}) {
     return { pass: false, reason: `Base Metal/Metal appears to be fake tone (not two-tone/tri-tone gold)` };
   }
 
-  // Always check Main Stone in post-processing
-  // NOTE: We can't skip this even if aspect filter was used, because aspect_filter
-  // only works for 1 category when searching across multiple subcategories.
-  // So we MUST verify Main Stone in item specifics for all items.
+  // ALWAYS exclude items with main stones - we only want plain metal jewelry for scrap value
+  // NOTE: We can't rely on aspect filter because it only works for 1 category
+  // when searching across multiple subcategories.
+  // eBay uses multiple field names for stones, so check all of them
+  const mainStone = specs['main stone'] || '';
+  const gemstone = specs['gemstone'] || '';
+  const stone = specs['stone'] || '';  // Some sellers use just "Stone" field (e.g., "Malachite")
+  const title = specs._title || '';
 
-  // Check Main Stone if user selected "No Stone" filter
-  const wantsNoStone = filters.main_stones?.some(s =>
-    s.toLowerCase().includes('no stone') ||
-    s.toLowerCase() === 'none' ||
-    s.toLowerCase() === 'no gemstone'
-  );
+  // Debug log to see what values we're checking
+  if (mainStone || gemstone || stone) {
+    console.log(`    🔍 Stone check: Main Stone="${mainStone}", Gemstone="${gemstone}", Stone="${stone}"`);
+  }
 
-  if (wantsNoStone) {
-    const mainStone = specs['main stone'] || '';
-    const gemstone = specs['gemstone'] || '';
+  // Check all stone fields - reject if any has a stone value
+  // NOTE: We intentionally do NOT check "Main Stone Color" because that field
+  // often contains metal/jewelry colors like "Pink" (rose gold), "Gold", "White"
+  // which would cause false rejections for items without stones
+  const hasStoneInSpecs = !isNoStoneValue(mainStone) || !isNoStoneValue(gemstone) || !isNoStoneValue(stone);
 
-    // Debug log to see what values we're checking
-    if (mainStone || gemstone) {
-      console.log(`    🔍 Stone check: Main Stone="${mainStone}", Gemstone="${gemstone}"`);
-    }
+  if (hasStoneInSpecs) {
+    return { pass: false, reason: `Has stone in specs: Main Stone="${mainStone}", Gemstone="${gemstone}", Stone="${stone}"` };
+  }
 
-    // Only check Main Stone and Gemstone fields
-    // NOTE: We intentionally do NOT check "Main Stone Color" because that field
-    // often contains metal/jewelry colors like "Pink" (rose gold), "Gold", "White"
-    // which would cause false rejections for items without stones
-    const hasStone = !isNoStoneValue(mainStone) || !isNoStoneValue(gemstone);
-
-    if (hasStone) {
-      return { pass: false, reason: `Has stone in specs: Main Stone="${mainStone}", Gemstone="${gemstone}"` };
+  // BACKUP CHECK: If specs don't have stone info, check the title for stone keywords
+  // This catches items where sellers didn't fill out the stone fields correctly
+  if (isNoStoneValue(mainStone) && isNoStoneValue(gemstone) && isNoStoneValue(stone)) {
+    if (titleContainsStone(title)) {
+      const matchedKeyword = STONE_KEYWORDS.find(kw => title.toLowerCase().includes(kw));
+      console.log(`    🔍 Title stone check: Found "${matchedKeyword}" in title`);
+      return { pass: false, reason: `Title contains stone keyword: "${matchedKeyword}"` };
     }
   }
 
@@ -1939,8 +2263,12 @@ function getTableName(itemType) {
 // Process a single task
 // API keys are now rotated per-call, not per-task
 async function processTask(task) {
-  // Reset cache stats for this task
-  resetCacheStats();
+  // Mark task as running to prevent concurrent execution
+  runningTasks.add(task.id);
+
+  try {
+    // Reset cache stats for this task
+    resetCacheStats();
 
   const filters = task.watch_filters || task.jewelry_filters || task.gemstone_filters || {};
   const subcatCount = filters.subcategories?.length || 0;
@@ -1965,9 +2293,9 @@ async function processTask(task) {
 
   // For jewelry tasks, add auto-exclusions
   if (task.item_type === 'jewelry') {
-    // Always exclude costume jewelry
-    allExclusions = [...allExclusions, ...COSTUME_JEWELRY_EXCLUSIONS];
-    console.log(`  🚫 Auto-excluding costume jewelry (${COSTUME_JEWELRY_EXCLUSIONS.length} terms)`);
+    // Always exclude costume jewelry and jewelry tools/supplies
+    allExclusions = [...allExclusions, ...COSTUME_JEWELRY_EXCLUSIONS, ...JEWELRY_TOOLS_EXCLUSIONS];
+    console.log(`  🚫 Auto-excluding costume jewelry (${COSTUME_JEWELRY_EXCLUSIONS.length} terms) and tools/supplies (${JEWELRY_TOOLS_EXCLUSIONS.length} terms)`);
 
     // Log karat requirement status
     if (filters.metal?.some(m => m.toLowerCase().includes('gold'))) {
@@ -2025,6 +2353,9 @@ async function processTask(task) {
     // Track skipped items for logging
     let skippedMatched = 0;
     let skippedRejected = 0;
+    let skippedWrongCategory = 0; // Items from wrong categories
+    let skippedByExclusion = 0; // Items excluded by keyword
+    let skippedByPrice = 0; // Items outside price range
     let newRejections = 0; // Track items rejected this poll
     let detailFetchCount = 0;
     const maxDetailFetches = task.max_detail_fetches || 0; // 0 = unlimited
@@ -2054,14 +2385,32 @@ async function processTask(task) {
         continue;
       }
 
+      // Validate category - eBay's API filter isn't 100% reliable
+      // Items can slip through from other categories that match the search terms
+      if (filters.subcategories?.length > 0 && item.categories?.length > 0) {
+        const allowedCategories = new Set(filters.subcategories.map(String));
+        const itemCategories = item.categories.map(c => String(c.categoryId));
+        const isInAllowedCategory = itemCategories.some(catId => allowedCategories.has(catId));
+
+        if (!isInAllowedCategory) {
+          // Item is from a wrong category - skip it
+          skippedWrongCategory++;
+          continue;
+        }
+      }
+
       // Extract price
       const price = parseFloat(item.price?.value || 0);
 
       // Skip if under min price or over max price
       if (task.min_price && price < task.min_price) {
-        continue; // Silently skip items below min price
+        skippedByPrice++;
+        continue;
       }
-      if (task.max_price && price > task.max_price) continue;
+      if (task.max_price && price > task.max_price) {
+        skippedByPrice++;
+        continue;
+      }
 
       // Skip if title contains excluded keywords (manual + auto metal exclusions)
       const titleLower = item.title.toLowerCase();
@@ -2072,7 +2421,8 @@ async function processTask(task) {
           titleLower.includes(keyword.toLowerCase())
         );
         if (matchedKeyword) {
-          continue; // Silently skip excluded items
+          skippedByExclusion++;
+          continue;
         }
       }
 
@@ -2097,7 +2447,32 @@ async function processTask(task) {
       candidateItems.push({ item, price, titleLower });
     }
 
-    console.log(`  📋 ${candidateItems.length} items passed initial filters (need details)`);
+    // Re-sort candidates by listing date (newest first) with priority for very recent items
+    // This ensures newest items are processed first even after cache filtering
+    const PRIORITY_MINUTES = 10; // Items listed in last 10 minutes get priority
+    const priorityCutoff = Date.now() - (PRIORITY_MINUTES * 60 * 1000);
+
+    candidateItems.sort((a, b) => {
+      const dateA = a.item.itemCreationDate ? new Date(a.item.itemCreationDate) : new Date(0);
+      const dateB = b.item.itemCreationDate ? new Date(b.item.itemCreationDate) : new Date(0);
+
+      const aIsPriority = dateA.getTime() > priorityCutoff;
+      const bIsPriority = dateB.getTime() > priorityCutoff;
+
+      // Priority items (last 10 min) always come first
+      if (aIsPriority && !bIsPriority) return -1;
+      if (!aIsPriority && bIsPriority) return 1;
+
+      // Within same priority level, sort by date (newest first)
+      return dateB - dateA;
+    });
+
+    // Count priority items for logging
+    const priorityCount = candidateItems.filter(c =>
+      c.item.itemCreationDate && new Date(c.item.itemCreationDate).getTime() > priorityCutoff
+    ).length;
+
+    console.log(`  📋 ${candidateItems.length} items passed initial filters (${priorityCount} from last ${PRIORITY_MINUTES} min)`);
 
     // ============================================
     // PHASE 2: Bulk fetch item details for all candidates
@@ -2236,6 +2611,7 @@ async function processTask(task) {
             if (watchYear < yearFrom || watchYear > yearTo) {
               const reason = `Year ${watchYear} outside range ${yearFrom}-${yearTo}`;
               console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+                await sendTestSellerNotification(item, 'REJECTED', reason, karat, weightG, price, shippingCost, meltValue);
 
               // Cache the rejection
               try {
@@ -2263,6 +2639,7 @@ async function processTask(task) {
           if (!itemMaterial.includes(filterMaterial) && !filterMaterial.includes(itemMaterial)) {
             const reason = `Case material "${caseMaterial}" doesn't match filter "${filters.case_material}"`;
             console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+                await sendTestSellerNotification(item, 'REJECTED', reason, karat, weightG, price, shippingCost, meltValue);
 
             try {
               await supabase.from('rejected_items').upsert({
@@ -2282,6 +2659,20 @@ async function processTask(task) {
 
         // Detect metal type (gold, silver, platinum, palladium)
         const description = itemDetails?.description || '';
+
+        // DEBUG: Log description info
+        if (DEBUG_WEIGHT || DEBUG_KARAT) {
+          console.log(`    🔬 [DEBUG] Item: ${item.itemId}`);
+          console.log(`    🔬 [DEBUG] Title: ${item.title.substring(0, 70)}...`);
+          if (description) {
+            console.log(`    🔬 [DEBUG] Description received: ${description.length} chars`);
+            // Show first 200 chars of raw description to see HTML/entities
+            console.log(`    🔬 [DEBUG] Raw desc preview: "${description.substring(0, 200).replace(/\n/g, '\\n')}..."`);
+          } else {
+            console.log(`    🔬 [DEBUG] No description returned from eBay API!`);
+          }
+        }
+
         metalType = detectMetalType(item.title, specs);
         weightG = extractWeight(item.title, specs, description);
 
@@ -2355,6 +2746,7 @@ async function processTask(task) {
               if (breakEven <= totalCost * 0.5) {
                 const reason = `Low margin ${profitMarginPct.toFixed(0)}% - break-even $${breakEven.toFixed(0)} <= 50% of cost $${totalCost.toFixed(0)}`;
                 console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+                await sendTestSellerNotification(item, 'REJECTED', reason, karat, weightG, price, shippingCost, meltValue);
 
                 // Cache the rejection so we don't re-fetch details for this item
                 try {
@@ -2392,6 +2784,7 @@ async function processTask(task) {
         // Send Slack notification for jewelry matches
         if (task.item_type === 'jewelry') {
           await sendSlackNotification(match, item, karat, weightG, shippingCost, meltValue);
+          await sendTestSellerNotification(item, 'SAVED', null, karat, weightG, price, shippingCost, meltValue);
         }
       } else if (error.code === '23505') {
         // Unique constraint violation - duplicate, just skip silently
@@ -2410,8 +2803,14 @@ async function processTask(task) {
     console.log(`  Saved ${newMatches} new matches`);
 
     // Log skip stats
-    if (skippedMatched > 0 || skippedRejected > 0 || newRejections > 0) {
-      console.log(`  ⏭️ Skipped: ${skippedMatched} already matched, ${skippedRejected} previously rejected`);
+    if (skippedMatched > 0 || skippedRejected > 0 || newRejections > 0 || skippedWrongCategory > 0 || skippedByExclusion > 0 || skippedByPrice > 0) {
+      const skipParts = [];
+      if (skippedMatched > 0) skipParts.push(`${skippedMatched} already matched`);
+      if (skippedRejected > 0) skipParts.push(`${skippedRejected} previously rejected`);
+      if (skippedWrongCategory > 0) skipParts.push(`${skippedWrongCategory} wrong category`);
+      if (skippedByExclusion > 0) skipParts.push(`${skippedByExclusion} excluded keywords`);
+      if (skippedByPrice > 0) skipParts.push(`${skippedByPrice} outside price range`);
+      console.log(`  ⏭️ Skipped: ${skipParts.join(', ')}`);
       if (newRejections > 0) {
         console.log(`  🚫 Cached ${newRejections} new rejections (will skip for 48h)`);
       }
@@ -2442,6 +2841,10 @@ async function processTask(task) {
     } else {
       console.error(`  Error: ${error.message}`);
     }
+  }
+  } finally {
+    // Always remove task from running set when done (success or error)
+    runningTasks.delete(task.id);
   }
 }
 
@@ -2491,15 +2894,43 @@ async function cleanupExpiredCache() {
   }
 }
 
-// Main polling loop
+// Check if a task is due to run based on its poll_interval and last_run
+function isTaskDue(task) {
+  // Skip if task is already running
+  if (runningTasks.has(task.id)) {
+    return false;
+  }
+
+  const pollInterval = (task.poll_interval || DEFAULT_POLL_INTERVAL) * 1000; // Convert to ms
+  const lastRun = task.last_run ? new Date(task.last_run).getTime() : 0;
+  const now = Date.now();
+  const timeSinceLastRun = now - lastRun;
+
+  return timeSinceLastRun >= pollInterval;
+}
+
+// Get time until next run for a task (for logging)
+function getTimeUntilNextRun(task) {
+  const pollInterval = (task.poll_interval || DEFAULT_POLL_INTERVAL) * 1000;
+  const lastRun = task.last_run ? new Date(task.last_run).getTime() : 0;
+  const now = Date.now();
+  const timeSinceLastRun = now - lastRun;
+  const timeUntilNext = Math.max(0, pollInterval - timeSinceLastRun);
+
+  return Math.ceil(timeUntilNext / 1000); // Return in seconds
+}
+
+// Main polling loop - runs frequently to check which tasks are due
 async function poll() {
   const pollStartTime = Date.now();
   lastPollTime = new Date().toISOString();
   lastPollStatus = 'running';
 
   try {
-    // Cleanup expired cache entries periodically
-    await cleanupExpiredCache();
+    // Cleanup expired cache entries periodically (every 60 cycles = ~1 minute)
+    if (pollCycleCount % 60 === 0) {
+      await cleanupExpiredCache();
+    }
 
     // Fetch active tasks
     const { data: tasks, error } = await supabase
@@ -2513,7 +2944,22 @@ async function poll() {
     }
 
     if (!tasks || tasks.length === 0) {
-      console.log(`[${new Date().toLocaleTimeString()}] No active tasks`);
+      // Only log "no active tasks" occasionally to reduce noise
+      if (pollCycleCount % 30 === 0) {
+        console.log(`[${new Date().toLocaleTimeString()}] No active tasks`);
+      }
+      return;
+    }
+
+    // Filter to only tasks that are due to run
+    const dueTasks = tasks.filter(isTaskDue);
+
+    if (dueTasks.length === 0) {
+      // Log waiting status occasionally (every 10 seconds)
+      if (pollCycleCount % 10 === 0) {
+        const waitingInfo = tasks.map(t => `${t.name}: ${getTimeUntilNextRun(t)}s`).join(', ');
+        console.log(`[${new Date().toLocaleTimeString()}] Waiting... (${waitingInfo})`);
+      }
       return;
     }
 
@@ -2521,17 +2967,22 @@ async function poll() {
     try {
       const allKeys = await getAllEbayCredentials();
       const availableKeys = allKeys.filter(k => !isKeyRateLimited(k.app_id) && k.status !== 'rate_limited' && k.status !== 'error');
-      console.log(`\n[${new Date().toLocaleTimeString()}] Processing ${tasks.length} active task(s) with ${availableKeys.length}/${allKeys.length} API keys available (round-robin)...`);
+      console.log(`\n[${new Date().toLocaleTimeString()}] 🚀 Running ${dueTasks.length}/${tasks.length} due task(s) with ${availableKeys.length}/${allKeys.length} API keys...`);
     } catch (e) {
-      console.log(`\n[${new Date().toLocaleTimeString()}] Processing ${tasks.length} active task(s)...`);
+      console.log(`\n[${new Date().toLocaleTimeString()}] 🚀 Running ${dueTasks.length}/${tasks.length} due task(s)...`);
     }
 
-    // Process tasks in batches with staggered parallel execution
-    // API keys are rotated per-call automatically
-    for (let i = 0; i < tasks.length; i += MAX_CONCURRENT_TASKS) {
-      const batch = tasks.slice(i, i + MAX_CONCURRENT_TASKS);
+    // Log which tasks are running with their poll intervals
+    dueTasks.forEach(task => {
+      const interval = task.poll_interval || DEFAULT_POLL_INTERVAL;
+      console.log(`  📋 ${task.name} (every ${interval}s)`);
+    });
+
+    // Process due tasks in batches with staggered parallel execution
+    for (let i = 0; i < dueTasks.length; i += MAX_CONCURRENT_TASKS) {
+      const batch = dueTasks.slice(i, i + MAX_CONCURRENT_TASKS);
       const batchNum = Math.floor(i / MAX_CONCURRENT_TASKS) + 1;
-      const totalBatches = Math.ceil(tasks.length / MAX_CONCURRENT_TASKS);
+      const totalBatches = Math.ceil(dueTasks.length / MAX_CONCURRENT_TASKS);
 
       if (totalBatches > 1) {
         console.log(`\n  Batch ${batchNum}/${totalBatches} (${batch.length} tasks):`);
@@ -2545,12 +2996,14 @@ async function poll() {
     console.error('Poll error:', error.message);
     lastPollStatus = `error: ${error.message}`;
   } finally {
-    // Log performance and memory after each poll
+    // Log performance after each poll that actually ran tasks
     const pollDuration = Date.now() - pollStartTime;
-    logPollPerformance(pollDuration);
+    if (pollDuration > 100) { // Only log if poll took significant time
+      logPollPerformance(pollDuration);
+    }
 
-    // Log memory every 10 polls
-    if (pollCycleCount % 10 === 0) {
+    // Log memory every 300 polls (~5 minutes at 1s interval)
+    if (pollCycleCount % 300 === 0) {
       logMemoryStats(`After Poll #${pollCycleCount}`);
     }
   }
@@ -2558,13 +3011,29 @@ async function poll() {
 
 // Start the worker
 async function start() {
+  console.log(`\n${'='.repeat(60)}`);
+  console.log('🚀 CONTINUOUS POLLING MODE');
+  console.log(`${'='.repeat(60)}`);
+  console.log(`Main loop interval: ${MAIN_LOOP_INTERVAL / 1000}s`);
+  console.log(`Max concurrent tasks: ${MAX_CONCURRENT_TASKS}`);
+  console.log(`Default task poll interval: ${DEFAULT_POLL_INTERVAL}s`);
+  console.log(`${'='.repeat(60)}\n`);
+
+  // Increment poll cycle count for each loop
+  pollCycleCount++;
+
   // Initial poll
   await poll();
 
-  // Continue polling
-  pollInterval = setInterval(poll, POLL_INTERVAL);
+  // Continue polling at high frequency (default 1 second)
+  // Each poll checks which tasks are due based on their individual poll_interval
+  pollInterval = setInterval(() => {
+    pollCycleCount++;
+    poll();
+  }, MAIN_LOOP_INTERVAL);
 
-  console.log(`\nWorker running. Polling every ${POLL_INTERVAL / 1000} seconds...`);
+  console.log(`\nWorker running. Checking for due tasks every ${MAIN_LOOP_INTERVAL / 1000} second(s)...`);
+  console.log('Tasks run based on their individual poll_interval settings.');
   console.log('Press Ctrl+C to stop.\n');
 }
 
