@@ -1097,7 +1097,8 @@ function extractCaratWeight(title, specs = {}, description = '') {
     const specMatch = caratSpec.toString().match(/(\d+\.?\d*)\s*(?:ct|carat|carats)?/i);
     if (specMatch) {
       const value = parseFloat(specMatch[1]);
-      if (value > 0 && value < 100) return value; // Reasonable range
+      // Allow large values so carat filter can reject them properly (e.g., lot listings)
+      if (value > 0 && value < 10000) return value;
     }
   }
 
@@ -1108,14 +1109,14 @@ function extractCaratWeight(title, specs = {}, description = '') {
   const standardMatch = titleLower.match(/(\d+\.?\d*)\s*(?:ct|carat|carats|cts)\b/);
   if (standardMatch) {
     const value = parseFloat(standardMatch[1]);
-    if (value > 0 && value < 100) return value;
+    if (value > 0 && value < 10000) return value;
   }
 
   // Pattern 2: Points format "152 points" = 1.52 carats
   const pointsMatch = titleLower.match(/(\d+)\s*(?:points|pts|point)\b/);
   if (pointsMatch) {
     const value = parseInt(pointsMatch[1]) / 100;
-    if (value > 0 && value < 100) return value;
+    if (value > 0 && value < 10000) return value;
   }
 
   // Pattern 3: Fraction format "1 1/2 ct" = 1.5 carats
@@ -1126,7 +1127,7 @@ function extractCaratWeight(title, specs = {}, description = '') {
     const denominator = parseInt(fractionMatch[3]);
     if (denominator > 0) {
       const value = whole + (numerator / denominator);
-      if (value > 0 && value < 100) return value;
+      if (value > 0 && value < 10000) return value;
     }
   }
 
@@ -1134,7 +1135,7 @@ function extractCaratWeight(title, specs = {}, description = '') {
   const tcwMatch = titleLower.match(/tcw\s*(\d+\.?\d*)/);
   if (tcwMatch) {
     const value = parseFloat(tcwMatch[1]);
-    if (value > 0 && value < 100) return value;
+    if (value > 0 && value < 10000) return value;
   }
 
   // Pattern 5: Check description as fallback
@@ -1153,7 +1154,7 @@ function extractCaratWeight(title, specs = {}, description = '') {
       const descMatch = descLower.match(pattern);
       if (descMatch) {
         const value = parseFloat(descMatch[1]);
-        if (value > 0 && value < 100) return value;
+        if (value > 0 && value < 10000) return value;
       }
     }
 
@@ -1162,7 +1163,7 @@ function extractCaratWeight(title, specs = {}, description = '') {
     if (descStandardMatch) {
       const value = parseFloat(descStandardMatch[1]);
       // Be more conservative with description - only accept reasonable single-stone weights
-      if (value > 0.1 && value < 20) return value;
+      if (value > 0.1 && value < 100) return value;
     }
   }
 
