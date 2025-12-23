@@ -65,6 +65,14 @@ export interface GemstoneMatch extends BaseMatch {
   rapnet_avg?: number;
   rapaport_list?: number;
   price_diff_percent?: number;
+  stone_type?: string;
+  treatment?: string;
+  is_natural?: boolean;
+  classification?: string;
+  deal_score?: number;
+  risk_score?: number;
+  dimensions?: { length_mm?: number; width_mm?: number; depth_mm?: number };
+  origin?: string;
 }
 
 export type Match = WatchMatch | JewelryMatch | GemstoneMatch;

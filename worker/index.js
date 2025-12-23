@@ -155,6 +155,94 @@ const runningTasks = new Set();
 // Slack webhook URL (optional - for notifications)
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
 
+// ============================================
+// Gemstone Configuration
+// ============================================
+
+// Common gemstone types for detection
+const GEMSTONE_TYPES = [
+  'Diamond', 'Ruby', 'Sapphire', 'Emerald', 'Alexandrite',
+  'Spinel', 'Tanzanite', 'Tourmaline', 'Garnet', 'Aquamarine',
+  'Morganite', 'Amethyst', 'Citrine', 'Topaz', 'Peridot',
+  'Opal', 'Jade', 'Turquoise', 'Zircon', 'Tsavorite',
+  'Paraiba', 'Padparadscha', 'Kunzite', 'Beryl', 'Chrysoberyl'
+];
+
+// Common stone shapes
+const STONE_SHAPES = [
+  'Round', 'Oval', 'Cushion', 'Princess', 'Emerald', 'Radiant',
+  'Asscher', 'Marquise', 'Pear', 'Heart', 'Trillion', 'Baguette',
+  'Square', 'Octagon', 'Cabochon', 'Rose Cut', 'Old Mine', 'Old European'
+];
+
+// Diamond color grades (best to worst)
+const DIAMOND_COLORS = ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'];
+
+// Diamond clarity grades (best to worst)
+const DIAMOND_CLARITIES = ['FL', 'IF', 'VVS1', 'VVS2', 'VS1', 'VS2', 'SI1', 'SI2', 'I1', 'I2', 'I3'];
+
+// Colored stone clarity grades
+const COLORED_STONE_CLARITIES = ['Loupe Clean', 'Eye Clean', 'Slightly Included', 'Moderately Included', 'Heavily Included'];
+
+// Cut grades
+const CUT_GRADES = ['Excellent', 'Ideal', 'Very Good', 'Good', 'Fair', 'Poor'];
+
+// Certification labs (by tier)
+const CERT_LABS = {
+  premium: ['GIA', 'AGS', 'AGL', 'Gubelin', 'SSEF', 'GRS'],
+  standard: ['IGI', 'GCAL', 'HRD', 'CGL'],
+  budget: ['EGL', 'GSI', 'IGL', 'Other']
+};
+
+// Gemstone blacklist - simulants and fakes
+const GEMSTONE_BLACKLIST = [
+  // Simulants
+  'cz', 'cubic zirconia', 'cubic zircona', 'moissanite', 'moissonite',
+  'simulant', 'simulated', 'faux', 'fake', 'imitation',
+  // Lab-created terms (filtered based on task settings)
+  'lab created', 'lab-created', 'lab grown', 'lab-grown',
+  'synthetic', 'man made', 'man-made', 'cultured diamond',
+  // Glass/plastic
+  'glass', 'crystal', 'rhinestone', 'acrylic', 'plastic', 'resin',
+  // Trade names for simulants
+  'diamonique', 'swarovski', 'yag', 'ggg', 'strontium titanate',
+  // Composite/treated heavily
+  'doublet', 'triplet', 'composite', 'assembled'
+];
+
+// Lab-created terms (separate so we can optionally allow them)
+const LAB_CREATED_TERMS = [
+  'lab created', 'lab-created', 'lab grown', 'lab-grown',
+  'synthetic', 'man made', 'man-made', 'cultured diamond', 'cvd', 'hpht'
+];
+
+// Treatment types
+const TREATMENTS = {
+  none: ['untreated', 'no treatment', 'natural', 'unheated', 'no heat'],
+  minor: ['heat', 'heated', 'heat only', 'heat treated'],
+  moderate: ['oil', 'oiled', 'minor oil', 'ce', 'clarity enhanced'],
+  heavy: ['filled', 'glass filled', 'lead glass', 'fracture filled',
+          'irradiated', 'diffused', 'coated', 'beryllium']
+};
+
+// eBay category IDs for gemstones
+const GEMSTONE_CATEGORIES = {
+  LOOSE_DIAMONDS: '10207',
+  LOOSE_GEMSTONES: '51089',
+  NATURAL_LOOSE_GEMSTONES: '164694',
+  FINE_JEWELRY: '164331'
+};
+
+// Loose stone indicators
+const LOOSE_INDICATORS = ['loose', 'unmounted', 'unset', 'natural loose', 'certified loose'];
+
+// Jewelry indicators (stone is mounted)
+const JEWELRY_INDICATORS = [
+  'ring', 'necklace', 'pendant', 'earring', 'earrings', 'bracelet',
+  'engagement', 'wedding', 'anniversary', 'stud', 'studs', 'drop',
+  'halo', 'solitaire', 'three stone', 'eternity', 'band'
+];
+
 // Shopping API test function - defined here but called at end of file
 // (needs getEbayCredentials and getEbayToken to be defined first)
 
@@ -166,59 +254,25 @@ async function sendSlackNotification(match, item, karat, weightG, shippingCost, 
 
   try {
     const totalCost = match.listed_price + shippingCost;
+    const offerPrice = (totalCost * 0.87).toFixed(0);
     const breakEven = meltValue ? meltValue * 0.97 : null;
-    const profit = breakEven ? breakEven - totalCost : null;
-    const profitPct = profit && totalCost > 0 ? ((profit / totalCost) * 100).toFixed(0) : null;
-
-    const shippingText = shippingCost > 0
-      ? `$${match.listed_price} + $${shippingCost} shipping = *$${totalCost}*`
-      : `*$${totalCost}* (free shipping)`;
+    const profit = breakEven ? (breakEven - totalCost).toFixed(0) : null;
 
     const message = {
       blocks: [
         {
-          type: "header",
+          type: "section",
           text: {
-            type: "plain_text",
-            text: "🎯 New Gold Deal Found!",
-            emoji: true
+            type: "mrkdwn",
+            text: `*$${totalCost}* total | *${weightG ? weightG.toFixed(1) + 'g' : '?'}* | Offer: *$${offerPrice}* | Profit: *$${profit || '?'}*`
           }
         },
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*${match.ebay_title.substring(0, 100)}${match.ebay_title.length > 100 ? '...' : ''}*`
+            text: match.ebay_title.substring(0, 150)
           }
-        },
-        {
-          type: "section",
-          fields: [
-            {
-              type: "mrkdwn",
-              text: `*💰 Price:*\n${shippingText}`
-            },
-            {
-              type: "mrkdwn",
-              text: `*📊 Break-even:*\n${breakEven ? `$${breakEven.toFixed(0)}` : 'N/A'}`
-            },
-            {
-              type: "mrkdwn",
-              text: `*✨ Karat:*\n${karat ? `${karat}K` : 'Unknown'}`
-            },
-            {
-              type: "mrkdwn",
-              text: `*⚖️ Weight:*\n${weightG ? `${weightG.toFixed(1)}g` : 'Unknown'}`
-            },
-            {
-              type: "mrkdwn",
-              text: `*💵 Profit:*\n${profit ? `$${profit.toFixed(0)} (${profitPct}%)` : 'N/A'}`
-            },
-            {
-              type: "mrkdwn",
-              text: `*🏷️ Seller:*\n${item.seller?.feedbackScore || 'N/A'} feedback`
-            }
-          ]
         },
         {
           type: "actions",
@@ -227,7 +281,7 @@ async function sendSlackNotification(match, item, karat, weightG, shippingCost, 
               type: "button",
               text: {
                 type: "plain_text",
-                text: "🔗 View on eBay",
+                text: "View on eBay",
                 emoji: true
               },
               url: match.ebay_url,
@@ -281,6 +335,77 @@ async function sendTestSellerNotification(item, status, reason, karat, weightG, 
     };
     await fetch(SLACK_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(message) });
   } catch (e) { console.log('Test notification error:', e.message); }
+}
+
+/**
+ * Send Slack notification for gemstone match
+ * @param {Object} match - Match record with listing data
+ * @param {Object} stone - Parsed stone details
+ * @param {number} dealScore - Deal score 0-100
+ * @param {number} riskScore - Risk score 0-100
+ */
+async function sendGemstoneSlackNotification(match, stone, dealScore, riskScore) {
+  if (!SLACK_WEBHOOK_URL) return;
+
+  try {
+    const scoreEmoji = dealScore >= 80 ? '🔥' : dealScore >= 60 ? '💎' : '📋';
+    const riskEmoji = riskScore >= 50 ? '⚠️' : riskScore >= 30 ? '🔶' : '✅';
+    const riskText = riskScore >= 50 ? 'High' : riskScore >= 30 ? 'Med' : 'Low';
+
+    // Format stone details line
+    const stoneDetails = [
+      stone.shape || '?',
+      stone.color || '?',
+      stone.clarity || '?',
+      stone.certification || 'No Cert'
+    ].join(' | ');
+
+    const message = {
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `${scoreEmoji} *${stone.carat ? stone.carat.toFixed(2) + 'ct' : '?ct'} ${stone.stone_type || 'Stone'}* - $${match.listed_price}\n${stoneDetails} | Deal: *${dealScore}* | Risk: ${riskEmoji}${riskText}`
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: match.ebay_title.substring(0, 150)
+          }
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "View on eBay",
+                emoji: true
+              },
+              url: match.ebay_url,
+              style: "primary"
+            }
+          ]
+        }
+      ]
+    };
+
+    const response = await fetch(SLACK_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+
+    if (!response.ok) {
+      console.log(`  ⚠️ Gemstone Slack notification failed: ${response.status}`);
+    }
+  } catch (error) {
+    console.log(`  ⚠️ Gemstone Slack notification error: ${error.message}`);
+  }
 }
 
 // Rate Limiting (eBay allows 5,000 calls/day)
@@ -912,6 +1037,1025 @@ function extractWatchModel(title, itemSpecifics = {}) {
   // Model extraction from title is complex and brand-specific
   // Return null for now - can be enhanced later
   return null;
+}
+
+// ============================================
+// Gemstone Parser Functions
+// ============================================
+
+/**
+ * Detect stone type from title and item specifics
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @returns {string|null} Stone type or null
+ */
+function detectStoneType(title, specs = {}) {
+  const titleLower = title.toLowerCase();
+
+  // Check item specifics first
+  const stoneSpec = specs['type'] || specs['stone type'] || specs['gemstone type'] ||
+                    specs['main stone'] || specs['gemstone'] || specs['stone'] || '';
+  if (stoneSpec) {
+    const specLower = stoneSpec.toLowerCase();
+    for (const stone of GEMSTONE_TYPES) {
+      if (specLower.includes(stone.toLowerCase())) {
+        return stone;
+      }
+    }
+  }
+
+  // Check title - prioritize longer matches first to avoid false positives
+  // e.g., "Paraiba Tourmaline" should match "Paraiba" not "Tourmaline"
+  const sortedStones = [...GEMSTONE_TYPES].sort((a, b) => b.length - a.length);
+  for (const stone of sortedStones) {
+    const stoneLower = stone.toLowerCase();
+    // Word boundary check to avoid partial matches
+    const regex = new RegExp(`\\b${stoneLower}s?\\b`, 'i');
+    if (regex.test(title)) {
+      return stone;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract carat weight from title and specs
+ * Handles: "1.52ct", "1.52 carat", "152 points", "1 1/2 ct"
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @returns {number|null} Carat weight or null
+ */
+function extractCaratWeight(title, specs = {}, description = '') {
+  // Check item specifics first
+  const caratSpec = specs['total carat weight'] || specs['carat weight'] ||
+                    specs['total carat weight (tcw)'] || specs['carat'] ||
+                    specs['stone weight'] || specs['main stone weight'] || '';
+
+  if (caratSpec) {
+    // Parse from spec: "1.52 ct", "1.52ct", "1.52 carat", "1.52"
+    const specMatch = caratSpec.toString().match(/(\d+\.?\d*)\s*(?:ct|carat|carats)?/i);
+    if (specMatch) {
+      const value = parseFloat(specMatch[1]);
+      if (value > 0 && value < 100) return value; // Reasonable range
+    }
+  }
+
+  // Parse from title
+  const titleLower = title.toLowerCase();
+
+  // Pattern 1: Standard format "1.52ct", "1.52 ct", "1.52 carat"
+  const standardMatch = titleLower.match(/(\d+\.?\d*)\s*(?:ct|carat|carats|cts)\b/);
+  if (standardMatch) {
+    const value = parseFloat(standardMatch[1]);
+    if (value > 0 && value < 100) return value;
+  }
+
+  // Pattern 2: Points format "152 points" = 1.52 carats
+  const pointsMatch = titleLower.match(/(\d+)\s*(?:points|pts|point)\b/);
+  if (pointsMatch) {
+    const value = parseInt(pointsMatch[1]) / 100;
+    if (value > 0 && value < 100) return value;
+  }
+
+  // Pattern 3: Fraction format "1 1/2 ct" = 1.5 carats
+  const fractionMatch = titleLower.match(/(\d+)\s+(\d+)\/(\d+)\s*(?:ct|carat)/);
+  if (fractionMatch) {
+    const whole = parseInt(fractionMatch[1]);
+    const numerator = parseInt(fractionMatch[2]);
+    const denominator = parseInt(fractionMatch[3]);
+    if (denominator > 0) {
+      const value = whole + (numerator / denominator);
+      if (value > 0 && value < 100) return value;
+    }
+  }
+
+  // Pattern 4: TCW (Total Carat Weight) "tcw 2.50"
+  const tcwMatch = titleLower.match(/tcw\s*(\d+\.?\d*)/);
+  if (tcwMatch) {
+    const value = parseFloat(tcwMatch[1]);
+    if (value > 0 && value < 100) return value;
+  }
+
+  // Pattern 5: Check description as fallback
+  if (description) {
+    const descLower = description.toLowerCase();
+
+    // Look for carat weight patterns in description
+    // "weight: 1.52 carats", "carat weight: 1.52", "1.52 ct stone"
+    const descPatterns = [
+      /(?:weight|carat|stone)\s*[:=]?\s*(\d+\.?\d*)\s*(?:ct|carat|carats|cts)/i,
+      /(\d+\.?\d*)\s*(?:ct|carat|carats|cts)\s+(?:stone|gem|diamond|sapphire|ruby|emerald)/i,
+      /(?:total|approx|approximately)\s*(\d+\.?\d*)\s*(?:ct|carat|carats|cts)/i
+    ];
+
+    for (const pattern of descPatterns) {
+      const descMatch = descLower.match(pattern);
+      if (descMatch) {
+        const value = parseFloat(descMatch[1]);
+        if (value > 0 && value < 100) return value;
+      }
+    }
+
+    // Also try the standard pattern on description
+    const descStandardMatch = descLower.match(/(\d+\.?\d*)\s*(?:ct|carat|carats|cts)\b/);
+    if (descStandardMatch) {
+      const value = parseFloat(descStandardMatch[1]);
+      // Be more conservative with description - only accept reasonable single-stone weights
+      if (value > 0.1 && value < 20) return value;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract stone shape from title and specs
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @returns {string|null} Shape or null
+ */
+function extractStoneShape(title, specs = {}) {
+  const titleLower = title.toLowerCase();
+
+  // Check item specifics first
+  const shapeSpec = specs['shape'] || specs['cut'] || specs['stone shape'] ||
+                    specs['diamond shape'] || specs['gemstone shape'] || '';
+  if (shapeSpec) {
+    const specLower = shapeSpec.toLowerCase();
+    for (const shape of STONE_SHAPES) {
+      if (specLower.includes(shape.toLowerCase())) {
+        return shape;
+      }
+    }
+  }
+
+  // Check title
+  for (const shape of STONE_SHAPES) {
+    const shapeLower = shape.toLowerCase();
+    const regex = new RegExp(`\\b${shapeLower}\\b`, 'i');
+    if (regex.test(title)) {
+      return shape;
+    }
+  }
+
+  // Check for "brilliant" which usually means round brilliant
+  if (/\bbrilliant\b/i.test(title) && !/\bmodified\b/i.test(title)) {
+    return 'Round';
+  }
+
+  return null;
+}
+
+/**
+ * Extract color grade from title and specs
+ * Different logic for diamonds vs colored stones
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @param {string} stoneType - Type of stone (for different grading)
+ * @returns {string|null} Color grade or null
+ */
+function extractStoneColor(title, specs = {}, stoneType = 'Diamond') {
+  const titleLower = title.toLowerCase();
+
+  // Check item specifics
+  const colorSpec = specs['color'] || specs['colour'] || specs['color grade'] ||
+                    specs['diamond color'] || specs['diamond color grade'] ||
+                    specs['stone color'] || '';
+
+  if (stoneType === 'Diamond') {
+    // For diamonds, look for letter grades D-Z
+    if (colorSpec) {
+      const specUpper = colorSpec.toUpperCase();
+      for (const color of DIAMOND_COLORS) {
+        if (specUpper === color || specUpper.startsWith(color + ' ') || specUpper.includes('(' + color + ')')) {
+          return color;
+        }
+      }
+    }
+
+    // Check title for diamond color grades
+    for (const color of DIAMOND_COLORS) {
+      // Look for patterns like "G color", "G-H", "Color: G"
+      const patterns = [
+        new RegExp(`\\b${color}\\s*(?:color|colour)\\b`, 'i'),
+        new RegExp(`\\bcolor[:\\s]+${color}\\b`, 'i'),
+        new RegExp(`\\b${color}[-/]${DIAMOND_COLORS[DIAMOND_COLORS.indexOf(color) + 1] || 'H'}\\b`, 'i'),
+        new RegExp(`\\b${color}\\s+(?:vvs|vs|si|i1|i2|fl|if)\\b`, 'i') // "G VS1"
+      ];
+      for (const pattern of patterns) {
+        if (pattern.test(title)) return color;
+      }
+    }
+  } else {
+    // For colored stones, look for color names
+    const colorNames = ['Blue', 'Red', 'Green', 'Pink', 'Yellow', 'Orange', 'Purple', 'Violet',
+                        'Teal', 'Padparadscha', 'Cornflower', 'Royal Blue', 'Pigeon Blood',
+                        'Vivid', 'Intense', 'Light', 'Medium', 'Dark', 'Fancy'];
+
+    if (colorSpec) {
+      for (const color of colorNames) {
+        if (colorSpec.toLowerCase().includes(color.toLowerCase())) {
+          return color;
+        }
+      }
+      return colorSpec; // Return as-is if we can't categorize
+    }
+
+    // Check title for color names
+    for (const color of colorNames) {
+      if (new RegExp(`\\b${color}\\b`, 'i').test(title)) {
+        return color;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract clarity grade from title and specs
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @param {string} stoneType - Type of stone
+ * @returns {string|null} Clarity grade or null
+ */
+function extractStoneClarity(title, specs = {}, stoneType = 'Diamond') {
+  const titleUpper = title.toUpperCase();
+
+  // Check item specifics
+  const claritySpec = specs['clarity'] || specs['clarity grade'] ||
+                      specs['diamond clarity'] || specs['diamond clarity grade'] || '';
+
+  if (stoneType === 'Diamond') {
+    // For diamonds, use standard GIA clarity grades
+    if (claritySpec) {
+      const specUpper = claritySpec.toUpperCase();
+      for (const clarity of DIAMOND_CLARITIES) {
+        if (specUpper.includes(clarity)) {
+          return clarity;
+        }
+      }
+    }
+
+    // Check title for clarity grades
+    for (const clarity of DIAMOND_CLARITIES) {
+      // Look for patterns like "VS1", "VS-1", "VS 1"
+      const patterns = [
+        new RegExp(`\\b${clarity}\\b`, 'i'),
+        new RegExp(`\\b${clarity.replace(/(\d)/, '-$1')}\\b`, 'i'), // VS-1
+        new RegExp(`\\b${clarity.replace(/(\d)/, ' $1')}\\b`, 'i')  // VS 1
+      ];
+      for (const pattern of patterns) {
+        if (pattern.test(title)) return clarity;
+      }
+    }
+  } else {
+    // For colored stones, use eye clean / loupe clean terminology
+    if (claritySpec) {
+      const specLower = claritySpec.toLowerCase();
+      for (const clarity of COLORED_STONE_CLARITIES) {
+        if (specLower.includes(clarity.toLowerCase())) {
+          return clarity;
+        }
+      }
+    }
+
+    // Check title
+    if (/\b(?:eye[\s-]?clean|eyeclean)\b/i.test(title)) return 'Eye Clean';
+    if (/\b(?:loupe[\s-]?clean|loupeclean)\b/i.test(title)) return 'Loupe Clean';
+    if (/\bslightly\s+included\b/i.test(title)) return 'Slightly Included';
+  }
+
+  return null;
+}
+
+/**
+ * Extract cut grade from title and specs
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @returns {string|null} Cut grade or null
+ */
+function extractCutGrade(title, specs = {}) {
+  // Check item specifics
+  const cutSpec = specs['cut'] || specs['cut grade'] || specs['diamond cut'] ||
+                  specs['cut quality'] || '';
+
+  if (cutSpec) {
+    const specLower = cutSpec.toLowerCase();
+    for (const grade of CUT_GRADES) {
+      if (specLower.includes(grade.toLowerCase())) {
+        return grade;
+      }
+    }
+  }
+
+  // Check title
+  const titleLower = title.toLowerCase();
+  for (const grade of CUT_GRADES) {
+    // Look for patterns like "Excellent cut", "VG cut", "EX"
+    const patterns = [
+      new RegExp(`\\b${grade.toLowerCase()}\\s*cut\\b`),
+      new RegExp(`\\bcut[:\\s]+${grade.toLowerCase()}\\b`)
+    ];
+    for (const pattern of patterns) {
+      if (pattern.test(titleLower)) return grade;
+    }
+  }
+
+  // Abbreviations
+  if (/\bex\b/i.test(title) || /\b3ex\b/i.test(title) || /\bexcellent\b/i.test(title)) return 'Excellent';
+  if (/\bvg\b/i.test(title)) return 'Very Good';
+  if (/\bideal\b/i.test(title)) return 'Ideal';
+
+  return null;
+}
+
+/**
+ * Extract certification lab from title and specs
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @returns {string|null} Lab name or null
+ */
+function extractCertification(title, specs = {}) {
+  const titleUpper = title.toUpperCase();
+
+  // Check item specifics
+  const certSpec = specs['certification'] || specs['certificate'] ||
+                   specs['grading report'] || specs['lab'] ||
+                   specs['certified by'] || specs['graded by'] || '';
+
+  const allLabs = [...CERT_LABS.premium, ...CERT_LABS.standard, ...CERT_LABS.budget];
+
+  if (certSpec) {
+    const specUpper = certSpec.toUpperCase();
+    for (const lab of allLabs) {
+      if (specUpper.includes(lab.toUpperCase())) {
+        return lab;
+      }
+    }
+    // Check for "certified" without specific lab
+    if (/certified/i.test(certSpec)) {
+      return 'Certified';
+    }
+  }
+
+  // Check title for lab names
+  for (const lab of allLabs) {
+    const regex = new RegExp(`\\b${lab}\\b`, 'i');
+    if (regex.test(title)) {
+      return lab;
+    }
+  }
+
+  // Check for generic certified mentions
+  if (/\bcertified\b/i.test(title) && !/\buncertified\b/i.test(title)) {
+    return 'Certified';
+  }
+
+  return null;
+}
+
+/**
+ * Extract treatment information from title and specs
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @returns {string|null} Treatment type or null
+ */
+function extractTreatment(title, specs = {}) {
+  const titleLower = title.toLowerCase();
+
+  // Check item specifics
+  const treatSpec = specs['treatment'] || specs['enhancements'] ||
+                    specs['stone treatment'] || specs['treated'] || '';
+
+  if (treatSpec) {
+    const specLower = treatSpec.toLowerCase();
+
+    // Check for no treatment - return 'Not Enhanced' to match eBay taxonomy
+    for (const term of TREATMENTS.none) {
+      if (specLower.includes(term)) return 'Not Enhanced';
+    }
+    // Check for heavy treatments (most important to flag)
+    for (const term of TREATMENTS.heavy) {
+      if (specLower.includes(term)) return term.charAt(0).toUpperCase() + term.slice(1);
+    }
+    // Check for moderate treatments
+    for (const term of TREATMENTS.moderate) {
+      if (specLower.includes(term)) return term.charAt(0).toUpperCase() + term.slice(1);
+    }
+    // Check for minor treatments
+    for (const term of TREATMENTS.minor) {
+      if (specLower.includes(term)) return 'Heat';
+    }
+  }
+
+  // Check title for treatment terms
+  // No treatment indicators - return 'Not Enhanced' to match eBay taxonomy
+  if (/\b(?:untreated|no[\s-]?heat|unheated|no[\s-]?treatment|natural)\b/i.test(title)) {
+    return 'Not Enhanced';
+  }
+
+  // Heavy treatments
+  if (/\b(?:filled|glass[\s-]?filled|lead[\s-]?glass|fracture[\s-]?filled)\b/i.test(title)) {
+    return 'Filled';
+  }
+  if (/\birradiated\b/i.test(title)) return 'Irradiated';
+  if (/\bdiffused?\b/i.test(title)) return 'Diffused';
+  if (/\bcoated\b/i.test(title)) return 'Coated';
+  if (/\bberyllium\b/i.test(title)) return 'Beryllium';
+
+  // Moderate treatments
+  if (/\b(?:oiled|oil)\b/i.test(title)) return 'Oiled';
+  if (/\b(?:clarity[\s-]?enhanced|ce)\b/i.test(title)) return 'Clarity Enhanced';
+
+  // Minor treatments
+  if (/\b(?:heated|heat[\s-]?treated|heat[\s-]?only)\b/i.test(title)) return 'Heat';
+
+  return null;
+}
+
+/**
+ * Extract dimensions (mm) from title and specs
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @returns {Object} Dimensions object {length_mm, width_mm, depth_mm}
+ */
+function extractDimensions(title, specs = {}) {
+  const result = { length_mm: null, width_mm: null, depth_mm: null };
+
+  // Check item specifics
+  const dimSpec = specs['dimensions'] || specs['measurements'] ||
+                  specs['size'] || specs['stone size'] || '';
+
+  // Parse dimensions from spec or title
+  const text = dimSpec || title;
+
+  // Pattern: "8.5x6.5x4.2mm" or "8.5 x 6.5 x 4.2 mm"
+  const match3d = text.match(/(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*(?:mm|millimeter)?/);
+  if (match3d) {
+    result.length_mm = parseFloat(match3d[1]);
+    result.width_mm = parseFloat(match3d[2]);
+    result.depth_mm = parseFloat(match3d[3]);
+    return result;
+  }
+
+  // Pattern: "8.5x6.5mm" (2D)
+  const match2d = text.match(/(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*(?:mm|millimeter)?/);
+  if (match2d) {
+    result.length_mm = parseFloat(match2d[1]);
+    result.width_mm = parseFloat(match2d[2]);
+    return result;
+  }
+
+  // Pattern: "8.5mm" (single dimension, usually for round stones)
+  const match1d = text.match(/(\d+\.?\d*)\s*mm\b/i);
+  if (match1d) {
+    result.length_mm = parseFloat(match1d[1]);
+    result.width_mm = result.length_mm; // Assume round
+    return result;
+  }
+
+  return result;
+}
+
+/**
+ * Check if stone appears to be natural (not lab-created/synthetic)
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @returns {boolean} True if natural, false if lab-created
+ */
+function isNaturalStone(title, specs = {}) {
+  const titleLower = title.toLowerCase();
+
+  // Check item specifics
+  const creationSpec = specs['creation method'] || specs['origin'] ||
+                       specs['stone creation'] || specs['natural/lab-created'] || '';
+
+  if (creationSpec) {
+    const specLower = creationSpec.toLowerCase();
+    // Explicit lab-created
+    for (const term of LAB_CREATED_TERMS) {
+      if (specLower.includes(term)) return false;
+    }
+    // Explicit natural
+    if (/natural|earth|mined|genuine/i.test(specLower)) return true;
+  }
+
+  // Check title for lab-created terms
+  for (const term of LAB_CREATED_TERMS) {
+    if (titleLower.includes(term)) return false;
+  }
+
+  // Check for explicit natural mentions
+  if (/\bnatural\b/i.test(title) || /\bearth[\s-]?mined\b/i.test(title)) {
+    return true;
+  }
+
+  // Default to true (assume natural unless stated otherwise)
+  return true;
+}
+
+/**
+ * Main function to parse all stone details
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @param {string} description - Item description (optional)
+ * @returns {Object} Complete stone details object
+ */
+function parseStoneDetails(title, specs = {}, description = '') {
+  const stoneType = detectStoneType(title, specs);
+
+  return {
+    stone_type: stoneType,
+    shape: extractStoneShape(title, specs),
+    carat: extractCaratWeight(title, specs, description),
+    color: extractStoneColor(title, specs, stoneType),
+    clarity: extractStoneClarity(title, specs, stoneType),
+    cut_grade: extractCutGrade(title, specs),
+    certification: extractCertification(title, specs),
+    treatment: extractTreatment(title, specs),
+    dimensions: extractDimensions(title, specs),
+    is_natural: isNaturalStone(title, specs),
+    // Raw specs for debugging
+    _raw_specs: specs
+  };
+}
+
+// ============================================
+// Gemstone Classifier & Blacklist Filter
+// ============================================
+
+/**
+ * Classify listing as loose stone or jewelry with stone
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @param {Array} categories - eBay category hierarchy (optional)
+ * @returns {string} 'LOOSE_STONE' | 'JEWELRY_WITH_STONE' | 'UNKNOWN'
+ */
+function classifyListing(title, specs = {}, categories = []) {
+  const titleLower = title.toLowerCase();
+
+  // Check eBay category first (most reliable)
+  if (categories && categories.length > 0) {
+    const categoryIds = categories.map(c => String(c.categoryId || c));
+    // Loose stone categories
+    if (categoryIds.some(id => ['10207', '51089', '164694'].includes(id))) {
+      return 'LOOSE_STONE';
+    }
+    // Jewelry categories
+    if (categoryIds.some(id => ['164331', '67681', '67680', '261990'].includes(id))) {
+      return 'JEWELRY_WITH_STONE';
+    }
+  }
+
+  // Check item specifics
+  const typeSpec = specs['type'] || specs['item type'] || '';
+  if (typeSpec) {
+    const typeLower = typeSpec.toLowerCase();
+    if (/loose|unmounted/i.test(typeLower)) return 'LOOSE_STONE';
+    if (/ring|necklace|pendant|earring|bracelet/i.test(typeLower)) return 'JEWELRY_WITH_STONE';
+  }
+
+  // Check title for loose stone indicators
+  for (const indicator of LOOSE_INDICATORS) {
+    if (titleLower.includes(indicator)) {
+      return 'LOOSE_STONE';
+    }
+  }
+
+  // Check title for jewelry indicators
+  for (const indicator of JEWELRY_INDICATORS) {
+    const regex = new RegExp(`\\b${indicator}s?\\b`, 'i');
+    if (regex.test(title)) {
+      return 'JEWELRY_WITH_STONE';
+    }
+  }
+
+  // Default to loose stone if we can't determine
+  // (gemstone tasks typically target loose stones)
+  return 'LOOSE_STONE';
+}
+
+/**
+ * Check if listing should be blocked based on gemstone blacklist
+ * @param {string} title - eBay listing title
+ * @param {Object} specs - Item specifics
+ * @param {Object} filters - Task filters (may allow lab-created)
+ * @returns {Object} {blocked: boolean, reason: string|null}
+ */
+function passesGemstoneBlacklist(title, specs = {}, filters = {}) {
+  const titleLower = title.toLowerCase();
+  const allowLabCreated = filters.allow_lab_created || false;
+
+  // Check item specifics for simulant indicators
+  const stoneSpec = specs['type'] || specs['stone type'] || specs['gemstone'] || '';
+  const creationSpec = specs['creation method'] || specs['natural/lab-created'] || '';
+
+  // Check for simulant in specs
+  const simulantTerms = ['cubic zirconia', 'cz', 'moissanite', 'simulant', 'simulated', 'fake', 'imitation'];
+  for (const term of simulantTerms) {
+    if (stoneSpec.toLowerCase().includes(term) || creationSpec.toLowerCase().includes(term)) {
+      return { blocked: true, reason: `Simulant in specs: "${term}"` };
+    }
+  }
+
+  // Check title against blacklist
+  for (const term of GEMSTONE_BLACKLIST) {
+    // Skip lab-created terms if allowed
+    if (allowLabCreated && LAB_CREATED_TERMS.includes(term)) {
+      continue;
+    }
+
+    // For short terms like "cz", require word boundaries
+    if (term.length <= 3) {
+      const regex = new RegExp(`\\b${term}\\b`, 'i');
+      if (regex.test(title)) {
+        return { blocked: true, reason: `Blacklisted term: "${term}"` };
+      }
+    } else {
+      if (titleLower.includes(term.toLowerCase())) {
+        return { blocked: true, reason: `Blacklisted term: "${term}"` };
+      }
+    }
+  }
+
+  // Check for lab-created if not allowed
+  if (!allowLabCreated) {
+    for (const term of LAB_CREATED_TERMS) {
+      if (titleLower.includes(term)) {
+        return { blocked: true, reason: `Lab-created: "${term}"` };
+      }
+    }
+  }
+
+  return { blocked: false, reason: null };
+}
+
+/**
+ * Check if stone matches task filter criteria
+ * @param {Object} stone - Parsed stone details
+ * @param {Object} filters - Task gemstone filters
+ * @returns {Object} {passes: boolean, reason: string|null}
+ */
+function passesGemstoneFilters(stone, filters = {}) {
+  // Stone type filter
+  if (filters.stone_types && filters.stone_types.length > 0) {
+    if (!stone.stone_type || !filters.stone_types.includes(stone.stone_type)) {
+      return { passes: false, reason: `Stone type "${stone.stone_type}" not in filter` };
+    }
+  }
+
+  // Shape filter
+  if (filters.shapes && filters.shapes.length > 0) {
+    if (!stone.shape || !filters.shapes.includes(stone.shape)) {
+      return { passes: false, reason: `Shape "${stone.shape}" not in filter` };
+    }
+  }
+
+  // Carat range filter
+  if (filters.carat_min !== undefined && stone.carat !== null) {
+    if (stone.carat < filters.carat_min) {
+      return { passes: false, reason: `Carat ${stone.carat} below min ${filters.carat_min}` };
+    }
+  }
+  if (filters.carat_max !== undefined && stone.carat !== null) {
+    if (stone.carat > filters.carat_max) {
+      return { passes: false, reason: `Carat ${stone.carat} above max ${filters.carat_max}` };
+    }
+  }
+
+  // Color filter (for diamonds)
+  if (filters.colors && filters.colors.length > 0 && stone.color) {
+    if (!filters.colors.includes(stone.color)) {
+      return { passes: false, reason: `Color "${stone.color}" not in filter` };
+    }
+  }
+
+  // Clarity filter
+  if (filters.clarities && filters.clarities.length > 0 && stone.clarity) {
+    if (!filters.clarities.includes(stone.clarity)) {
+      return { passes: false, reason: `Clarity "${stone.clarity}" not in filter` };
+    }
+  }
+
+  // Certification filter
+  if (filters.certifications && filters.certifications.length > 0) {
+    if (!stone.certification || !filters.certifications.includes(stone.certification)) {
+      // Check if "Certified" is in filter and stone has any cert
+      if (!(filters.certifications.includes('Certified') && stone.certification)) {
+        return { passes: false, reason: `Certification "${stone.certification}" not in filter` };
+      }
+    }
+  }
+
+  // Treatment filter
+  if (filters.treatments && filters.treatments.length > 0 && stone.treatment) {
+    if (!filters.treatments.includes(stone.treatment)) {
+      return { passes: false, reason: `Treatment "${stone.treatment}" not allowed` };
+    }
+  }
+
+  // Natural/lab-created filter
+  if (filters.allow_lab_created === false && !stone.is_natural) {
+    return { passes: false, reason: 'Lab-created stone not allowed' };
+  }
+
+  return { passes: true, reason: null };
+}
+
+// ============================================
+// Gemstone Scoring Functions
+// ============================================
+
+/**
+ * Calculate match quality score (0-25 points)
+ * How well does the stone match the task filter criteria?
+ * @param {Object} stone - Parsed stone details
+ * @param {Object} filters - Task gemstone filters
+ * @returns {number} Score 0-25
+ */
+function calculateMatchQuality(stone, filters = {}) {
+  let score = 0;
+  let maxScore = 0;
+
+  // Stone type match (5 pts)
+  if (filters.stone_types && filters.stone_types.length > 0) {
+    maxScore += 5;
+    if (stone.stone_type && filters.stone_types.includes(stone.stone_type)) {
+      score += 5;
+    }
+  }
+
+  // Shape match (5 pts)
+  if (filters.shapes && filters.shapes.length > 0) {
+    maxScore += 5;
+    if (stone.shape && filters.shapes.includes(stone.shape)) {
+      score += 5;
+    }
+  }
+
+  // Carat in range (5 pts)
+  if (filters.carat_min !== undefined || filters.carat_max !== undefined) {
+    maxScore += 5;
+    if (stone.carat !== null) {
+      const inMin = filters.carat_min === undefined || stone.carat >= filters.carat_min;
+      const inMax = filters.carat_max === undefined || stone.carat <= filters.carat_max;
+      if (inMin && inMax) {
+        score += 5;
+      }
+    }
+  }
+
+  // Color match (5 pts)
+  if (filters.colors && filters.colors.length > 0) {
+    maxScore += 5;
+    if (stone.color && filters.colors.includes(stone.color)) {
+      score += 5;
+    }
+  }
+
+  // Clarity match (5 pts)
+  if (filters.clarities && filters.clarities.length > 0) {
+    maxScore += 5;
+    if (stone.clarity && filters.clarities.includes(stone.clarity)) {
+      score += 5;
+    }
+  }
+
+  // If no filters specified, give full points for having stone details
+  if (maxScore === 0) {
+    if (stone.stone_type) score += 5;
+    if (stone.shape) score += 5;
+    if (stone.carat) score += 5;
+    if (stone.color) score += 5;
+    if (stone.clarity) score += 5;
+    return Math.min(25, score);
+  }
+
+  // Normalize to 25 points max
+  return maxScore > 0 ? Math.round((score / maxScore) * 25) : 25;
+}
+
+/**
+ * Calculate seller quality score (0-15 points)
+ * @param {Object} seller - Seller info from eBay listing
+ * @returns {number} Score 0-15
+ */
+function calculateSellerQuality(seller = {}) {
+  let score = 0;
+
+  const feedback = seller.feedbackScore || 0;
+  const percentage = seller.feedbackPercentage ? parseFloat(seller.feedbackPercentage) : 0;
+
+  // Feedback score (0-8 pts)
+  if (feedback >= 10000) score += 8;
+  else if (feedback >= 5000) score += 7;
+  else if (feedback >= 1000) score += 6;
+  else if (feedback >= 500) score += 5;
+  else if (feedback >= 100) score += 4;
+  else if (feedback >= 50) score += 3;
+  else if (feedback >= 10) score += 2;
+  else if (feedback > 0) score += 1;
+
+  // Positive percentage (0-7 pts)
+  if (percentage >= 100) score += 7;
+  else if (percentage >= 99.5) score += 6;
+  else if (percentage >= 99) score += 5;
+  else if (percentage >= 98) score += 4;
+  else if (percentage >= 97) score += 3;
+  else if (percentage >= 95) score += 2;
+  else if (percentage >= 90) score += 1;
+
+  return score;
+}
+
+/**
+ * Calculate listing format score (0-10 points)
+ * Best Offer > BIN > Auction
+ * @param {Array} buyingOptions - eBay buying options
+ * @returns {number} Score 0-10
+ */
+function calculateFormatScore(buyingOptions = []) {
+  if (!buyingOptions || !Array.isArray(buyingOptions)) {
+    buyingOptions = [];
+  }
+
+  const options = buyingOptions.map(o => o.toUpperCase());
+
+  // Best Offer is best - room to negotiate
+  if (options.includes('BEST_OFFER')) return 10;
+  // Fixed price is good
+  if (options.includes('FIXED_PRICE')) return 7;
+  // Auction can be good but risky
+  if (options.includes('AUCTION')) return 5;
+
+  return 3; // Unknown format
+}
+
+/**
+ * Calculate certification bonus (0-15 points)
+ * Premium labs get more points
+ * @param {string} certification - Certification lab name
+ * @returns {number} Score 0-15
+ */
+function calculateCertBonus(certification) {
+  if (!certification) return 0;
+
+  const certUpper = certification.toUpperCase();
+
+  // Premium labs (GIA, AGS, AGL, etc.)
+  if (CERT_LABS.premium.some(lab => certUpper.includes(lab))) {
+    return 15;
+  }
+
+  // Standard labs (IGI, GCAL, HRD)
+  if (CERT_LABS.standard.some(lab => certUpper.includes(lab))) {
+    return 10;
+  }
+
+  // Budget labs (EGL, GSI)
+  if (CERT_LABS.budget.some(lab => certUpper.includes(lab))) {
+    return 5;
+  }
+
+  // Generic "certified" mention
+  if (certUpper.includes('CERTIFIED') || certUpper.includes('CERT')) {
+    return 3;
+  }
+
+  return 0;
+}
+
+/**
+ * Calculate deal quality score (0-100)
+ * Combines: match quality + seller quality + format + certification
+ * (Price attractiveness skipped - using simple threshold instead)
+ * @param {Object} stone - Parsed stone details
+ * @param {Object} listing - eBay listing data
+ * @param {Object} filters - Task gemstone filters
+ * @returns {number} Score 0-100
+ */
+function calculateDealScore(stone, listing, filters = {}) {
+  let score = 0;
+
+  // Match Quality (0-25 pts)
+  score += calculateMatchQuality(stone, filters);
+
+  // Seller Quality (0-15 pts)
+  score += calculateSellerQuality(listing.seller);
+
+  // Listing Format (0-10 pts)
+  score += calculateFormatScore(listing.buyingOptions);
+
+  // Certification Bonus (0-15 pts)
+  score += calculateCertBonus(stone.certification);
+
+  // Bonus for complete details (0-10 pts)
+  // Reward listings with full information
+  let detailBonus = 0;
+  if (stone.carat) detailBonus += 2;
+  if (stone.color) detailBonus += 2;
+  if (stone.clarity) detailBonus += 2;
+  if (stone.shape) detailBonus += 2;
+  if (stone.treatment) detailBonus += 2;
+  score += Math.min(10, detailBonus);
+
+  // Natural stone bonus (0-5 pts)
+  if (stone.is_natural) {
+    score += 5;
+  }
+
+  // No treatment bonus for colored stones (0-5 pts)
+  if (stone.treatment === 'Not Enhanced' && stone.stone_type !== 'Diamond') {
+    score += 5;
+  }
+
+  // Normalize to 100 max
+  // Max possible: 25 + 15 + 10 + 15 + 10 + 5 + 5 = 85
+  // Scale up slightly to allow reaching 100 for perfect listings
+  score = Math.round((score / 85) * 100);
+
+  return Math.min(100, Math.max(0, score));
+}
+
+/**
+ * Calculate risk score (0-100)
+ * Higher score = more risky
+ * @param {Object} stone - Parsed stone details
+ * @param {Object} listing - eBay listing data
+ * @returns {number} Score 0-100
+ */
+function calculateRiskScore(stone, listing) {
+  let risk = 0;
+
+  const title = listing.title || '';
+  const titleLower = title.toLowerCase();
+  const seller = listing.seller || {};
+
+  // Synthetic/simulant risk (0-30 pts)
+  // Check for sneaky synthetic mentions
+  const syntheticFlags = ['lab', 'synthetic', 'created', 'cvd', 'hpht', 'simulant'];
+  for (const flag of syntheticFlags) {
+    if (titleLower.includes(flag)) {
+      risk += 30;
+      break;
+    }
+  }
+
+  // No returns policy (0-20 pts)
+  const returnPolicy = listing.returnTerms || listing.returnPolicy || {};
+  const returnsAccepted = returnPolicy.returnsAccepted !== false;
+  if (!returnsAccepted) {
+    risk += 20;
+  }
+
+  // Missing critical details (0-20 pts)
+  let missingCount = 0;
+  if (!stone.carat) missingCount++;
+  if (!stone.color) missingCount++;
+  if (!stone.clarity) missingCount++;
+  if (!stone.stone_type) missingCount++;
+  risk += missingCount * 5;
+
+  // Suspicious treatment claims (0-15 pts)
+  // Heavy treatments are risky, especially if not clearly disclosed
+  const heavyTreatments = ['filled', 'glass', 'lead', 'fracture', 'diffused', 'coated'];
+  for (const treatment of heavyTreatments) {
+    if (titleLower.includes(treatment)) {
+      risk += 15;
+      break;
+    }
+  }
+
+  // Low seller quality (0-15 pts)
+  const feedback = seller.feedbackScore || 0;
+  const percentage = seller.feedbackPercentage ? parseFloat(seller.feedbackPercentage) : 100;
+  if (feedback < 50) risk += 10;
+  else if (feedback < 100) risk += 5;
+  if (percentage < 98) risk += 5;
+
+  // Vague language risk (0-10 pts)
+  const vagueTerms = ['estate', 'not sure', 'i think', 'possibly', 'maybe', 'as is', 'no guarantee'];
+  for (const term of vagueTerms) {
+    if (titleLower.includes(term)) {
+      risk += 10;
+      break;
+    }
+  }
+
+  // Price too good to be true (0-10 pts)
+  // If carat is high but price is very low, suspicious
+  if (stone.carat && stone.carat >= 1) {
+    const price = listing.price?.value || listing.price || 0;
+    const pricePerCarat = price / stone.carat;
+    // Very low price per carat for claimed natural stone
+    if (stone.is_natural && pricePerCarat < 50) {
+      risk += 10;
+    }
+  }
+
+  return Math.min(100, risk);
 }
 
 // Cache for metal prices
@@ -1708,6 +2852,267 @@ async function searchEbayAllMetals(task) {
   return allItems;
 }
 
+// ============================================
+// Gemstone Multi-Query Search Strategy
+// ============================================
+
+/**
+ * Generate multiple search queries for comprehensive gemstone coverage
+ * @param {Object} task - Task with gemstone_filters
+ * @returns {Array<{type: string, keywords: string, categoryId: string}>}
+ */
+function generateGemstoneQueries(task) {
+  const filters = task.gemstone_filters || {};
+  const queries = [];
+
+  // Get stone type from filters or default to "diamond"
+  const stoneTypes = filters.stone_types || ['Diamond'];
+  const primaryStone = stoneTypes[0] || 'Diamond';
+  const shape = filters.shapes && filters.shapes[0] ? filters.shapes[0] : '';
+  const caratMin = filters.carat_min;
+  const cert = filters.certifications && filters.certifications[0] ? filters.certifications[0] : '';
+
+  // 1. TIGHT query - very specific with certification if available
+  if (cert && cert !== 'Certified') {
+    const tightKeywords = [
+      'natural',
+      primaryStone.toLowerCase(),
+      shape.toLowerCase(),
+      caratMin ? `${caratMin}ct` : '',
+      cert
+    ].filter(Boolean).join(' ');
+
+    queries.push({
+      type: 'tight',
+      keywords: tightKeywords,
+      categoryId: primaryStone === 'Diamond' ? GEMSTONE_CATEGORIES.LOOSE_DIAMONDS : GEMSTONE_CATEGORIES.LOOSE_GEMSTONES
+    });
+  }
+
+  // 2. MEDIUM query - stone type + shape + "loose"
+  const mediumKeywords = [
+    primaryStone.toLowerCase(),
+    shape.toLowerCase(),
+    'loose'
+  ].filter(Boolean).join(' ');
+
+  queries.push({
+    type: 'medium',
+    keywords: mediumKeywords,
+    categoryId: primaryStone === 'Diamond' ? GEMSTONE_CATEGORIES.LOOSE_DIAMONDS : GEMSTONE_CATEGORIES.LOOSE_GEMSTONES
+  });
+
+  // 3. JEWELRY query - if include_jewelry is enabled
+  if (filters.include_jewelry) {
+    const jewelryKeywords = [
+      primaryStone.toLowerCase(),
+      shape.toLowerCase(),
+      'ring' // Most common jewelry type
+    ].filter(Boolean).join(' ');
+
+    queries.push({
+      type: 'jewelry',
+      keywords: jewelryKeywords,
+      categoryId: GEMSTONE_CATEGORIES.FINE_JEWELRY
+    });
+  }
+
+  // 4. CERT query - certification focused if required
+  if (cert && cert !== 'Certified') {
+    const certKeywords = [
+      cert,
+      primaryStone.toLowerCase(),
+      'certified'
+    ].filter(Boolean).join(' ');
+
+    queries.push({
+      type: 'cert',
+      keywords: certKeywords,
+      categoryId: null // All categories
+    });
+  }
+
+  // 5. Add queries for additional stone types
+  if (stoneTypes.length > 1) {
+    for (let i = 1; i < Math.min(stoneTypes.length, 3); i++) {
+      const stone = stoneTypes[i];
+      queries.push({
+        type: `stone_${i + 1}`,
+        keywords: `${stone.toLowerCase()} ${shape.toLowerCase()} loose`.trim(),
+        categoryId: GEMSTONE_CATEGORIES.LOOSE_GEMSTONES
+      });
+    }
+  }
+
+  return queries;
+}
+
+/**
+ * Build search URL for a gemstone query
+ * @param {Object} task - Task object
+ * @param {Object} query - Query object from generateGemstoneQueries
+ * @returns {string} Full eBay API search URL
+ */
+function buildGemstoneSearchUrl(task, query) {
+  const filters = task.gemstone_filters || {};
+  const baseUrl = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
+
+  const params = new URLSearchParams();
+  params.append('q', query.keywords);
+  params.append('limit', '200');
+  params.append('sort', 'newlyListed');
+
+  // Build filter parts
+  const filterParts = [];
+
+  // Category filter
+  if (query.categoryId) {
+    filterParts.push(`categoryIds:{${query.categoryId}}`);
+  } else if (filters.subcategories && filters.subcategories.length > 0) {
+    filterParts.push(`categoryIds:{${filters.subcategories.join('|')}}`);
+  }
+
+  // Price filter
+  if (task.max_price) {
+    filterParts.push(`price:[..${task.max_price}]`);
+  }
+
+  // Condition filter (typically want new/used gemstones)
+  if (filters.conditions && filters.conditions.length > 0) {
+    const conditionMap = {
+      'New': '1000',
+      'Used': '3000',
+      'Not Specified': '1500'
+    };
+    const conditionIds = filters.conditions
+      .map(c => conditionMap[c])
+      .filter(Boolean);
+    if (conditionIds.length > 0) {
+      filterParts.push(`conditions:{${conditionIds.join('|')}}`);
+    }
+  }
+
+  if (filterParts.length > 0) {
+    params.append('filter', filterParts.join(','));
+  }
+
+  return `${baseUrl}?${params.toString()}`;
+}
+
+/**
+ * Execute a single gemstone search query
+ * @param {Object} task - Task object
+ * @param {Object} query - Query object
+ * @returns {Array} Array of items
+ */
+async function searchEbayGemstoneQuery(task, query) {
+  try {
+    // Check rate limit before making call
+    if (!rateLimiter.canMakeCall()) {
+      console.log(`  ⚠️ Rate limit reached for gemstone query [${query.type}]`);
+      return [];
+    }
+
+    // Get eBay credentials (round-robin)
+    const credentials = await getEbayCredentials();
+    if (!credentials) {
+      console.log(`  ⚠️ No available eBay credentials for gemstone query`);
+      return [];
+    }
+
+    // Get token
+    const accessToken = await getEbayToken(credentials);
+    if (!accessToken) {
+      console.log(`  ⚠️ Could not get eBay token for gemstone query`);
+      return [];
+    }
+
+    // Build search URL
+    const searchUrl = buildGemstoneSearchUrl(task, query);
+    console.log(`  🔍 Gemstone query [${query.type}]: ${query.keywords}`);
+
+    // Make API call
+    const response = await fetch(searchUrl, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    // Record the API call
+    rateLimiter.recordCall();
+
+    // Handle rate limiting
+    if (response.status === 429) {
+      console.log(`  ⚠️ Rate limited on gemstone query [${query.type}]`);
+      throw new RateLimitError('Rate limited', credentials);
+    }
+
+    if (!response.ok) {
+      console.log(`  ⚠️ Gemstone query failed: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const items = data.itemSummaries || [];
+
+    return items;
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      markKeyRateLimited(error.credentials?.app_id, error.credentials?.label);
+    }
+    console.log(`  ⚠️ Gemstone query error [${query.type}]: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Search eBay for gemstones using multi-query strategy
+ * Generates multiple targeted queries and combines results
+ * @param {Object} task - Task object
+ * @returns {Array} Combined and deduplicated items
+ */
+async function searchGemstoneAllQueries(task) {
+  // If not a gemstone task, fall back to regular search
+  if (task.item_type !== 'gemstone') {
+    return await searchEbay(task);
+  }
+
+  // Generate queries
+  const queries = generateGemstoneQueries(task);
+  console.log(`  💎 Executing ${queries.length} gemstone queries`);
+
+  const allItems = [];
+  const seenItemIds = new Set();
+
+  // Execute each query
+  for (const query of queries) {
+    const items = await searchEbayGemstoneQuery(task, query);
+    console.log(`  📦 Found ${items.length} items for [${query.type}]`);
+
+    // Add unique items only
+    for (const item of items) {
+      if (!seenItemIds.has(item.itemId)) {
+        seenItemIds.add(item.itemId);
+        // Tag item with query type for debugging
+        item._queryType = query.type;
+        allItems.push(item);
+      }
+    }
+  }
+
+  // Sort by listing date (newest first)
+  allItems.sort((a, b) => {
+    const dateA = a.itemCreationDate ? new Date(a.itemCreationDate) : new Date(0);
+    const dateB = b.itemCreationDate ? new Date(b.itemCreationDate) : new Date(0);
+    return dateB - dateA;
+  });
+
+  console.log(`  📊 Total unique gemstone items: ${allItems.length} (sorted by listing date)`);
+  return allItems;
+}
+
 // Check cache for item details
 async function getCachedItemDetails(itemId) {
   try {
@@ -2323,7 +3728,13 @@ async function processTask(task) {
 
   try {
     // Each API call now gets its own credentials with round-robin rotation
-    const items = await searchEbayAllMetals(task);
+    // Use appropriate search strategy based on task type
+    let items;
+    if (task.item_type === 'gemstone') {
+      items = await searchGemstoneAllQueries(task);
+    } else {
+      items = await searchEbayAllMetals(task);
+    }
 
     console.log(`  Found ${items.length} total items`);
 
@@ -2387,10 +3798,31 @@ async function processTask(task) {
 
       // Validate category - eBay's API filter isn't 100% reliable
       // Items can slip through from other categories that match the search terms
+      // For gemstone tasks, we expand allowed categories to include child categories
       if (filters.subcategories?.length > 0 && item.categories?.length > 0) {
+        // Build set of allowed categories including known child categories
         const allowedCategories = new Set(filters.subcategories.map(String));
+
+        // Add known child categories for gemstones (10207 and 51089 have children)
+        if (task.item_type === 'gemstone') {
+          // Parent 51089 (Loose Gemstones) has child 164694 (Natural Loose Gemstones)
+          if (allowedCategories.has('51089')) {
+            allowedCategories.add('164694');
+          }
+          // Parent 10207 (Loose Diamonds) has various children
+          if (allowedCategories.has('10207')) {
+            allowedCategories.add('262026'); // Natural Loose Diamonds
+            allowedCategories.add('262027'); // Lab-Grown Loose Diamonds
+          }
+        }
+
         const itemCategories = item.categories.map(c => String(c.categoryId));
         const isInAllowedCategory = itemCategories.some(catId => allowedCategories.has(catId));
+
+        // Debug logging for first few items
+        if (skippedWrongCategory < 3 && !isInAllowedCategory) {
+          console.log(`  🔍 Category mismatch: item has [${itemCategories.join(',')}], allowed: [${[...allowedCategories].join(',')}]`);
+        }
 
         if (!isInAllowedCategory) {
           // Item is from a wrong category - skip it
@@ -2479,7 +3911,7 @@ async function processTask(task) {
     // ============================================
     let itemDetailsMap = new Map();
 
-    if (task.item_type === 'jewelry' && candidateItems.length > 0) {
+    if ((task.item_type === 'jewelry' || task.item_type === 'gemstone') && candidateItems.length > 0) {
       // Apply max detail fetch limit
       let itemsToFetch = candidateItems;
       if (maxDetailFetches > 0 && candidateItems.length > maxDetailFetches) {
@@ -2768,14 +4200,99 @@ async function processTask(task) {
           }
         }
       } else if (task.item_type === 'gemstone') {
-        match.shape = 'Unknown';
-        match.colour = 'Unknown';
-        match.clarity = 'Unknown';
-        match.cut_grade = 'Unknown';
-        match.cert_lab = 'Unknown';
+        // ============================================
+        // Gemstone Processing
+        // ============================================
+        const gemstoneFilters = task.gemstone_filters || {};
+
+        // Get item details for parsing
+        const itemDetails = itemDetailsMap.get(item.itemId);
+        const specs = itemDetails ? extractItemSpecifics(itemDetails) : {};
+
+        // Parse stone details
+        const stone = parseStoneDetails(item.title, specs, itemDetails?.description || '');
+
+        // Check blacklist
+        const blacklistCheck = passesGemstoneBlacklist(item.title, specs, gemstoneFilters);
+        if (blacklistCheck.blocked) {
+          console.log(`  ❌ REJECTED (${blacklistCheck.reason}): ${item.title.substring(0, 40)}...`);
+          // Cache rejection
+          try {
+            await supabase.from('rejected_items').upsert({
+              task_id: task.id,
+              ebay_listing_id: item.itemId,
+              rejection_reason: blacklistCheck.reason,
+              rejected_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+            }, { onConflict: 'task_id,ebay_listing_id' });
+          } catch (e) {}
+          continue;
+        }
+
+        // Classify listing
+        const classification = classifyListing(item.title, specs, item.categories || []);
+
+        // Skip jewelry if not requested
+        if (classification === 'JEWELRY_WITH_STONE' && !gemstoneFilters.include_jewelry) {
+          console.log(`  ⏭️ Skipped (jewelry not included): ${item.title.substring(0, 40)}...`);
+          continue;
+        }
+
+        // Check stone filters
+        const filterCheck = passesGemstoneFilters(stone, gemstoneFilters);
+        if (!filterCheck.passes) {
+          console.log(`  ⏭️ Skipped (${filterCheck.reason}): ${item.title.substring(0, 40)}...`);
+          continue;
+        }
+
+        // Calculate scores
+        const dealScore = calculateDealScore(stone, item, gemstoneFilters);
+        const riskScore = calculateRiskScore(stone, item);
+
+        // Apply score thresholds
+        const minDealScore = gemstoneFilters.min_deal_score || 0;
+        const maxRiskScore = gemstoneFilters.max_risk_score || 100;
+
+        if (dealScore < minDealScore) {
+          console.log(`  ⏭️ Skipped (deal score ${dealScore} < ${minDealScore}): ${item.title.substring(0, 40)}...`);
+          continue;
+        }
+
+        if (riskScore > maxRiskScore) {
+          console.log(`  ⏭️ Skipped (risk score ${riskScore} > ${maxRiskScore}): ${item.title.substring(0, 40)}...`);
+          continue;
+        }
+
+        // Populate match fields
+        match.shape = stone.shape || 'Unknown';
+        match.carat = stone.carat;
+        match.colour = stone.color || 'Unknown';
+        match.clarity = stone.clarity || 'Unknown';
+        match.cut_grade = stone.cut_grade || 'Unknown';
+        match.cert_lab = stone.certification || 'Unknown';
+
+        // Store additional gemstone data
+        match.stone_type = stone.stone_type;
+        match.treatment = stone.treatment;
+        match.is_natural = stone.is_natural;
+        match.classification = classification;
+        match.deal_score = dealScore;
+        match.risk_score = riskScore;
+
+        // Store AI-like reasoning
+        match.ai_score = dealScore / 100;
+        match.ai_reasoning = `Deal: ${dealScore}/100, Risk: ${riskScore}/100. ${classification}. ${stone.treatment ? 'Treatment: ' + stone.treatment : 'No treatment disclosed'}.`;
+
+        // Store parsed stone for Slack notification (will be removed before insert)
+        match._stone = stone;
+        match._dealScore = dealScore;
+        match._riskScore = riskScore;
       }
 
-      const { error } = await supabase.from(tableName).insert(match);
+      // Remove temporary properties before database insert
+      const { _stone, _dealScore, _riskScore, ...matchToInsert } = match;
+
+      const { error } = await supabase.from(tableName).insert(matchToInsert);
 
       if (!error) {
         newMatches++;
@@ -2785,6 +4302,11 @@ async function processTask(task) {
         if (task.item_type === 'jewelry') {
           await sendSlackNotification(match, item, karat, weightG, shippingCost, meltValue);
           await sendTestSellerNotification(item, 'SAVED', null, karat, weightG, price, shippingCost, meltValue);
+        }
+
+        // Send Slack notification for gemstone matches
+        if (task.item_type === 'gemstone' && match._stone) {
+          await sendGemstoneSlackNotification(match, match._stone, match._dealScore, match._riskScore);
         }
       } else if (error.code === '23505') {
         // Unique constraint violation - duplicate, just skip silently

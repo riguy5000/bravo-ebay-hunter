@@ -335,6 +335,157 @@ const Matches = () => {
     </div>
   );
 
+  const renderGemstoneTable = (matches: Match[], itemType: string) => (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-gray-50">
+            <TableHead className="w-[80px]">Deal</TableHead>
+            <TableHead className="w-[80px]">Risk</TableHead>
+            <TableHead className="w-[120px]">Item ID</TableHead>
+            <TableHead className="min-w-[250px]">Title</TableHead>
+            <TableHead className="w-[100px]">Stone</TableHead>
+            <TableHead className="w-[70px]">Carat</TableHead>
+            <TableHead className="w-[100px]">Price</TableHead>
+            <TableHead className="w-[80px]">Cert</TableHead>
+            <TableHead className="w-[80px]">Status</TableHead>
+            <TableHead className="w-[100px]">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {matches.map((match) => {
+            const isExpanded = expandedRows.has(match.id);
+            const stoneType = 'stone_type' in match ? match.stone_type : undefined;
+            const carat = 'carat' in match ? match.carat : undefined;
+            const dealScore = 'deal_score' in match ? match.deal_score : undefined;
+            const riskScore = 'risk_score' in match ? match.risk_score : undefined;
+            const certLab = 'cert_lab' in match ? match.cert_lab : undefined;
+            const shippingCost = match.shipping_cost || 0;
+            const totalCost = match.listed_price + shippingCost;
+
+            const getDealScoreColor = (score?: number) => {
+              if (!score) return 'bg-gray-100 text-gray-600';
+              if (score >= 70) return 'bg-green-100 text-green-800';
+              if (score >= 50) return 'bg-yellow-100 text-yellow-800';
+              return 'bg-red-100 text-red-800';
+            };
+
+            const getRiskScoreColor = (score?: number) => {
+              if (!score) return 'bg-gray-100 text-gray-600';
+              if (score <= 30) return 'bg-green-100 text-green-800';
+              if (score <= 60) return 'bg-yellow-100 text-yellow-800';
+              return 'bg-red-100 text-red-800';
+            };
+
+            return (
+              <React.Fragment key={match.id}>
+                <TableRow className={`hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}>
+                  <TableCell>
+                    <Badge variant="outline" className={`${getDealScoreColor(dealScore)} text-xs`}>
+                      {dealScore ?? '-'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`${getRiskScoreColor(riskScore)} text-xs`}>
+                      {riskScore ?? '-'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
+                  <TableCell>
+                    <div className="max-w-[300px]">
+                      {match.ebay_url ? (
+                        <a
+                          href={match.ebay_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium truncate block text-blue-600 hover:text-blue-800 hover:underline"
+                          title={match.ebay_title}
+                        >
+                          {match.ebay_title}
+                        </a>
+                      ) : (
+                        <p className="text-sm font-medium truncate" title={match.ebay_title}>
+                          {match.ebay_title}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        Scanned: {new Date(match.found_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-medium text-sm">{stoneType || '-'}</TableCell>
+                  <TableCell className="font-semibold">{carat ? `${carat}ct` : '-'}</TableCell>
+                  <TableCell>
+                    <div className="font-semibold">${totalCost.toLocaleString()}</div>
+                    {shippingCost > 0 && (
+                      <div className="text-xs text-gray-500">
+                        +${shippingCost} ship
+                      </div>
+                    )}
+                    {shippingCost === 0 && (
+                      <div className="text-xs text-green-600">Free ship</div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">
+                      {certLab || '-'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
+                      {match.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <MatchActions
+                      matchId={match.id}
+                      currentStatus={match.status}
+                      itemType={itemType}
+                      currentOffers={{
+                        offer1: match.offer1,
+                        offer2: match.offer2,
+                        offer3: match.offer3,
+                        offer4: match.offer4,
+                        offer5: match.offer5,
+                      }}
+                      onStatusChange={(newStatus, offerAmount) =>
+                        handleStatusUpdate(match, newStatus, itemType, offerAmount)
+                      }
+                      onExpandDetails={() => toggleRowExpansion(match.id)}
+                    />
+                  </TableCell>
+                </TableRow>
+                {isExpanded && (
+                  <MatchDetailsPanel
+                    matchId={match.id}
+                    offers={{
+                      offer1: match.offer1,
+                      offer2: match.offer2,
+                      offer3: match.offer3,
+                      offer4: match.offer4,
+                      offer5: match.offer5,
+                    }}
+                    toggles={{
+                      purchased_toggle: match.purchased_toggle,
+                      arrived_toggle: match.arrived_toggle,
+                      return_toggle: match.return_toggle,
+                      shipped_back_toggle: match.shipped_back_toggle,
+                      refunded_toggle: match.refunded_toggle,
+                    }}
+                    onToggleChange={(field, value) =>
+                      handleToggleChange(match, itemType, field, value)
+                    }
+                    colSpan={10}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+
   const renderGenericTable = (matches: Match[], itemType: string) => (
     <div className="overflow-x-auto">
       <Table>
@@ -525,6 +676,8 @@ const Matches = () => {
                     <>
                       {group.task.item_type === 'jewelry'
                         ? renderJewelryTable(group.task.id === activeTaskId ? paginatedMatches : group.matches.slice(0, itemsPerPage), group.task.item_type)
+                        : group.task.item_type === 'gemstone'
+                        ? renderGemstoneTable(group.task.id === activeTaskId ? paginatedMatches : group.matches.slice(0, itemsPerPage), group.task.item_type)
                         : renderGenericTable(group.task.id === activeTaskId ? paginatedMatches : group.matches.slice(0, itemsPerPage), group.task.item_type)
                       }
 

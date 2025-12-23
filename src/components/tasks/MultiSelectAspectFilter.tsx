@@ -12,6 +12,7 @@ interface MultiSelectAspectFilterProps {
   title: string;
   categoryId?: string;
   fallbackCategoryId?: string;
+  mergedCategoryId?: string;
   aspectName: string;
   selectedValues: string[];
   onChange: (values: string[]) => void;
@@ -22,6 +23,7 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
   title,
   categoryId,
   fallbackCategoryId,
+  mergedCategoryId = 'jewelry_merged',
   aspectName,
   selectedValues: rawSelectedValues,
   onChange,
@@ -41,7 +43,7 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
 
   const { aspects: primaryAspects, getAspectValues: getPrimaryValues, loading: primaryLoading, error: primaryError, refreshTaxonomyData } = useEbayTaxonomy(validCategoryId);
   const { aspects: fallbackAspects, getAspectValues: getFallbackValues, loading: fallbackLoading } = useEbayTaxonomy(validFallbackId);
-  const { aspects: mergedAspects, getAspectValues: getMergedValues, loading: mergedLoading } = useEbayTaxonomy('jewelry_merged');
+  const { aspects: mergedAspects, getAspectValues: getMergedValues, loading: mergedLoading } = useEbayTaxonomy(mergedCategoryId);
   
   // Try primary category first, then fallback, then merged comprehensive data
   const primaryValues = getPrimaryValues(aspectName);
@@ -70,10 +72,11 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
     title,
     aspectName,
     categoryId,
-    fallbackCategoryId,
+    mergedCategoryId,
     primaryValuesCount: primaryValues.length,
     fallbackValuesCount: fallbackValues.length,
-    usingFallback,
+    mergedValuesCount: mergedValues.length,
+    dataSource,
     loading
   });
 
@@ -206,7 +209,10 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
               <div className="text-sm text-gray-500 py-4 text-center space-y-2">
                 <div>No {aspectName.toLowerCase()} options available.</div>
                 <div className="text-xs text-gray-400">
-                  Category: {categoryId || 'None'} | Fallback: {fallbackCategoryId || 'None'}
+                  Category: {categoryId || 'None'} | Merged: {mergedCategoryId}
+                </div>
+                <div className="text-xs text-gray-400">
+                  Primary: {primaryValues.length} | Merged: {mergedValues.length} | Loading: {loading ? 'yes' : 'no'}
                 </div>
                 <Button
                   variant="outline"
