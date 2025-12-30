@@ -1435,9 +1435,10 @@ function extractKarat(title: string, specs: Record<string, string> = {}, descrip
 
 function extractWeight(title: string, specs: Record<string, string> = {}, description: string = ''): number | null {
   // Check item specifics first - eBay uses many different field names
+  // NOTE: 'total carat weight' removed - eBay uses it for karat purity (14K, 18K), not gram weight
   const weightFieldNames = [
     'total weight', 'gram weight', 'total gram weight', 'metal weight(grams)',
-    'item weight', 'weight', 'total carat weight', 'item weight (approx.)',
+    'item weight', 'weight', 'item weight (approx.)',
     'approximate weight', 'metal weight', 'chain weight', 'necklace weight',
     'ring weight', 'bracelet weight', 'gold weight', 'total metal weight',
     'net weight', 'jewelry weight', 'metal wt.', 'metal wt', 'gross weight',
@@ -1455,8 +1456,8 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
   if (weightSpec) {
     const specLower = weightSpec.toLowerCase();
 
-    // Try grams
-    const gramMatch = specLower.match(/([\d.]+)\s*(?:g|gr|gm|gms|gram|grams)?/i);
+    // Try grams - require unit to avoid matching bare karat numbers like "14" from "Total Carat Weight: 14"
+    const gramMatch = specLower.match(/([\d.]+)\s*(?:g|gr|gm|gms|gram|grams)\b/i);
     if (gramMatch) {
       const value = parseFloat(gramMatch[1]);
       if (!specLower.includes('oz') && !specLower.includes('dwt') && !specLower.includes('ct')) {
@@ -1480,6 +1481,7 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
   // Check title
   const titleLower = title.toLowerCase();
 
+  // Match patterns like "5g", "5.5g", "10 grams" - the unit is required so "14K" won't match
   let gramMatch = titleLower.match(/([\d.]+)\s*(?:g|gr|gram|grams)\b/i);
   if (gramMatch) return parseFloat(gramMatch[1]);
 
