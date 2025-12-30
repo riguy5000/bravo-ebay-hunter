@@ -2300,7 +2300,8 @@ const processTask = async (task: Task) => {
 
               // Check profit margin against user's minimum setting
               const profitMarginPct = ((breakEven - totalCost) / totalCost) * 100;
-              const minProfitMargin = jewelryFilters.min_profit_margin;
+              // Check task-level setting first, then fall back to filter setting
+              const minProfitMargin = task.min_profit_margin ?? jewelryFilters.min_profit_margin;
 
               // If user set a minimum profit margin, filter by that; otherwise use default -50%
               const marginThreshold = minProfitMargin !== null && minProfitMargin !== undefined

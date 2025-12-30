@@ -65,6 +65,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
     { value: 'tiffany', label: 'Tiffany', description: 'Designer premium' },
   ];
   const [maxDetailFetches, setMaxDetailFetches] = useState('50');
+  const [minProfitMargin, setMinProfitMargin] = useState<string>('none');
 
   // Expanded listing format options
   const [listingFormats, setListingFormats] = useState<string[]>(['Fixed Price (BIN)', 'Auction']);
@@ -106,6 +107,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setExcludeKeywords(editingTask.exclude_keywords || []);
       setListingFormats(editingTask.listing_format || ['Fixed Price (BIN)', 'Auction']);
       setMaxDetailFetches(editingTask.max_detail_fetches?.toString() || '50');
+      setMinProfitMargin(editingTask.min_profit_margin != null ? editingTask.min_profit_margin.toString() : 'none');
       
       // Safely load type-specific filters with proper fallbacks and validation
       const safeWatchFilters = editingTask.watch_filters && typeof editingTask.watch_filters === 'object' && !Array.isArray(editingTask.watch_filters) ? editingTask.watch_filters : {};
@@ -214,6 +216,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         min_seller_feedback: minSellerFeedback ? parseInt(minSellerFeedback) : 0,
         exclude_keywords: excludeKeywords,
         max_detail_fetches: maxDetailFetches ? parseInt(maxDetailFetches) : 50,
+        min_profit_margin: minProfitMargin !== 'none' ? parseInt(minProfitMargin) : null,
         watch_filters: itemType === 'watch' ? cleanWatchFilters : undefined,
         jewelry_filters: itemType === 'jewelry' ? cleanJewelryFilters : undefined,
         gemstone_filters: itemType === 'gemstone' ? cleanGemstoneFilters : undefined,
@@ -402,6 +405,32 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               />
               <p className="text-xs text-gray-500">
                 Maximum item details to fetch per poll cycle. Lower = fewer API calls. Set to 0 for unlimited.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="minProfitMargin">Minimum Profit Margin</Label>
+              <Select
+                value={minProfitMargin}
+                onValueChange={setMinProfitMargin}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="No minimum..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No minimum</SelectItem>
+                  <SelectItem value="-50">-50% (accept up to 50% loss)</SelectItem>
+                  <SelectItem value="-25">-25% (accept up to 25% loss)</SelectItem>
+                  <SelectItem value="-15">-15% (accept up to 15% loss)</SelectItem>
+                  <SelectItem value="-10">-10% (accept up to 10% loss)</SelectItem>
+                  <SelectItem value="0">0% (break even or better)</SelectItem>
+                  <SelectItem value="10">10% (minimum 10% profit)</SelectItem>
+                  <SelectItem value="25">25% (minimum 25% profit)</SelectItem>
+                  <SelectItem value="50">50% (minimum 50% profit)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">
+                Filter out items below this profit margin (based on melt value for jewelry)
               </p>
             </div>
 

@@ -21,6 +21,7 @@ export interface Task {
   // New V2 fields
   exclude_keywords?: string[];
   max_detail_fetches?: number;
+  min_profit_margin?: number;
   price_delta_type?: string;
   price_delta_value?: number;
   auction_alert?: boolean;
