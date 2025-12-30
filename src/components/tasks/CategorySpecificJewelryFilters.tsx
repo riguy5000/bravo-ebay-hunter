@@ -219,14 +219,14 @@ export const CategorySpecificJewelryFilters: React.FC<CategorySpecificJewelryFil
           <div>
             <Label htmlFor="min-profit-margin">Minimum Profit Margin</Label>
             <Select
-              value={filters.min_profit_margin?.toString() || ''}
-              onValueChange={(value) => handleChange('min_profit_margin', value ? parseInt(value) : null)}
+              value={filters.min_profit_margin?.toString() || 'none'}
+              onValueChange={(value) => handleChange('min_profit_margin', value === 'none' ? null : parseInt(value))}
             >
               <SelectTrigger>
                 <SelectValue placeholder="No minimum..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No minimum</SelectItem>
+                <SelectItem value="none">No minimum</SelectItem>
                 <SelectItem value="-50">-50% (accept up to 50% loss)</SelectItem>
                 <SelectItem value="-25">-25% (accept up to 25% loss)</SelectItem>
                 <SelectItem value="-15">-15% (accept up to 15% loss)</SelectItem>
