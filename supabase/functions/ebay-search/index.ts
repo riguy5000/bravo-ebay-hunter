@@ -333,13 +333,19 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
       filters.push(`buyingOptions:{${mappedTypes.join('|')}}`);
     }
 
-    const needsOfferFilter = params.listingType.some(type => 
+    const needsOfferFilter = params.listingType.some(type =>
       type === 'Best Offer' || type === 'Accepts Offers'
     );
-    
+
     if (needsOfferFilter) {
       filters.push('itemLocationCountry:US');
     }
+  }
+
+  // Always filter to US sellers only (avoids international shipping complications)
+  if (!filters.some(f => f.includes('itemLocationCountry'))) {
+    filters.push('itemLocationCountry:US');
+    console.log('🇺🇸 Filtering to US sellers only');
   }
 
   // Add type-specific aspect filters (including conditions for jewelry/watch/gemstone)
