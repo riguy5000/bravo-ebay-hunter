@@ -658,16 +658,44 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
     }
 
     const data = await response.json();
-    
+
     // NEW: Pass allowed category IDs to prevent unwanted items
-    const allowedCategoryIds = searchParams.typeSpecificFilters?.leafCategoryId ? 
+    const allowedCategoryIds = searchParams.typeSpecificFilters?.leafCategoryId ?
       [searchParams.typeSpecificFilters.leafCategoryId] : [];
-    
-    const items = parseEbayBrowseResponse(data, allowedCategoryIds);
-    
+
+    let items = parseEbayBrowseResponse(data, allowedCategoryIds);
+
+    // Filter by listing format if user specifically wants Best Offer/Accepts Offers only
+    if (searchParams.listingType && searchParams.listingType.length > 0) {
+      const wantsBestOfferOnly = searchParams.listingType.every(type =>
+        type === 'Best Offer' || type === 'Accepts Offers'
+      );
+
+      if (wantsBestOfferOnly) {
+        const beforeCount = items.length;
+        items = items.filter(item => item.listingType === 'Best Offer');
+        console.log(`🎯 Filtered to Best Offer only: ${beforeCount} → ${items.length} items`);
+      }
+
+      // Filter out formats not in the requested list
+      const requestedFormats = searchParams.listingType.map(type => {
+        if (type === 'Best Offer' || type === 'Accepts Offers') return 'Best Offer';
+        if (type === 'Fixed Price (BIN)') return 'Fixed Price';
+        if (type === 'Auction') return 'Auction';
+        if (type === 'Classified Ad') return 'Classified Ad';
+        return type;
+      });
+
+      const beforeFilterCount = items.length;
+      items = items.filter(item => requestedFormats.includes(item.listingType));
+      if (beforeFilterCount !== items.length) {
+        console.log(`🎯 Filtered by listing format: ${beforeFilterCount} → ${items.length} items`);
+      }
+    }
+
     await updateKeyUsage(apiKey, true, false, false);
     console.log(`Successfully used API key "${apiKey.label}" - found ${items.length} items`);
-    
+
     return { items, success: true, rateLimited: false, authError: false };
   } catch (error: any) {
     console.error(`Error with API key "${apiKey.label}":`, error);
