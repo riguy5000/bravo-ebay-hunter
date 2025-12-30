@@ -2512,23 +2512,30 @@ const handler = async (req: Request): Promise<Response> => {
       });
     }
 
-    let successCount = 0;
-    let errorCount = 0;
+    // Process all tasks in parallel
+    console.log(`🚀 Running ${tasks.length} task(s) in parallel...`);
 
-    for (const task of tasks) {
-      console.log(`\n--- Processing Task: ${task.name} ---`);
-      try {
+    const results = await Promise.allSettled(
+      tasks.map(async (task) => {
+        console.log(`\n--- Starting Task: ${task.name} ---`);
         await processTask(task);
-        successCount++;
-      } catch (error) {
-        console.error(`❌ Task ${task.name} failed:`, error);
-        errorCount++;
+        return task.name;
+      })
+    );
+
+    const successCount = results.filter(r => r.status === 'fulfilled').length;
+    const errorCount = results.filter(r => r.status === 'rejected').length;
+
+    // Log any failures
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`❌ Task ${tasks[index].name} failed:`, result.reason);
       }
-    }
+    });
 
     return new Response(JSON.stringify({
       success: true,
-      message: `Task scheduler completed: ${successCount} successful, ${errorCount} failed`,
+      message: `Task scheduler completed: ${successCount} successful, ${errorCount} failed (parallel execution)`,
       tasksProcessed: tasks.length,
       successfulTasks: successCount,
       failedTasks: errorCount,
