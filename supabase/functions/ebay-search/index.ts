@@ -244,16 +244,27 @@ const buildEbayBrowseUrl = (params: SearchRequest): string => {
     filters.push(`itemStartTime:[${fromDate}T00:00:00.000Z..]`);
   }
 
-  // UPDATED: Use specific leaf category IDs instead of broad category mapping
-  if (params.itemType === 'jewelry' && params.typeSpecificFilters?.leafCategoryId) {
-    // Use the specific leaf category ID from the jewelry filter selection
-    filters.push(`categoryIds:${params.typeSpecificFilters.leafCategoryId}`);
-    console.log(`🎯 Using specific jewelry leaf category: ${params.typeSpecificFilters.leafCategoryId}`);
+  // UPDATED: Use specific category IDs from subcategories array or leafCategoryId
+  if (params.itemType === 'jewelry') {
+    // Check for subcategories array first (multiple categories selected)
+    if (params.typeSpecificFilters?.subcategories && params.typeSpecificFilters.subcategories.length > 0) {
+      // eBay supports multiple category IDs with pipe separator
+      const categoryIds = params.typeSpecificFilters.subcategories.join('|');
+      filters.push(`categoryIds:{${categoryIds}}`);
+      console.log(`🎯 Using ${params.typeSpecificFilters.subcategories.length} jewelry subcategories: ${categoryIds.substring(0, 50)}...`);
+    } else if (params.typeSpecificFilters?.leafCategoryId) {
+      // Single leaf category ID
+      filters.push(`categoryIds:${params.typeSpecificFilters.leafCategoryId}`);
+      console.log(`🎯 Using specific jewelry leaf category: ${params.typeSpecificFilters.leafCategoryId}`);
+    } else {
+      // Fallback to Fine Jewelry category (not broad 281 which includes repair equipment)
+      filters.push(`categoryIds:110666`);
+      console.log(`🎯 Using Fine Jewelry fallback category: 110666`);
+    }
   } else if (params.itemType) {
-    // Fallback to broad categories for non-jewelry or when no specific category is selected
-    const categoryMapping = {
-      'jewelry': '281',
-      'watch': '14324', 
+    // Non-jewelry item types
+    const categoryMapping: { [key: string]: string } = {
+      'watch': '14324',
       'gemstone': '164694'
     };
     const categoryId = categoryMapping[params.itemType];

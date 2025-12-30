@@ -251,7 +251,7 @@ const Matches = () => {
                     </div>
                   </TableCell>
                   <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
-                  <TableCell>{weightG ? `${weightG.toFixed(1)}g` : '-'}</TableCell>
+                  <TableCell>{weightG ? `${weightG.toFixed(2)}g` : '-'}</TableCell>
                   <TableCell>
                     <div className="font-semibold">${totalCost.toLocaleString()}</div>
                     {shippingCost > 0 && (
