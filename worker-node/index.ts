@@ -22,6 +22,9 @@ const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || '';
 // Test seller username - listings from this seller bypass all filters
 const TEST_SELLER_USERNAME = process.env.TEST_SELLER_USERNAME || 'pe952597';
 
+// Track test listings we've already notified about (in-memory cache)
+const notifiedTestListings = new Set<string>();
+
 // ============================================
 // Slack Notification Functions
 // ============================================
@@ -2029,8 +2032,12 @@ const processTask = async (task: Task) => {
       // Check for test listing (from our test seller) - bypass all filters
       const sellerName = item.sellerInfo?.name?.toLowerCase() || '';
       if (sellerName === TEST_SELLER_USERNAME.toLowerCase()) {
-        console.log(`🧪 TEST LISTING DETECTED from ${sellerName}: ${item.title.substring(0, 50)}...`);
-        await sendTestListingNotification(item);
+        // Only notify once per test listing
+        if (!notifiedTestListings.has(item.itemId)) {
+          console.log(`🧪 TEST LISTING DETECTED from ${sellerName}: ${item.title.substring(0, 50)}...`);
+          await sendTestListingNotification(item);
+          notifiedTestListings.add(item.itemId);
+        }
         continue;
       }
 
