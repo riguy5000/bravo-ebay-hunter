@@ -37,6 +37,8 @@ async function sendJewelrySlackNotification(
     const offerPrice = (totalCost * 0.87).toFixed(0);
     const breakEven = meltValue ? meltValue * 0.97 : null;
     const profit = breakEven ? (breakEven - totalCost).toFixed(0) : null;
+    const profitMarginPct = breakEven && totalCost > 0 ? ((breakEven - totalCost) / totalCost * 100).toFixed(0) : null;
+    const profitDisplay = profit ? `$${profit} (${profitMarginPct}%)` : '?';
 
     const message = {
       blocks: [
@@ -44,14 +46,14 @@ async function sendJewelrySlackNotification(
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `💍 *$${totalCost}* total | *${karat || '?'}K* | *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | Offer: *$${offerPrice}* | Profit: *$${profit || '?'}*`
+            text: `*${match.ebay_title.substring(0, 150)}*`
           }
         },
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: match.ebay_title.substring(0, 150)
+            text: `💍 *$${totalCost}* total | *${karat || '?'}K* | *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | Offer: *$${offerPrice}* | Profit: *${profitDisplay}*`
           }
         },
         {
