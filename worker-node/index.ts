@@ -19,9 +19,70 @@ const supabase = createClient(
 // Slack webhook URL (optional)
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || '';
 
+// Test seller username - listings from this seller bypass all filters
+const TEST_SELLER_USERNAME = process.env.TEST_SELLER_USERNAME || 'pe952597';
+
 // ============================================
 // Slack Notification Functions
 // ============================================
+
+// Special notification for test listings (bypasses all filters)
+async function sendTestListingNotification(item: any): Promise<void> {
+  if (!SLACK_WEBHOOK_URL) return;
+
+  try {
+    const message = {
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `🧪 *TEST LISTING DETECTED*`
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*${item.title.substring(0, 150)}*`
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `💰 $${item.price} | Seller: ${item.sellerInfo?.name || 'Unknown'}`
+          }
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: { type: "plain_text", text: "View on eBay", emoji: true },
+              url: item.listingUrl,
+              style: "primary"
+            }
+          ]
+        }
+      ]
+    };
+
+    const response = await fetch(SLACK_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+
+    if (!response.ok) {
+      console.log(`⚠️ Test listing Slack notification failed: ${response.status}`);
+    } else {
+      console.log(`🧪 Test listing notification sent!`);
+    }
+  } catch (error) {
+    console.error('❌ Error sending test listing notification:', error);
+  }
+}
 
 async function sendJewelrySlackNotification(
   match: any,
@@ -1965,6 +2026,14 @@ const processTask = async (task: Task) => {
     }
 
     for (const item of items) {
+      // Check for test listing (from our test seller) - bypass all filters
+      const sellerName = item.sellerInfo?.name?.toLowerCase() || '';
+      if (sellerName === TEST_SELLER_USERNAME.toLowerCase()) {
+        console.log(`🧪 TEST LISTING DETECTED from ${sellerName}: ${item.title.substring(0, 50)}...`);
+        await sendTestListingNotification(item);
+        continue;
+      }
+
       // Skip already rejected items (saves API calls)
       if (rejectedItemIds.has(item.itemId)) {
         skippedRejected++;
