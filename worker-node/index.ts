@@ -1737,12 +1737,6 @@ const extractShippingCostFromDetails = (itemDetails: any): { cost: number; type:
   let cost = 0;
   let type = 'unknown';
 
-  // DEBUG: Log raw shipping-related fields
-  console.log(`  🔍 DEBUG - shippingOptions: ${JSON.stringify(itemDetails?.shippingOptions || 'none').substring(0, 500)}`);
-  if (itemDetails?.shippingCost) {
-    console.log(`  🔍 DEBUG - shippingCost: ${JSON.stringify(itemDetails.shippingCost)}`);
-  }
-
   // Try shippingOptions array first (most common)
   if (itemDetails?.shippingOptions && itemDetails.shippingOptions.length > 0) {
     const option = itemDetails.shippingOptions[0];
@@ -2240,6 +2234,23 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       if (task.item_type === 'gemstone') {
         const gemstoneFilters = task.gemstone_filters || {};
 
+        // Use shipping from search results (more reliable than item details)
+        if (item.shippingCost !== undefined && item.shippingCost > 0) {
+          console.log(`  📦 Shipping: $${item.shippingCost} (${item.shippingType || 'from search'})`);
+        } else if (item.shippingType === 'calculated') {
+          console.log(`  📦 Shipping: Calculated (unknown cost)`);
+        } else if (item.shippingType === 'free') {
+          console.log(`  📦 Shipping: Free`);
+        }
+
+        // Check total cost (price + shipping) against max price
+        const totalCostCheck = item.price + (item.shippingCost || 0);
+        if (task.max_price && totalCostCheck > task.max_price) {
+          console.log(`  🚫 Excluding: total cost $${totalCostCheck.toFixed(2)} > max $${task.max_price}: ${item.title.substring(0, 40)}...`);
+          excludedItems++;
+          continue;
+        }
+
         // Fetch item details for specs
         let specs: Record<string, string> = {};
         let description = '';
@@ -2248,23 +2259,6 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           if (itemDetails) {
             specs = extractItemSpecifics(itemDetails);
             description = itemDetails.description || '';
-
-            // Extract shipping cost from item details with improved extraction
-            const shippingResultGem = extractShippingCostFromDetails(itemDetails);
-            item.shippingCost = shippingResultGem.cost;
-            if (shippingResultGem.cost > 0) {
-              console.log(`  📦 Shipping: $${shippingResultGem.cost} (${shippingResultGem.type})`);
-            } else if (shippingResultGem.type === 'calculated') {
-              console.log(`  📦 Shipping: Calculated (unknown cost)`);
-            }
-
-            // Check total cost (price + shipping) against max price
-            const totalCostCheck = item.price + (item.shippingCost || 0);
-            if (task.max_price && totalCostCheck > task.max_price) {
-              console.log(`  🚫 Excluding: total cost $${totalCostCheck} > max $${task.max_price}: ${item.title.substring(0, 40)}...`);
-              excludedItems++;
-              continue;
-            }
 
             // Check category - reject if not a gemstone category
             const categoryId = itemDetails.categoryId || itemDetails.primaryCategory?.categoryId;
@@ -2324,28 +2318,28 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         let specs: Record<string, string> = {};
         let description = '';
 
+        // Use shipping from search results (more reliable than item details)
+        if (item.shippingCost !== undefined) {
+          console.log(`  📦 Shipping: $${item.shippingCost} (${item.shippingType || 'from search'})`);
+        } else if (item.shippingType === 'calculated') {
+          console.log(`  📦 Shipping: Calculated (unknown cost)`);
+        } else if (item.shippingType === 'free') {
+          console.log(`  📦 Shipping: Free`);
+        }
+
+        // Check total cost (price + shipping) against max price
+        const totalCostCheck = item.price + (item.shippingCost || 0);
+        if (task.max_price && totalCostCheck > task.max_price) {
+          console.log(`  🚫 Excluding: total cost $${totalCostCheck.toFixed(2)} > max $${task.max_price}: ${item.title.substring(0, 40)}...`);
+          excludedItems++;
+          continue;
+        }
+
         if (token) {
           const itemDetails = await fetchItemDetails(item.itemId, token);
           if (itemDetails) {
             specs = extractItemSpecifics(itemDetails);
             description = itemDetails.description || '';
-
-            // Extract shipping cost from item details with improved extraction
-            const shippingResult = extractShippingCostFromDetails(itemDetails);
-            item.shippingCost = shippingResult.cost;
-            if (shippingResult.cost > 0) {
-              console.log(`  📦 Shipping: $${shippingResult.cost} (${shippingResult.type})`);
-            } else if (shippingResult.type === 'calculated') {
-              console.log(`  📦 Shipping: Calculated (unknown cost)`);
-            }
-
-            // Check total cost (price + shipping) against max price
-            const totalCostCheck = item.price + (item.shippingCost || 0);
-            if (task.max_price && totalCostCheck > task.max_price) {
-              console.log(`  🚫 Excluding: total cost $${totalCostCheck} > max $${task.max_price}: ${item.title.substring(0, 40)}...`);
-              excludedItems++;
-              continue;
-            }
 
             // Check category - reject if in blacklist OR not in jewelry whitelist
             const categoryId = String(itemDetails.categoryId || itemDetails.primaryCategory?.categoryId || '');
@@ -2516,29 +2510,29 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       }
       // Watch processing
       else if (task.item_type === 'watch') {
+        // Use shipping from search results (more reliable than item details)
+        if (item.shippingCost !== undefined && item.shippingCost > 0) {
+          console.log(`  📦 Shipping: $${item.shippingCost} (${item.shippingType || 'from search'})`);
+        } else if (item.shippingType === 'calculated') {
+          console.log(`  📦 Shipping: Calculated (unknown cost)`);
+        } else if (item.shippingType === 'free') {
+          console.log(`  📦 Shipping: Free`);
+        }
+
+        // Check total cost (price + shipping) against max price
+        const totalCostCheck = item.price + (item.shippingCost || 0);
+        if (task.max_price && totalCostCheck > task.max_price) {
+          console.log(`  🚫 Excluding: total cost $${totalCostCheck.toFixed(2)} > max $${task.max_price}: ${item.title.substring(0, 40)}...`);
+          excludedItems++;
+          continue;
+        }
+
         let specs: Record<string, string> = {};
 
         if (token) {
           const itemDetails = await fetchItemDetails(item.itemId, token);
           if (itemDetails) {
             specs = extractItemSpecifics(itemDetails);
-
-            // Extract shipping cost from item details with improved extraction
-            const shippingResultWatch = extractShippingCostFromDetails(itemDetails);
-            item.shippingCost = shippingResultWatch.cost;
-            if (shippingResultWatch.cost > 0) {
-              console.log(`  📦 Shipping: $${shippingResultWatch.cost} (${shippingResultWatch.type})`);
-            } else if (shippingResultWatch.type === 'calculated') {
-              console.log(`  📦 Shipping: Calculated (unknown cost)`);
-            }
-
-            // Check total cost (price + shipping) against max price
-            const totalCostCheck = item.price + (item.shippingCost || 0);
-            if (task.max_price && totalCostCheck > task.max_price) {
-              console.log(`  🚫 Excluding: total cost $${totalCostCheck} > max $${task.max_price}: ${item.title.substring(0, 40)}...`);
-              excludedItems++;
-              continue;
-            }
           }
         }
 

@@ -35,6 +35,8 @@ interface EbayItem {
   imageUrl?: string;
   condition?: string;
   listingType?: string;
+  shippingCost?: number;
+  shippingType?: string;
   sellerInfo?: {
     name: string;
     feedbackScore: number;
@@ -595,6 +597,33 @@ const parseEbayBrowseResponse = (response: any, allowedCategoryIds?: string[]): 
         }
       }
       
+      // Extract shipping cost from search results
+      let shippingCost: number | undefined;
+      let shippingType: string | undefined;
+
+      if (item.shippingOptions && item.shippingOptions.length > 0) {
+        const shippingOption = item.shippingOptions[0];
+
+        // Check for shippingCost.value (standard format)
+        if (shippingOption.shippingCost?.value !== undefined) {
+          shippingCost = parseFloat(shippingOption.shippingCost.value) || 0;
+          shippingType = shippingCost === 0 ? 'free' : 'fixed';
+        }
+        // Check for FREE shipping type
+        else if (shippingOption.shippingCostType === 'FREE' || shippingOption.type === 'FREE') {
+          shippingCost = 0;
+          shippingType = 'free';
+        }
+        // Check for CALCULATED shipping
+        else if (shippingOption.shippingCostType === 'CALCULATED' || shippingOption.type === 'CALCULATED') {
+          shippingType = 'calculated';
+          // Try to get estimated cost
+          if (shippingOption.estimatedShippingCost?.value !== undefined) {
+            shippingCost = parseFloat(shippingOption.estimatedShippingCost.value) || 0;
+          }
+        }
+      }
+
       items.push({
         itemId: item.itemId || '',
         title: item.title || '',
@@ -605,6 +634,8 @@ const parseEbayBrowseResponse = (response: any, allowedCategoryIds?: string[]): 
         imageUrl: item.image?.imageUrl,
         condition: item.condition,
         listingType: listingFormat,
+        shippingCost,
+        shippingType,
         sellerInfo: {
           name: item.seller?.username || '',
           feedbackScore: item.seller?.feedbackScore || 0,
