@@ -2351,8 +2351,20 @@ const processTask = async (task: Task) => {
         }
 
         // Extract karat and weight (from title, specs, or description)
+        // Debug: log description status
+        if (description && description.length > 0) {
+          console.log(`    📝 Description: ${description.length} chars`);
+        } else {
+          console.log(`    ⚠️ No description available for weight extraction`);
+        }
+
         const karat = extractKarat(item.title, specs, description);
         const weight = extractWeight(item.title, specs, description);
+
+        // Debug: log if weight wasn't found but description exists
+        if (!weight && description && description.length > 50) {
+          console.log(`    ⚠️ Weight not extracted from description: "${description.substring(0, 100)}..."`);
+        }
 
         // Detect metal type (gold, silver, platinum, palladium)
         const metalInfo = detectMetalType(item.title, specs);
