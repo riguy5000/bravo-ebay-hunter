@@ -598,31 +598,34 @@ const parseEbayBrowseResponse = (response: any, allowedCategoryIds?: string[]): 
       }
       
       // Extract shipping cost from search results
+      // Note: For CALCULATED shipping, eBay API doesn't return exact cost (needs buyer address)
+      // shippingCost: undefined = unknown, 0 = free, >0 = actual cost
       let shippingCost: number | undefined;
       let shippingType: string | undefined;
 
       if (item.shippingOptions && item.shippingOptions.length > 0) {
         const shippingOption = item.shippingOptions[0];
 
-        // Check for shippingCost.value (standard format)
+        // Check for shippingCost.value (standard format from Browse API)
         if (shippingOption.shippingCost?.value !== undefined) {
           shippingCost = parseFloat(shippingOption.shippingCost.value) || 0;
           shippingType = shippingCost === 0 ? 'free' : 'fixed';
         }
-        // Check for FREE shipping type
+        // Check shippingCostType field
+        else if (shippingOption.shippingCostType === 'FIXED') {
+          // FIXED type but no cost provided - might still have cost in different field
+          shippingType = 'fixed';
+        }
+        else if (shippingOption.shippingCostType === 'CALCULATED') {
+          shippingType = 'calculated';
+        }
+        // Legacy: Check for FREE shipping indicators
         else if (shippingOption.shippingCostType === 'FREE' || shippingOption.type === 'FREE') {
           shippingCost = 0;
           shippingType = 'free';
         }
-        // Check for CALCULATED shipping
-        else if (shippingOption.shippingCostType === 'CALCULATED' || shippingOption.type === 'CALCULATED') {
-          shippingType = 'calculated';
-          // Try to get estimated cost
-          if (shippingOption.estimatedShippingCost?.value !== undefined) {
-            shippingCost = parseFloat(shippingOption.estimatedShippingCost.value) || 0;
-          }
-        }
       }
+      // If no shippingOptions, shippingCost stays undefined (unknown)
 
       items.push({
         itemId: item.itemId || '',
@@ -675,7 +678,9 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        // Provide buyer location context to get actual shipping costs
+        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country=US,zip=10001'
       }
     });
 

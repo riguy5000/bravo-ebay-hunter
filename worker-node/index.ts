@@ -1942,7 +1942,7 @@ const createMatchRecord = (task: Task, item: any, stone?: any, dealScore?: numbe
     ebay_title: item.title,
     ebay_url: item.listingUrl,
     listed_price: item.price,
-    shipping_cost: item.shippingCost || 0,
+    shipping_cost: item.shippingCost ?? null, // null = unknown, 0 = free, >0 = actual cost
     currency: item.currency || 'USD',
     buy_format: item.listingType || 'Unknown',
     seller_feedback: item.sellerInfo?.feedbackScore || 0,

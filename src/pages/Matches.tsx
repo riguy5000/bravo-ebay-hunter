@@ -203,8 +203,8 @@ const Matches = () => {
         <TableBody>
           {matches.map((match) => {
             const meltValue = 'melt_value' in match ? match.melt_value : undefined;
-            const shippingCost = match.shipping_cost || 0;
-            const totalCost = match.listed_price + shippingCost;
+            const shippingCost = match.shipping_cost ?? null; // Keep null to distinguish from 0
+            const totalCost = match.listed_price + (shippingCost || 0);
             const breakEven = meltValue ? meltValue * 0.97 : null; // 97% of melt value (refiner payout)
             const suggestedOffer = meltValue ? meltValue * 0.87 : null; // 87% of melt value (your offer)
             const profit = breakEven ? breakEven - totalCost : null;
@@ -254,13 +254,16 @@ const Matches = () => {
                   <TableCell>{weightG ? `${weightG.toFixed(2)}g` : '-'}</TableCell>
                   <TableCell>
                     <div className="font-semibold">${totalCost.toLocaleString()}</div>
-                    {shippingCost > 0 && (
+                    {shippingCost !== null && shippingCost > 0 && (
                       <div className="text-xs text-gray-500">
                         ${match.listed_price?.toLocaleString()} + ${shippingCost.toLocaleString()} ship
                       </div>
                     )}
                     {shippingCost === 0 && (
                       <div className="text-xs text-green-600">Free shipping</div>
+                    )}
+                    {shippingCost === null && (
+                      <div className="text-xs text-yellow-600">+ shipping TBD</div>
                     )}
                   </TableCell>
                   <TableCell className="text-green-700 font-semibold">
@@ -360,8 +363,8 @@ const Matches = () => {
             const dealScore = 'deal_score' in match ? match.deal_score : undefined;
             const riskScore = 'risk_score' in match ? match.risk_score : undefined;
             const certLab = 'cert_lab' in match ? match.cert_lab : undefined;
-            const shippingCost = match.shipping_cost || 0;
-            const totalCost = match.listed_price + shippingCost;
+            const shippingCost = match.shipping_cost ?? null; // Keep null to distinguish from 0
+            const totalCost = match.listed_price + (shippingCost || 0);
 
             const getDealScoreColor = (score?: number) => {
               if (!score) return 'bg-gray-100 text-gray-600';
@@ -417,13 +420,16 @@ const Matches = () => {
                   <TableCell className="font-semibold">{carat ? `${carat}ct` : '-'}</TableCell>
                   <TableCell>
                     <div className="font-semibold">${totalCost.toLocaleString()}</div>
-                    {shippingCost > 0 && (
+                    {shippingCost !== null && shippingCost > 0 && (
                       <div className="text-xs text-gray-500">
                         +${shippingCost} ship
                       </div>
                     )}
                     {shippingCost === 0 && (
                       <div className="text-xs text-green-600">Free ship</div>
+                    )}
+                    {shippingCost === null && (
+                      <div className="text-xs text-yellow-600">+ ship TBD</div>
                     )}
                   </TableCell>
                   <TableCell>
