@@ -1737,6 +1737,12 @@ const extractShippingCostFromDetails = (itemDetails: any): { cost: number; type:
   let cost = 0;
   let type = 'unknown';
 
+  // DEBUG: Log raw shipping-related fields
+  console.log(`  🔍 DEBUG - shippingOptions: ${JSON.stringify(itemDetails?.shippingOptions || 'none').substring(0, 500)}`);
+  if (itemDetails?.shippingCost) {
+    console.log(`  🔍 DEBUG - shippingCost: ${JSON.stringify(itemDetails.shippingCost)}`);
+  }
+
   // Try shippingOptions array first (most common)
   if (itemDetails?.shippingOptions && itemDetails.shippingOptions.length > 0) {
     const option = itemDetails.shippingOptions[0];

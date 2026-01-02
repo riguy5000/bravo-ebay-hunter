@@ -62,7 +62,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
     { value: 'repair', label: 'Repair', description: 'Needs repair' },
     { value: 'david yurman', label: 'David Yurman', description: 'Designer premium' },
     { value: 'cartier', label: 'Cartier', description: 'Designer premium' },
-    { value: 'tiffany', label: 'Tiffany', description: 'Designer premium' },
+    { value: 'toned', label: 'Toned', description: 'Artificially colored' },
   ];
   const [maxDetailFetches, setMaxDetailFetches] = useState('50');
   const [minProfitMargin, setMinProfitMargin] = useState<string>('none');
@@ -107,7 +107,13 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setExcludeKeywords(editingTask.exclude_keywords || []);
       setListingFormats(editingTask.listing_format || ['Fixed Price (BIN)', 'Auction']);
       setMaxDetailFetches(editingTask.max_detail_fetches?.toString() || '50');
-      setMinProfitMargin(editingTask.min_profit_margin != null ? editingTask.min_profit_margin.toString() : 'none');
+      const profitMarginValue = editingTask.min_profit_margin != null ? editingTask.min_profit_margin.toString() : 'none';
+      console.log('💰 Setting minProfitMargin:', {
+        raw: editingTask.min_profit_margin,
+        converted: profitMarginValue,
+        type: typeof editingTask.min_profit_margin
+      });
+      setMinProfitMargin(profitMarginValue);
       
       // Safely load type-specific filters with proper fallbacks and validation
       const safeWatchFilters = editingTask.watch_filters && typeof editingTask.watch_filters === 'object' && !Array.isArray(editingTask.watch_filters) ? editingTask.watch_filters : {};

@@ -1,12 +1,30 @@
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { ChevronDown, X, RefreshCw, Info } from 'lucide-react';
+import { ChevronDown, X, RefreshCw, Info, Search } from 'lucide-react';
 import { useEbayTaxonomy } from '@/hooks/useEbayTaxonomy';
+
+// Popular brands to show by default (before user searches)
+const POPULAR_JEWELRY_BRANDS = [
+  'Tiffany & Co.', 'Cartier', 'David Yurman', 'Pandora', 'Van Cleef & Arpels',
+  'Bulgari', 'Harry Winston', 'Chopard', 'Graff', 'Mikimoto',
+  'John Hardy', 'Lagos', 'Roberto Coin', 'Marco Bicego', 'Ippolita',
+  'Hearts on Fire', 'Tacori', 'Verragio', 'Simon G.', 'A. Jaffe'
+];
+
+const POPULAR_WATCH_BRANDS = [
+  'Rolex', 'Omega', 'Patek Philippe', 'Audemars Piguet', 'Cartier',
+  'TAG Heuer', 'Breitling', 'IWC', 'Panerai', 'Tudor',
+  'Jaeger-LeCoultre', 'Vacheron Constantin', 'A. Lange & Söhne', 'Blancpain', 'Hublot',
+  'Zenith', 'Grand Seiko', 'Seiko', 'Citizen', 'Longines'
+];
+
+const MAX_DISPLAY_RESULTS = 100;
 
 interface MultiSelectAspectFilterProps {
   title: string;
@@ -31,6 +49,7 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
 }) => {
   // Ensure selectedValues is always an array to prevent .map() errors
   const selectedValues = Array.isArray(rawSelectedValues) ? rawSelectedValues : [];
+  const [searchTerm, setSearchTerm] = useState('');
   // Validate category IDs - only use real eBay categories or merged data
   const isValidEbayCategoryId = (id?: string) => {
     if (!id) return false;
@@ -67,6 +86,60 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
   const loading = primaryLoading || fallbackLoading || mergedLoading;
   const usingFallback = dataSource === 'fallback';
   const usingMerged = dataSource === 'merged';
+
+  // Determine which popular brands list to use based on aspect name
+  const popularBrands = useMemo(() => {
+    if (aspectName.toLowerCase().includes('brand')) {
+      // Try to detect if this is for watches based on category
+      const isWatch = categoryId?.includes('watch') || title.toLowerCase().includes('watch');
+      return isWatch ? POPULAR_WATCH_BRANDS : POPULAR_JEWELRY_BRANDS;
+    }
+    return [];
+  }, [aspectName, categoryId, title]);
+
+  // Filter and limit displayed values
+  const displayedValues = useMemo(() => {
+    const searchLower = searchTerm.toLowerCase().trim();
+
+    // If searching, filter all available values by search term
+    if (searchLower) {
+      const filtered = availableValues.filter(v =>
+        v.value.toLowerCase().includes(searchLower) ||
+        (v.meaning && v.meaning.toLowerCase().includes(searchLower))
+      );
+      return filtered.slice(0, MAX_DISPLAY_RESULTS);
+    }
+
+    // No search term - show popular brands first (if applicable), then others
+    if (popularBrands.length > 0 && aspectName.toLowerCase().includes('brand')) {
+      // Find popular brands that exist in available values
+      const popularMatches = popularBrands
+        .map(brand => availableValues.find(v =>
+          v.value.toLowerCase() === brand.toLowerCase() ||
+          (v.meaning && v.meaning.toLowerCase() === brand.toLowerCase())
+        ))
+        .filter(Boolean) as typeof availableValues;
+
+      // Get selected values that aren't in popular (to keep them visible)
+      const selectedNotInPopular = selectedValues
+        .filter(sv => !popularBrands.some(pb => pb.toLowerCase() === sv.toLowerCase()))
+        .map(sv => availableValues.find(v => v.value === sv))
+        .filter(Boolean) as typeof availableValues;
+
+      // Combine: selected first, then popular
+      const combined = [...selectedNotInPopular, ...popularMatches];
+      // Remove duplicates
+      const seen = new Set<string>();
+      return combined.filter(v => {
+        if (seen.has(v.value)) return false;
+        seen.add(v.value);
+        return true;
+      }).slice(0, MAX_DISPLAY_RESULTS);
+    }
+
+    // Default: just limit to max display
+    return availableValues.slice(0, MAX_DISPLAY_RESULTS);
+  }, [availableValues, searchTerm, popularBrands, aspectName, selectedValues]);
 
   console.log('MultiSelectAspectFilter:', {
     title,
@@ -156,10 +229,25 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
               </div>
             ) : availableValues.length > 0 ? (
               <>
-                <div className="flex items-center justify-between pb-2 border-b">
+                {/* Search input */}
+                <div className="relative pb-2 border-b">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    placeholder="Search brands..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8 h-9"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-b">
                   <div className="text-sm space-y-1">
                     <div className="font-medium">
-                      {availableValues.length} options available
+                      {searchTerm
+                        ? `${displayedValues.length} of ${availableValues.length} shown`
+                        : `${displayedValues.length} popular brands`
+                      }
                     </div>
                      {usingMerged ? (
                        <div className="text-xs text-purple-600">
@@ -187,16 +275,16 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
                   )}
                 </div>
                 
-                {availableValues.map((valueObj) => (
+                {displayedValues.map((valueObj) => (
                   <div key={valueObj.value} className="flex items-center space-x-2">
                     <Checkbox
                       id={`${aspectName}-${valueObj.value}`}
                       checked={selectedValues.includes(valueObj.value)}
-                      onCheckedChange={(checked) => 
+                      onCheckedChange={(checked) =>
                         handleValueToggle(valueObj.value, checked as boolean)
                       }
                     />
-                    <Label 
+                    <Label
                       htmlFor={`${aspectName}-${valueObj.value}`}
                       className="text-sm cursor-pointer flex-1"
                     >
@@ -204,6 +292,13 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
                     </Label>
                   </div>
                 ))}
+
+                {/* Show hint when there are more results */}
+                {!searchTerm && availableValues.length > displayedValues.length && (
+                  <div className="text-xs text-gray-500 pt-2 border-t text-center">
+                    Type to search {availableValues.length.toLocaleString()} brands
+                  </div>
+                )}
               </>
             ) : (
               <div className="text-sm text-gray-500 py-4 text-center space-y-2">
