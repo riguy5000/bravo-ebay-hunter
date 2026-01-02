@@ -1583,7 +1583,13 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
     for (const pattern of weightPatterns) {
       const match = cleanDesc.match(pattern);
       if (match) {
-        const value = parseFloat(match[1]);
+        let rawValue = match[1];
+        // Fix common seller typo: ".1.08" should be "1.08" (errant leading period)
+        if (rawValue.startsWith('.') && (rawValue.match(/\./g) || []).length > 1) {
+          rawValue = rawValue.substring(1); // Remove the leading period
+          console.log(`    🔧 Fixed typo: .${rawValue} → ${rawValue}`);
+        }
+        const value = parseFloat(rawValue);
         if (value > 0 && value < 1000) {
           console.log(`    📏 Found weight ${value}g in description`);
           return value;
