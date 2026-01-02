@@ -602,10 +602,8 @@ const parseEbayBrowseResponse = (response: any, allowedCategoryIds?: string[]): 
       let shippingCost: number | undefined;
       let shippingType: string | undefined;
 
-      // DEBUG: Log first 3 items to see shipping data
-      if (items.length < 3) {
-        console.log(`📦 SHIPPING DEBUG ${item.itemId}: ${JSON.stringify(item.shippingOptions)}`);
-      }
+      // DEBUG: Log ALL items shipping data to diagnose issues
+      console.log(`📦 SHIPPING DEBUG ${item.itemId}: price=$${price}, shippingOptions=${JSON.stringify(item.shippingOptions)}, additionalShipping=${item.additionalShipping}, shippingCostSummary=${JSON.stringify((item as any).shippingCostSummary)}`);
 
       if (item.shippingOptions && item.shippingOptions.length > 0) {
         const shippingOption = item.shippingOptions[0];

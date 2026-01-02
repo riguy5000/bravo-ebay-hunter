@@ -2096,6 +2096,13 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       return { itemsFound: 0, newMatches: 0, excludedItems: 0 };
     }
 
+    // DEBUG: Log shipping data for first 5 items to diagnose shipping issues
+    console.log(`📦 SHIPPING DEBUG - First 5 items from edge function:`);
+    for (let i = 0; i < Math.min(5, items.length); i++) {
+      const item = items[i];
+      console.log(`  ${item.itemId}: $${item.price} + ship=${item.shippingCost} (${item.shippingType})`);
+    }
+
     const itemsFound = items.length;
 
     const tableName = getMatchTableName(task.item_type);
