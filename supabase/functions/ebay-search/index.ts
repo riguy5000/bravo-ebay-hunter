@@ -166,6 +166,23 @@ const selectApiKey = (keys: EbayApiKey[], strategy: string = 'round_robin'): Eba
   }
 };
 
+// Log API call to api_usage table for historical tracking
+const logApiUsage = async (apiKeyLabel: string, callType: string, endpoint: string) => {
+  try {
+    const { error } = await supabase.from('api_usage').insert({
+      api_key_label: apiKeyLabel || 'unknown',
+      call_type: callType,
+      endpoint: endpoint,
+      date_bucket: new Date().toISOString().split('T')[0]
+    });
+    if (error) {
+      console.log(`⚠️ API usage log failed: ${error.message}`);
+    }
+  } catch (e: any) {
+    console.log(`⚠️ API usage log error: ${e.message}`);
+  }
+};
+
 const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateLimited: boolean, isAuthError: boolean = false) => {
   try {
     const { data: settingsData, error: fetchError } = await supabase
@@ -659,9 +676,31 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
 
     const data = await response.json();
 
-    // NEW: Pass allowed category IDs to prevent unwanted items
-    const allowedCategoryIds = searchParams.typeSpecificFilters?.leafCategoryId ?
-      [searchParams.typeSpecificFilters.leafCategoryId] : [];
+    // Build allowed category IDs for server-side validation
+    let allowedCategoryIds: string[] = [];
+    if (searchParams.typeSpecificFilters?.subcategories?.length > 0) {
+      // Use subcategories if selected
+      allowedCategoryIds = searchParams.typeSpecificFilters.subcategories;
+    } else if (searchParams.typeSpecificFilters?.leafCategoryId) {
+      // Use single leaf category
+      allowedCategoryIds = [searchParams.typeSpecificFilters.leafCategoryId];
+    } else if (searchParams.itemType === 'jewelry') {
+      // Fallback: main jewelry category IDs to filter out non-jewelry items
+      allowedCategoryIds = [
+        '281', '164331', '67681', '67680', '261990', // Parent categories
+        '164330', '261993', '164332', '164333', '164334', '164336', '164338', // Fine jewelry
+        '45077', '45080', '45081', '45079', '45078', // Fashion jewelry
+        '155123', '155124', '155125', '155126', // Men's jewelry
+        '164395', '164396', '164397', // Wedding
+        '48579', '48580', '48581', // Vintage
+        '164344', '164345', '164346', // Metal
+        '110666' // Fine Jewelry fallback
+      ];
+    }
+
+    if (allowedCategoryIds.length > 0) {
+      console.log(`🎯 Server-side category filter: ${allowedCategoryIds.length} allowed categories`);
+    }
 
     let items = parseEbayBrowseResponse(data, allowedCategoryIds);
 
@@ -694,6 +733,10 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
     }
 
     await updateKeyUsage(apiKey, true, false, false);
+
+    // Log API usage for historical tracking
+    await logApiUsage(apiKey.label, 'search', 'browse/search');
+
     console.log(`Successfully used API key "${apiKey.label}" - found ${items.length} items`);
 
     return { items, success: true, rateLimited: false, authError: false };
