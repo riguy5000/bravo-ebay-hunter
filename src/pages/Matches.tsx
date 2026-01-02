@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useMatches, type Match } from '@/hooks/useMatches';
-import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle, XCircle, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle, XCircle, Trash2, Pencil, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { MatchActions, type MatchStatus } from '@/components/matches/MatchActions';
 import { MatchDetailsPanel } from '@/components/matches/MatchDetailsPanel';
-import { useTasks } from '@/hooks/useTasks';
+import { TaskForm } from '@/components/tasks/TaskForm';
+import { useTasks, type Task } from '@/hooks/useTasks';
 
 const ITEMS_PER_PAGE_OPTIONS = [25, 50, 100, 200];
 
@@ -21,6 +23,7 @@ const Matches = () => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(50);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   const handleDeleteTask = async (taskId: string, taskName: string) => {
     if (confirm(`Are you sure you want to delete "${taskName}"? This will also delete all matches and remove its automatic schedule.`)) {
@@ -666,6 +669,14 @@ const Matches = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingTask(group.task as Task)}
+                      >
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Edit Task
+                      </Button>
+                      <Button
                         variant="ghost"
                         size="sm"
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -773,6 +784,26 @@ const Matches = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Edit Task Dialog */}
+      <Dialog open={editingTask !== null} onOpenChange={(open) => !open && setEditingTask(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Task: {editingTask?.name}</DialogTitle>
+          </DialogHeader>
+          {editingTask && (
+            <TaskForm
+              editingTask={editingTask}
+              onSuccess={() => {
+                setEditingTask(null);
+                refetch();
+                toast.success('Task updated successfully');
+              }}
+              onCancel={() => setEditingTask(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

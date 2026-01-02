@@ -598,10 +598,14 @@ const parseEbayBrowseResponse = (response: any, allowedCategoryIds?: string[]): 
       }
       
       // Extract shipping cost from search results
-      // Note: For CALCULATED shipping, eBay API doesn't return exact cost (needs buyer address)
       // shippingCost: undefined = unknown, 0 = free, >0 = actual cost
       let shippingCost: number | undefined;
       let shippingType: string | undefined;
+
+      // DEBUG: Log first 3 items to see shipping data
+      if (items.length < 3) {
+        console.log(`📦 SHIPPING DEBUG ${item.itemId}: ${JSON.stringify(item.shippingOptions)}`);
+      }
 
       if (item.shippingOptions && item.shippingOptions.length > 0) {
         const shippingOption = item.shippingOptions[0];
@@ -679,8 +683,8 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
         'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-        // Provide buyer location context to get actual shipping costs
-        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country=US,zip=10001'
+        // Provide buyer location context to get actual shipping costs (URL encoded)
+        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country%3DUS%2Czip%3D92128'
       }
     });
 
