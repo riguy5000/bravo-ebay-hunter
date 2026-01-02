@@ -564,11 +564,17 @@ const parseEbayBrowseResponse = (response: any, allowedCategoryIds?: string[]): 
     console.log(`📦 Found ${response.itemSummaries.length} items in eBay response`);
 
     for (const item of response.itemSummaries) {
-      // NEW: Prevent "random tools" bleed-through by checking category IDs
+      // Prevent non-jewelry items by checking category IDs
       if (allowedCategoryIds && allowedCategoryIds.length > 0) {
-        const itemCategoryId = item.categoryId || item.primaryCategory?.categoryId;
-        if (itemCategoryId && !allowedCategoryIds.includes(itemCategoryId)) {
-          console.log(`🚫 Skipping item from unwanted category: ${itemCategoryId} - ${item.title}`);
+        const itemCategoryId = item.categoryId || item.primaryCategory?.categoryId || item.categories?.[0]?.categoryId;
+
+        // If no category ID or category not in allowed list, skip this item
+        if (!itemCategoryId) {
+          console.log(`🚫 Skipping item with no category ID: ${item.title?.substring(0, 50)}`);
+          continue;
+        }
+        if (!allowedCategoryIds.includes(itemCategoryId)) {
+          console.log(`🚫 Skipping item from unwanted category ${itemCategoryId}: ${item.title?.substring(0, 50)}`);
           continue;
         }
       }
