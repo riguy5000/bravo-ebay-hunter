@@ -1574,7 +1574,7 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
 
     // Weight patterns in description
     const weightPatterns = [
-      /(?:weight|weighs|wt)[:\s]+([\d.]+)\s*(?:g|gr|gram|grams)\b/i,
+      /(?:weight|weighs|wt)[:\s\-]+([\d.]+)\s*(?:g|gr|gram|grams)\b/i,  // handles "Weight - .53 grams"
       /([\d.]+)\s*(?:g|gr|gram|grams)\s*(?:total|weight)/i,
       /(?:total|approx\.?|approximately)\s*([\d.]+)\s*(?:g|gr|gram|grams)\b/i,
       /([\d.]+)\s*(?:g|gr|gram|grams)\b/i,
