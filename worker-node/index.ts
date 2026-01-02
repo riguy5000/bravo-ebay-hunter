@@ -1770,16 +1770,9 @@ const buildSearchKeywords = (task: Task, metalOverride: string | null = null): s
       }
       break;
     case 'jewelry':
-      // For gold searches, don't require "jewelry" - allows finding "14K Yellow Gold Chain"
-      // For Palladium/Platinum, add "jewelry" to avoid matching boots/car parts/etc.
+      // Always include "jewelry" to avoid random unrelated items (paint, phone cases, etc.)
       const metalToSearch = metalOverride || (task.jewelry_filters?.metal?.length > 0 ? task.jewelry_filters.metal[0] : 'gold');
-      const needsJewelryKeyword = ['Palladium', 'Platinum'].includes(metalToSearch);
-
-      if (needsJewelryKeyword) {
-        keywords = `${metalToSearch} jewelry`;
-      } else {
-        keywords = metalToSearch;
-      }
+      keywords = `${metalToSearch} jewelry`;
       if (task.jewelry_filters?.categories?.length > 0) {
         keywords += ` ${task.jewelry_filters.categories[0]}`;
       }
