@@ -94,7 +94,7 @@ export interface TaskWithMatches {
 }
 
 // Maximum matches to load per table (for performance)
-const MAX_MATCHES_PER_TABLE = 500;
+const MAX_MATCHES_PER_TABLE = 2000;
 
 // Fetch function extracted for React Query
 const fetchMatchesData = async (): Promise<{ groups: TaskWithMatches[]; totalCount: number }> => {
