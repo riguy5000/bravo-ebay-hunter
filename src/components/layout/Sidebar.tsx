@@ -2,16 +2,17 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { 
-  LayoutDashboard, 
-  Search, 
-  Target, 
-  ShoppingCart, 
-  RotateCcw, 
-  TrendingUp, 
-  BarChart3, 
+import {
+  LayoutDashboard,
+  Search,
+  Target,
+  ShoppingCart,
+  RotateCcw,
+  TrendingUp,
+  BarChart3,
   Settings,
-  LogOut
+  LogOut,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ const navigation = [
   { name: 'Returns', href: '/returns', icon: RotateCcw },
   { name: 'Resales', href: '/resales', icon: TrendingUp },
   { name: 'Statistics', href: '/statistics', icon: BarChart3 },
+  { name: 'Health', href: '/health', icon: Activity },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

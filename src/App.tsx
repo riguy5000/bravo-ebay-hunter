@@ -18,6 +18,7 @@ import Returns from "./pages/Returns";
 import Resales from "./pages/Resales";
 import Statistics from "./pages/Statistics";
 import Settings from "./pages/Settings";
+import HealthCheck from "./pages/HealthCheck";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -78,6 +79,13 @@ const App = () => (
               <AuthGuard>
                 <MainLayout>
                   <Statistics />
+                </MainLayout>
+              </AuthGuard>
+            } />
+            <Route path="/health" element={
+              <AuthGuard>
+                <MainLayout>
+                  <HealthCheck />
                 </MainLayout>
               </AuthGuard>
             } />

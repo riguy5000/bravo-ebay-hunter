@@ -1663,7 +1663,10 @@ const getEbayToken = async (): Promise<string | null> => {
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
       console.error('❌ Failed to get eBay OAuth token:', response.status);
+      console.error('   Error details:', errorText);
+      console.error('   App ID used:', keyToUse.app_id?.substring(0, 20) + '...');
       return null;
     }
 
@@ -1723,6 +1726,79 @@ const extractItemSpecifics = (itemDetails: any): Record<string, string> => {
     specs[aspect.name.toLowerCase()] = aspect.value;
   }
   return specs;
+};
+
+/**
+ * Extract shipping cost from eBay API item details
+ * Handles multiple API response formats
+ */
+const extractShippingCostFromDetails = (itemDetails: any): { cost: number; type: string } => {
+  // Default: no shipping info found
+  let cost = 0;
+  let type = 'unknown';
+
+  // Try shippingOptions array first (most common)
+  if (itemDetails?.shippingOptions && itemDetails.shippingOptions.length > 0) {
+    const option = itemDetails.shippingOptions[0];
+
+    // Format 1: shippingCost.value (standard format)
+    if (option.shippingCost?.value !== undefined) {
+      cost = parseFloat(option.shippingCost.value) || 0;
+      type = cost === 0 ? 'free' : 'fixed';
+      return { cost, type };
+    }
+
+    // Format 2: shippingServiceCost.value (alternate format)
+    if (option.shippingServiceCost?.value !== undefined) {
+      cost = parseFloat(option.shippingServiceCost.value) || 0;
+      type = cost === 0 ? 'free' : 'fixed';
+      return { cost, type };
+    }
+
+    // Format 3: Check for FREE shipping indicators
+    if (option.shippingCostType === 'FREE' ||
+        option.type === 'FREE' ||
+        option.shippingType === 'FREE') {
+      return { cost: 0, type: 'free' };
+    }
+
+    // Format 4: CALCULATED shipping
+    if (option.shippingCostType === 'CALCULATED' || option.type === 'CALCULATED') {
+      type = 'calculated';
+      // Try to get estimated cost if available
+      if (option.estimatedShippingCost?.value !== undefined) {
+        cost = parseFloat(option.estimatedShippingCost.value) || 0;
+      }
+      return { cost, type };
+    }
+
+    // Format 5: FIXED_OR_CALCULATED - try to extract cost
+    if (option.shippingCostType === 'FIXED_OR_CALCULATED') {
+      type = 'calculated';
+      if (option.shippingCost?.value !== undefined) {
+        cost = parseFloat(option.shippingCost.value) || 0;
+        type = 'fixed';
+      }
+      return { cost, type };
+    }
+
+    // Log unknown format for debugging
+    console.log(`  ⚠️ Unknown shipping format: ${JSON.stringify(option).substring(0, 300)}`);
+  }
+
+  // Try direct shippingCost on item (some API versions)
+  if (itemDetails?.shippingCost?.value !== undefined) {
+    cost = parseFloat(itemDetails.shippingCost.value) || 0;
+    type = cost === 0 ? 'free' : 'fixed';
+    return { cost, type };
+  }
+
+  // Try shipToLocations format (indicates calculated shipping)
+  if (itemDetails?.shipToLocations?.regionIncluded) {
+    type = 'calculated';
+  }
+
+  return { cost, type };
 };
 
 // ============================================
@@ -1923,7 +1999,13 @@ const createMatchRecord = (task: Task, item: any, stone?: any, dealScore?: numbe
 // Main Task Processing
 // ============================================
 
-const processTask = async (task: Task) => {
+interface TaskStats {
+  itemsFound: number;
+  newMatches: number;
+  excludedItems: number;
+}
+
+const processTask = async (task: Task): Promise<TaskStats> => {
   console.log(`🔄 Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}`);
 
   try {
@@ -2011,8 +2093,10 @@ const processTask = async (task: Task) => {
     if (!items || items.length === 0) {
       console.log(`📭 No new items found for task ${task.name}`);
       await supabase.from('tasks').update({ last_run: new Date().toISOString() }).eq('id', task.id);
-      return;
+      return { itemsFound: 0, newMatches: 0, excludedItems: 0 };
     }
+
+    const itemsFound = items.length;
 
     const tableName = getMatchTableName(task.item_type);
     let newMatches = 0;
@@ -2159,23 +2243,13 @@ const processTask = async (task: Task) => {
             specs = extractItemSpecifics(itemDetails);
             description = itemDetails.description || '';
 
-            // Extract shipping cost from item details
-            if (itemDetails.shippingOptions && itemDetails.shippingOptions.length > 0) {
-              const shippingOption = itemDetails.shippingOptions[0];
-              if (shippingOption.shippingCost && shippingOption.shippingCost.value) {
-                item.shippingCost = parseFloat(shippingOption.shippingCost.value) || 0;
-                if (item.shippingCost > 0) {
-                  console.log(`  📦 Shipping: $${item.shippingCost}`);
-                }
-              } else if (shippingOption.shippingCostType === 'FREE' || shippingOption.type === 'FREE') {
-                item.shippingCost = 0;
-              } else {
-                // Log unknown format for debugging
-                console.log(`  ⚠️ Unknown shipping format: ${JSON.stringify(shippingOption).substring(0, 200)}`);
-                item.shippingCost = 0;
-              }
-            } else {
-              item.shippingCost = 0;
+            // Extract shipping cost from item details with improved extraction
+            const shippingResultGem = extractShippingCostFromDetails(itemDetails);
+            item.shippingCost = shippingResultGem.cost;
+            if (shippingResultGem.cost > 0) {
+              console.log(`  📦 Shipping: $${shippingResultGem.cost} (${shippingResultGem.type})`);
+            } else if (shippingResultGem.type === 'calculated') {
+              console.log(`  📦 Shipping: Calculated (unknown cost)`);
             }
 
             // Check total cost (price + shipping) against max price
@@ -2250,23 +2324,13 @@ const processTask = async (task: Task) => {
             specs = extractItemSpecifics(itemDetails);
             description = itemDetails.description || '';
 
-            // Extract shipping cost from item details
-            if (itemDetails.shippingOptions && itemDetails.shippingOptions.length > 0) {
-              const shippingOption = itemDetails.shippingOptions[0];
-              if (shippingOption.shippingCost && shippingOption.shippingCost.value) {
-                item.shippingCost = parseFloat(shippingOption.shippingCost.value) || 0;
-                if (item.shippingCost > 0) {
-                  console.log(`  📦 Shipping: $${item.shippingCost}`);
-                }
-              } else if (shippingOption.shippingCostType === 'FREE' || shippingOption.type === 'FREE') {
-                item.shippingCost = 0;
-              } else {
-                // Log unknown format for debugging
-                console.log(`  ⚠️ Unknown shipping format: ${JSON.stringify(shippingOption).substring(0, 200)}`);
-                item.shippingCost = 0;
-              }
-            } else {
-              item.shippingCost = 0;
+            // Extract shipping cost from item details with improved extraction
+            const shippingResult = extractShippingCostFromDetails(itemDetails);
+            item.shippingCost = shippingResult.cost;
+            if (shippingResult.cost > 0) {
+              console.log(`  📦 Shipping: $${shippingResult.cost} (${shippingResult.type})`);
+            } else if (shippingResult.type === 'calculated') {
+              console.log(`  📦 Shipping: Calculated (unknown cost)`);
             }
 
             // Check total cost (price + shipping) against max price
@@ -2453,23 +2517,13 @@ const processTask = async (task: Task) => {
           if (itemDetails) {
             specs = extractItemSpecifics(itemDetails);
 
-            // Extract shipping cost from item details
-            if (itemDetails.shippingOptions && itemDetails.shippingOptions.length > 0) {
-              const shippingOption = itemDetails.shippingOptions[0];
-              if (shippingOption.shippingCost && shippingOption.shippingCost.value) {
-                item.shippingCost = parseFloat(shippingOption.shippingCost.value) || 0;
-                if (item.shippingCost > 0) {
-                  console.log(`  📦 Shipping: $${item.shippingCost}`);
-                }
-              } else if (shippingOption.shippingCostType === 'FREE' || shippingOption.type === 'FREE') {
-                item.shippingCost = 0;
-              } else {
-                // Log unknown format for debugging
-                console.log(`  ⚠️ Unknown shipping format: ${JSON.stringify(shippingOption).substring(0, 200)}`);
-                item.shippingCost = 0;
-              }
-            } else {
-              item.shippingCost = 0;
+            // Extract shipping cost from item details with improved extraction
+            const shippingResultWatch = extractShippingCostFromDetails(itemDetails);
+            item.shippingCost = shippingResultWatch.cost;
+            if (shippingResultWatch.cost > 0) {
+              console.log(`  📦 Shipping: $${shippingResultWatch.cost} (${shippingResultWatch.type})`);
+            } else if (shippingResultWatch.type === 'calculated') {
+              console.log(`  📦 Shipping: Calculated (unknown cost)`);
             }
 
             // Check total cost (price + shipping) against max price
@@ -2537,9 +2591,12 @@ const processTask = async (task: Task) => {
       await cleanupExpiredCache();
     }
 
+    return { itemsFound, newMatches, excludedItems };
+
   } catch (error: unknown) {
     console.error(`❌ Error processing task ${task.id}:`, error);
     await supabase.from('tasks').update({ last_run: new Date().toISOString() }).eq('id', task.id);
+    return { itemsFound: 0, newMatches: 0, excludedItems: 0 };
   }
 };
 
@@ -2550,6 +2607,7 @@ const processTask = async (task: Task) => {
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 async function runOnce(): Promise<void> {
+  const cycleStartTime = Date.now();
   console.log(`\n🚀 Poll cycle started at ${new Date().toISOString()}`);
 
   try {
@@ -2566,6 +2624,8 @@ async function runOnce(): Promise<void> {
 
     if (!tasks || tasks.length === 0) {
       console.log('📭 No active tasks to process');
+      // Still record health metric for empty cycle
+      await recordHealthMetrics(cycleStartTime, 0, 0, 0, 0, 0);
       return;
     }
 
@@ -2577,25 +2637,65 @@ async function runOnce(): Promise<void> {
     const results = await Promise.allSettled(
       tasks.map(async (task: any) => {
         console.log(`\n--- Starting Task: ${task.name} ---`);
-        await processTask(task);
-        return task.name;
+        const stats = await processTask(task);
+        return { name: task.name, stats };
       })
     );
 
     const successCount = results.filter(r => r.status === 'fulfilled').length;
     const errorCount = results.filter(r => r.status === 'rejected').length;
 
-    // Log any failures
+    // Aggregate stats from all tasks
+    let totalItemsFound = 0;
+    let totalMatches = 0;
+    let totalExcluded = 0;
+
     results.forEach((result, index) => {
-      if (result.status === 'rejected') {
+      if (result.status === 'fulfilled') {
+        const taskResult = result.value as { name: string; stats: TaskStats };
+        totalItemsFound += taskResult.stats.itemsFound;
+        totalMatches += taskResult.stats.newMatches;
+        totalExcluded += taskResult.stats.excludedItems;
+      } else {
         console.error(`❌ Task ${tasks[index].name} failed:`, (result as PromiseRejectedResult).reason);
       }
     });
 
     console.log(`✅ Poll cycle completed: ${successCount} successful, ${errorCount} failed`);
 
+    // Record health metrics
+    await recordHealthMetrics(cycleStartTime, successCount, errorCount, totalItemsFound, totalMatches, totalExcluded);
+
   } catch (error: any) {
     console.error('💥 Error in poll cycle:', error);
+  }
+}
+
+// Record health metrics to Supabase
+async function recordHealthMetrics(
+  cycleStartTime: number,
+  tasksProcessed: number,
+  tasksFailed: number,
+  totalItemsFound: number,
+  totalMatches: number,
+  totalExcluded: number
+): Promise<void> {
+  try {
+    const cycleDuration = Date.now() - cycleStartTime;
+    const memoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+
+    await supabase.from('worker_health_metrics').insert({
+      cycle_timestamp: new Date().toISOString(),
+      cycle_duration_ms: cycleDuration,
+      tasks_processed: tasksProcessed,
+      tasks_failed: tasksFailed,
+      total_items_found: totalItemsFound,
+      total_matches: totalMatches,
+      total_excluded: totalExcluded,
+      memory_usage_mb: memoryUsage.toFixed(2),
+    });
+  } catch (error) {
+    console.error('Failed to record health metrics:', error);
   }
 }
 
