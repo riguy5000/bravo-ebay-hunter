@@ -42,6 +42,7 @@ interface Settings {
   ebay_keys?: EbayKeysSettings;
   llm_config?: LlmConfigSettings;
   task_templates?: TaskTemplatesSettings;
+  custom_exclude_keywords?: string[];
 }
 
 export const useSettings = () => {

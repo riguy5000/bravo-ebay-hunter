@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTasks, type Task } from '@/hooks/useTasks';
+import { useSettings } from '@/hooks/useSettings';
 import { WatchFilters } from './WatchFilters';
 import { JewelryFilters } from './JewelryFilters';
 import { GemstoneFliters } from './GemstoneFliters';
@@ -34,8 +35,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   onBackToTemplates
 }) => {
   const { createTask, updateTask } = useTasks();
+  const { settings, updateSetting } = useSettings();
   const [loading, setLoading] = useState(false);
-  
+
   // Form state
   const [name, setName] = useState('');
   const [itemType, setItemType] = useState<'watch' | 'jewelry' | 'gemstone'>('jewelry');
@@ -45,6 +47,13 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   const [minSellerFeedback, setMinSellerFeedback] = useState('0');
   const [excludeKeywords, setExcludeKeywords] = useState<string[]>([]);
   const [customExcludeKeyword, setCustomExcludeKeyword] = useState('');
+
+  // Get saved custom exclude keywords from settings
+  const savedCustomKeywords: Array<{value: string, label: string}> =
+    ((settings as any)?.custom_exclude_keywords || []).map((kw: string) => ({
+      value: kw.toLowerCase(),
+      label: kw
+    }));
 
   // Suggested exclude keywords for filtering out non-genuine items
   const suggestedExcludeKeywords = [
@@ -457,6 +466,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               <p className="text-xs text-gray-500 mb-2">
                 Select keywords to exclude from search results
               </p>
+
+              {/* Default suggested keywords */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
                 {suggestedExcludeKeywords.map((keyword) => (
                   <div key={keyword.value} className="flex items-center space-x-2">
@@ -481,6 +492,52 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                   </div>
                 ))}
               </div>
+
+              {/* Saved custom keywords (from settings) */}
+              {savedCustomKeywords.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs text-gray-500 mb-2">Your saved keywords:</p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                    {savedCustomKeywords
+                      .filter(kw => !suggestedExcludeKeywords.some(s => s.value === kw.value))
+                      .map((keyword) => (
+                        <div key={keyword.value} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`exclude-saved-${keyword.value}`}
+                            checked={excludeKeywords.includes(keyword.value)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setExcludeKeywords([...excludeKeywords, keyword.value]);
+                              } else {
+                                setExcludeKeywords(excludeKeywords.filter(k => k !== keyword.value));
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor={`exclude-saved-${keyword.value}`}
+                            className="text-sm cursor-pointer flex items-center gap-1"
+                          >
+                            {keyword.label}
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                const currentSaved = (settings as any)?.custom_exclude_keywords || [];
+                                const updated = currentSaved.filter((k: string) => k.toLowerCase() !== keyword.value);
+                                await updateSetting('custom_exclude_keywords' as any, updated);
+                                toast.success(`Removed "${keyword.label}" from saved keywords`);
+                              }}
+                              className="text-gray-400 hover:text-red-500"
+                              title="Remove from saved list"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </label>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
 
               {/* Custom keyword input */}
               <div className="flex gap-2 mt-3">
@@ -516,13 +573,47 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                 >
                   Add
                 </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={async () => {
+                    if (customExcludeKeyword.trim()) {
+                      const keyword = customExcludeKeyword.trim();
+                      const keywordLower = keyword.toLowerCase();
+
+                      // Add to current task
+                      if (!excludeKeywords.includes(keywordLower)) {
+                        setExcludeKeywords([...excludeKeywords, keywordLower]);
+                      }
+
+                      // Save to settings for future use
+                      const currentSaved = (settings as any)?.custom_exclude_keywords || [];
+                      if (!currentSaved.some((k: string) => k.toLowerCase() === keywordLower)) {
+                        await updateSetting('custom_exclude_keywords' as any, [...currentSaved, keyword]);
+                        toast.success(`"${keyword}" saved to your keyword list`);
+                      }
+
+                      setCustomExcludeKeyword('');
+                    }
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add & Save
+                </Button>
               </div>
 
-              {/* Show selected custom keywords (not in suggested list) */}
-              {excludeKeywords.filter(k => !suggestedExcludeKeywords.some(s => s.value === k)).length > 0 && (
+              {/* Show selected custom keywords (not in suggested or saved list) */}
+              {excludeKeywords.filter(k =>
+                !suggestedExcludeKeywords.some(s => s.value === k) &&
+                !savedCustomKeywords.some(s => s.value === k)
+              ).length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
                   {excludeKeywords
-                    .filter(k => !suggestedExcludeKeywords.some(s => s.value === k))
+                    .filter(k =>
+                      !suggestedExcludeKeywords.some(s => s.value === k) &&
+                      !savedCustomKeywords.some(s => s.value === k)
+                    )
                     .map(keyword => (
                       <span
                         key={keyword}
@@ -531,10 +622,26 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                         {keyword}
                         <button
                           type="button"
+                          onClick={async () => {
+                            // Save to settings
+                            const currentSaved = (settings as any)?.custom_exclude_keywords || [];
+                            if (!currentSaved.some((k: string) => k.toLowerCase() === keyword)) {
+                              await updateSetting('custom_exclude_keywords' as any, [...currentSaved, keyword]);
+                              toast.success(`"${keyword}" saved to your keyword list`);
+                            }
+                          }}
+                          className="text-blue-500 hover:text-blue-700"
+                          title="Save to your keyword list"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setExcludeKeywords(excludeKeywords.filter(k => k !== keyword))}
                           className="text-gray-500 hover:text-red-500"
+                          title="Remove from this task"
                         >
-                          ×
+                          <X className="h-3 w-3" />
                         </button>
                       </span>
                     ))}
