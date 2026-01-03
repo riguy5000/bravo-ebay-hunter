@@ -255,7 +255,11 @@ const Matches = () => {
                   </TableCell>
                   <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
                   <TableCell>{weightG ? `${weightG.toFixed(2)}g` : '-'}</TableCell>
-                  <TableCell className="font-semibold">${totalCost.toLocaleString()}</TableCell>
+                  <TableCell className="font-semibold">
+                    {shippingCost === null
+                      ? `$${match.listed_price.toLocaleString()} + shipping`
+                      : `$${totalCost.toLocaleString()}`}
+                  </TableCell>
                   <TableCell className="text-green-700 font-semibold">
                     {breakEven ? `$${breakEven.toFixed(0)}` : '-'}
                   </TableCell>
@@ -408,7 +412,11 @@ const Matches = () => {
                   </TableCell>
                   <TableCell className="font-medium text-sm">{stoneType || '-'}</TableCell>
                   <TableCell className="font-semibold">{carat ? `${carat}ct` : '-'}</TableCell>
-                  <TableCell className="font-semibold">${totalCost.toLocaleString()}</TableCell>
+                  <TableCell className="font-semibold">
+                    {shippingCost === null
+                      ? `$${match.listed_price.toLocaleString()} + shipping`
+                      : `$${totalCost.toLocaleString()}`}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-xs">
                       {certLab || '-'}
@@ -515,7 +523,11 @@ const Matches = () => {
                       </p>
                     </div>
                   </TableCell>
-                  <TableCell className="font-semibold">${totalCost.toLocaleString()}</TableCell>
+                  <TableCell className="font-semibold">
+                    {shippingCost === null
+                      ? `$${match.listed_price.toLocaleString()} + shipping`
+                      : `$${totalCost.toLocaleString()}`}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-xs">
                       {match.buy_format || 'N/A'}
