@@ -810,6 +810,7 @@ function calculateGoldMeltValue(karat: number | null, weightG: number | null, go
   if (!karat || !weightG || !goldPrices) return null;
 
   const pricePerGram: Record<number, number> = {
+    9: goldPrices.price_gram_10k * 0.97,  // 9K is 3% less than 10K
     10: goldPrices.price_gram_10k,
     14: goldPrices.price_gram_14k,
     18: goldPrices.price_gram_18k,
@@ -1485,8 +1486,8 @@ function extractKarat(title: string, specs: Record<string, string> = {}, descrip
     // Look for karat patterns in description
     const descPatterns = [
       /(\d+)\s*[kK](?:arat|t)?(?:\s|gold|\b)/i,
-      /\b(10|14|18|22|24)\s*karat\b/i,
-      /\b(10|14|18|22|24)k\s*gold\b/i,
+      /\b(9|10|14|18|22|24)\s*karat\b/i,
+      /\b(9|10|14|18|22|24)k\s*gold\b/i,
     ];
 
     for (const pattern of descPatterns) {
