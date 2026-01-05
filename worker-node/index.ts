@@ -259,8 +259,8 @@ async function retryFailedNotifications(): Promise<void> {
         console.log(`  ✅ Retry successful for: ${match.ebay_title.substring(0, 40)}...`);
       }
 
-      // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Rate limit delay for Slack (they silently drop messages if sent too fast)
+      await new Promise(resolve => setTimeout(resolve, 1100));
     }
   }
 
@@ -290,15 +290,16 @@ async function retryFailedNotifications(): Promise<void> {
         is_natural: match.is_natural,
       };
 
-      // Note: sendGemstoneSlackNotification needs to be updated to return boolean
-      // For now, just mark as sent after attempting
+      // Actually send the notification and mark as sent
+      await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0);
       await supabase
         .from('matches_gemstone')
         .update({ notification_sent: true })
         .eq('id', match.id);
+      console.log(`  ✅ Retry successful for: ${match.ebay_title?.substring(0, 40) || 'gemstone'}...`);
 
-      // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Rate limit delay for Slack (they silently drop messages if sent too fast)
+      await new Promise(resolve => setTimeout(resolve, 1100));
     }
   }
 
@@ -2412,6 +2413,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
           // Send Slack notification for gemstone match
           await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore);
+
+          // Rate limit delay for Slack (they silently drop messages if sent too fast)
+          await new Promise(resolve => setTimeout(resolve, 1100));
         }
       }
       // Jewelry-specific processing
@@ -2620,6 +2624,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               .update({ notification_sent: true })
               .eq('id', insertedMatch.id);
           }
+
+          // Rate limit delay for Slack (they silently drop messages if sent too fast)
+          await new Promise(resolve => setTimeout(resolve, 1100));
         }
       }
       // Watch processing
