@@ -94,7 +94,12 @@ async function sendJewelrySlackNotification(
   shippingCost: number,
   meltValue: number | null
 ): Promise<void> {
-  if (!SLACK_WEBHOOK_URL) return;
+  if (!SLACK_WEBHOOK_URL) {
+    console.log('  ⚠️ Slack webhook not configured, skipping notification');
+    return;
+  }
+
+  console.log(`  📤 Sending Slack notification for: ${match.ebay_title.substring(0, 50)}...`);
 
   try {
     const totalCost = match.listed_price + shippingCost;
@@ -141,10 +146,12 @@ async function sendJewelrySlackNotification(
     });
 
     if (!response.ok) {
-      console.log(`⚠️ Slack notification failed: ${response.status}`);
+      console.log(`  ⚠️ Slack notification failed: ${response.status} ${response.statusText}`);
+    } else {
+      console.log(`  ✅ Slack notification sent successfully`);
     }
   } catch (error: any) {
-    console.log(`⚠️ Slack notification error: ${error.message}`);
+    console.log(`  ⚠️ Slack notification error: ${error.message}`);
   }
 }
 
