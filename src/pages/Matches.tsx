@@ -190,7 +190,7 @@ const Matches = () => {
       <Table>
         <TableHeader>
           <TableRow className="bg-gray-50">
-            <TableHead className="w-[100px]">Priority</TableHead>
+            <TableHead className="w-[140px]">Scanned</TableHead>
             <TableHead className="w-[120px]">Item ID</TableHead>
             <TableHead className="min-w-[250px]">Title</TableHead>
             <TableHead className="w-[60px]">Karat</TableHead>
@@ -220,15 +220,8 @@ const Matches = () => {
             return (
               <React.Fragment key={match.id}>
                 <TableRow className={`hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}>
-                  <TableCell>
-                    {priority ? (
-                      <Badge variant="outline" className={`${priority.color} flex items-center gap-1 text-xs whitespace-nowrap`}>
-                        {priority.icon}
-                        {priority.level}
-                      </Badge>
-                    ) : (
-                      <span className="text-gray-400 text-xs">N/A</span>
-                    )}
+                  <TableCell className="text-xs text-gray-600">
+                    {new Date(match.found_at).toLocaleString()}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
                   <TableCell>
@@ -248,9 +241,6 @@ const Matches = () => {
                           {match.ebay_title}
                         </p>
                       )}
-                      <p className="text-xs text-gray-500">
-                        Scanned: {new Date(match.found_at).toLocaleString()}
-                      </p>
                     </div>
                   </TableCell>
                   <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
@@ -337,6 +327,7 @@ const Matches = () => {
       <Table>
         <TableHeader>
           <TableRow className="bg-gray-50">
+            <TableHead className="w-[140px]">Scanned</TableHead>
             <TableHead className="w-[80px]">Deal</TableHead>
             <TableHead className="w-[80px]">Risk</TableHead>
             <TableHead className="w-[120px]">Item ID</TableHead>
@@ -377,6 +368,9 @@ const Matches = () => {
             return (
               <React.Fragment key={match.id}>
                 <TableRow className={`hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}>
+                  <TableCell className="text-xs text-gray-600">
+                    {new Date(match.found_at).toLocaleString()}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`${getDealScoreColor(dealScore)} text-xs`}>
                       {dealScore ?? '-'}
@@ -405,9 +399,6 @@ const Matches = () => {
                           {match.ebay_title}
                         </p>
                       )}
-                      <p className="text-xs text-gray-500">
-                        Scanned: {new Date(match.found_at).toLocaleString()}
-                      </p>
                     </div>
                   </TableCell>
                   <TableCell className="font-medium text-sm">{stoneType || '-'}</TableCell>
@@ -466,7 +457,7 @@ const Matches = () => {
                     onToggleChange={(field, value) =>
                       handleToggleChange(match, itemType, field, value)
                     }
-                    colSpan={10}
+                    colSpan={11}
                   />
                 )}
               </React.Fragment>
@@ -482,6 +473,7 @@ const Matches = () => {
       <Table>
         <TableHeader>
           <TableRow className="bg-gray-50">
+            <TableHead className="w-[140px]">Scanned</TableHead>
             <TableHead className="w-[120px]">Item ID</TableHead>
             <TableHead className="min-w-[300px]">Title</TableHead>
             <TableHead className="w-[100px]">Price</TableHead>
@@ -500,6 +492,9 @@ const Matches = () => {
             return (
               <React.Fragment key={match.id}>
                 <TableRow className={`hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}>
+                  <TableCell className="text-xs text-gray-600">
+                    {new Date(match.found_at).toLocaleString()}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
                   <TableCell>
                     <div>
@@ -518,9 +513,6 @@ const Matches = () => {
                           {match.ebay_title}
                         </p>
                       )}
-                      <p className="text-xs text-gray-500">
-                        Scanned: {new Date(match.found_at).toLocaleString()}
-                      </p>
                     </div>
                   </TableCell>
                   <TableCell className="font-semibold">
@@ -578,7 +570,7 @@ const Matches = () => {
                     onToggleChange={(field, value) =>
                       handleToggleChange(match, itemType, field, value)
                     }
-                    colSpan={7}
+                    colSpan={8}
                   />
                 )}
               </React.Fragment>
