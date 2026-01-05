@@ -224,24 +224,22 @@ const Matches = () => {
                     {new Date(match.found_at).toLocaleString()}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
-                  <TableCell>
-                    <div className="max-w-[300px]">
-                      {match.ebay_url ? (
-                        <a
-                          href={match.ebay_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium truncate block text-blue-600 hover:text-blue-800 hover:underline"
-                          title={match.ebay_title}
-                        >
-                          {match.ebay_title}
-                        </a>
-                      ) : (
-                        <p className="text-sm font-medium truncate" title={match.ebay_title}>
-                          {match.ebay_title}
-                        </p>
-                      )}
-                    </div>
+                  <TableCell className="max-w-[300px] truncate">
+                    {match.ebay_url ? (
+                      <a
+                        href={match.ebay_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        title={match.ebay_title}
+                      >
+                        {match.ebay_title}
+                      </a>
+                    ) : (
+                      <span className="text-sm font-medium" title={match.ebay_title}>
+                        {match.ebay_title}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
                   <TableCell>{weightG ? `${weightG.toFixed(2)}g` : '-'}</TableCell>
@@ -382,24 +380,22 @@ const Matches = () => {
                     </Badge>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
-                  <TableCell>
-                    <div className="max-w-[300px]">
-                      {match.ebay_url ? (
-                        <a
-                          href={match.ebay_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium truncate block text-blue-600 hover:text-blue-800 hover:underline"
-                          title={match.ebay_title}
-                        >
-                          {match.ebay_title}
-                        </a>
-                      ) : (
-                        <p className="text-sm font-medium truncate" title={match.ebay_title}>
-                          {match.ebay_title}
-                        </p>
-                      )}
-                    </div>
+                  <TableCell className="max-w-[300px] truncate">
+                    {match.ebay_url ? (
+                      <a
+                        href={match.ebay_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        title={match.ebay_title}
+                      >
+                        {match.ebay_title}
+                      </a>
+                    ) : (
+                      <span className="text-sm font-medium" title={match.ebay_title}>
+                        {match.ebay_title}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="font-medium text-sm">{stoneType || '-'}</TableCell>
                   <TableCell className="font-semibold">{carat ? `${carat}ct` : '-'}</TableCell>
@@ -496,24 +492,22 @@ const Matches = () => {
                     {new Date(match.found_at).toLocaleString()}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
-                  <TableCell>
-                    <div>
-                      {match.ebay_url ? (
-                        <a
-                          href={match.ebay_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium truncate max-w-[350px] block text-blue-600 hover:text-blue-800 hover:underline"
-                          title={match.ebay_title}
-                        >
-                          {match.ebay_title}
-                        </a>
-                      ) : (
-                        <p className="text-sm font-medium truncate max-w-[350px]" title={match.ebay_title}>
-                          {match.ebay_title}
-                        </p>
-                      )}
-                    </div>
+                  <TableCell className="max-w-[350px] truncate">
+                    {match.ebay_url ? (
+                      <a
+                        href={match.ebay_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        title={match.ebay_title}
+                      >
+                        {match.ebay_title}
+                      </a>
+                    ) : (
+                      <span className="text-sm font-medium" title={match.ebay_title}>
+                        {match.ebay_title}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="font-semibold">
                     {shippingCost === null
