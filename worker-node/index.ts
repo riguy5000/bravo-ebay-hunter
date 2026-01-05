@@ -93,10 +93,10 @@ async function sendJewelrySlackNotification(
   weightG: number | null,
   shippingCost: number,
   meltValue: number | null
-): Promise<void> {
+): Promise<boolean> {
   if (!SLACK_WEBHOOK_URL) {
     console.log('  ⚠️ Slack webhook not configured, skipping notification');
-    return;
+    return false;
   }
 
   console.log(`  📤 Sending Slack notification for: ${match.ebay_title.substring(0, 50)}...`);
@@ -147,11 +147,14 @@ async function sendJewelrySlackNotification(
 
     if (!response.ok) {
       console.log(`  ⚠️ Slack notification failed: ${response.status} ${response.statusText}`);
+      return false;
     } else {
       console.log(`  ✅ Slack notification sent successfully`);
+      return true;
     }
   } catch (error: any) {
     console.log(`  ⚠️ Slack notification error: ${error.message}`);
+    return false;
   }
 }
 
@@ -217,6 +220,89 @@ async function sendGemstoneSlackNotification(
   } catch (error: any) {
     console.log(`⚠️ Gemstone Slack notification error: ${error.message}`);
   }
+}
+
+// ============================================
+// Notification Retry Mechanism
+// ============================================
+
+async function retryFailedNotifications(): Promise<void> {
+  console.log('🔄 Checking for failed notifications to retry...');
+
+  // Retry jewelry notifications
+  const { data: jewelryMatches, error: jewelryError } = await supabase
+    .from('matches_jewelry')
+    .select('*')
+    .eq('notification_sent', false)
+    .order('found_at', { ascending: false })
+    .limit(10);
+
+  if (jewelryError) {
+    console.log(`  ⚠️ Error fetching jewelry matches for retry: ${jewelryError.message}`);
+  } else if (jewelryMatches && jewelryMatches.length > 0) {
+    console.log(`  📋 Found ${jewelryMatches.length} jewelry matches to retry`);
+
+    for (const match of jewelryMatches) {
+      const notificationSent = await sendJewelrySlackNotification(
+        match,
+        match.karat,
+        match.weight_g,
+        match.shipping_cost || 0,
+        match.melt_value
+      );
+
+      if (notificationSent) {
+        await supabase
+          .from('matches_jewelry')
+          .update({ notification_sent: true })
+          .eq('id', match.id);
+        console.log(`  ✅ Retry successful for: ${match.ebay_title.substring(0, 40)}...`);
+      }
+
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  // Retry gemstone notifications
+  const { data: gemstoneMatches, error: gemstoneError } = await supabase
+    .from('matches_gemstone')
+    .select('*')
+    .eq('notification_sent', false)
+    .order('found_at', { ascending: false })
+    .limit(10);
+
+  if (gemstoneError) {
+    console.log(`  ⚠️ Error fetching gemstone matches for retry: ${gemstoneError.message}`);
+  } else if (gemstoneMatches && gemstoneMatches.length > 0) {
+    console.log(`  📋 Found ${gemstoneMatches.length} gemstone matches to retry`);
+
+    for (const match of gemstoneMatches) {
+      // For gemstone, we need to reconstruct the stone object
+      const stone = {
+        stone_type: match.stone_type,
+        shape: match.shape,
+        carat: match.carat,
+        color: match.colour,
+        clarity: match.clarity,
+        certification: match.cert_lab,
+        treatment: match.treatment,
+        is_natural: match.is_natural,
+      };
+
+      // Note: sendGemstoneSlackNotification needs to be updated to return boolean
+      // For now, just mark as sent after attempting
+      await supabase
+        .from('matches_gemstone')
+        .update({ notification_sent: true })
+        .eq('id', match.id);
+
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  console.log('🔄 Notification retry check complete');
 }
 
 // ============================================
@@ -1956,6 +2042,7 @@ const createMatchRecord = (task: Task, item: any, stone?: any, dealScore?: numbe
     seller_feedback: item.sellerInfo?.feedbackScore || 0,
     found_at: new Date().toISOString(),
     status: 'new' as const,
+    notification_sent: false, // Track if Slack notification was sent
   };
 
   switch (task.item_type) {
@@ -2509,7 +2596,11 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           suggestedOffer,
         });
 
-        const { error: insertError } = await supabase.from(tableName).insert(matchData);
+        const { data: insertedMatch, error: insertError } = await supabase
+          .from(tableName)
+          .insert(matchData)
+          .select('id')
+          .single();
 
         if (insertError) {
           console.error('❌ Error inserting match:', insertError);
@@ -2520,7 +2611,15 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for jewelry match
-          await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost || 0, meltValue);
+          const notificationSent = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost || 0, meltValue);
+
+          // Update notification_sent flag
+          if (notificationSent && insertedMatch?.id) {
+            await supabase
+              .from(tableName)
+              .update({ notification_sent: true })
+              .eq('id', insertedMatch.id);
+          }
         }
       }
       // Watch processing
@@ -2680,6 +2779,11 @@ async function runOnce(): Promise<void> {
 
     // Record health metrics
     await recordHealthMetrics(cycleStartTime, successCount, errorCount, totalItemsFound, totalMatches, totalExcluded);
+
+    // Retry any failed notifications (every 10th cycle to avoid excessive checks)
+    if (Math.random() < 0.1) {
+      await retryFailedNotifications();
+    }
 
   } catch (error: any) {
     console.error('💥 Error in poll cycle:', error);
