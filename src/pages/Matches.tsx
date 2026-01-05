@@ -220,49 +220,44 @@ const Matches = () => {
             return (
               <React.Fragment key={match.id}>
                 <TableRow className={`hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}>
-                  <TableCell className="text-xs text-gray-600">
+                  <TableCell className="text-xs text-gray-600 whitespace-nowrap">
                     {new Date(match.found_at).toLocaleString()}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{match.ebay_listing_id}</TableCell>
-                  <TableCell className="max-w-[300px] truncate">
-                    {match.ebay_url ? (
-                      <a
-                        href={match.ebay_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                        title={match.ebay_title}
-                      >
-                        {match.ebay_title}
-                      </a>
-                    ) : (
-                      <span className="text-sm font-medium" title={match.ebay_title}>
-                        {match.ebay_title}
-                      </span>
-                    )}
+                  <TableCell className="font-mono text-xs whitespace-nowrap">{match.ebay_listing_id}</TableCell>
+                  <TableCell className="max-w-[300px]">
+                    <div className="truncate">
+                      {match.ebay_url ? (
+                        <a
+                          href={match.ebay_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                          title={match.ebay_title}
+                        >
+                          {match.ebay_title}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-medium" title={match.ebay_title}>
+                          {match.ebay_title}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
-                  <TableCell className="font-semibold">{karat ? `${karat}K` : '-'}</TableCell>
-                  <TableCell>{weightG ? `${weightG.toFixed(2)}g` : '-'}</TableCell>
-                  <TableCell className="font-semibold">
+                  <TableCell className="font-semibold whitespace-nowrap">{karat ? `${karat}K` : '-'}</TableCell>
+                  <TableCell className="whitespace-nowrap">{weightG ? `${weightG.toFixed(2)}g` : '-'}</TableCell>
+                  <TableCell className="font-semibold whitespace-nowrap">
                     {shippingCost === null
                       ? `$${match.listed_price.toLocaleString()} + shipping`
                       : `$${totalCost.toLocaleString()}`}
                   </TableCell>
-                  <TableCell className="text-green-700 font-semibold">
+                  <TableCell className="text-green-700 font-semibold whitespace-nowrap">
                     {breakEven ? `$${breakEven.toFixed(0)}` : '-'}
                   </TableCell>
-                  <TableCell className="text-blue-700 font-semibold">
+                  <TableCell className="text-blue-700 font-semibold whitespace-nowrap">
                     {suggestedOffer ? `$${suggestedOffer.toFixed(0)}` : '-'}
                   </TableCell>
-                  <TableCell className={`font-semibold ${profit && profit > 0 ? 'text-green-700' : 'text-red-700'}`}>
-                    {profit ? (
-                      <div>
-                        <div>${profit.toFixed(0)}</div>
-                        <div className="text-xs opacity-75">
-                          {totalCost > 0 ? `${((profit / totalCost) * 100).toFixed(0)}%` : '-'}
-                        </div>
-                      </div>
-                    ) : '-'}
+                  <TableCell className={`font-semibold whitespace-nowrap ${profit && profit > 0 ? 'text-green-700' : 'text-red-700'}`}>
+                    {profit ? `$${profit.toFixed(0)} (${totalCost > 0 ? ((profit / totalCost) * 100).toFixed(0) : '-'}%)` : '-'}
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
