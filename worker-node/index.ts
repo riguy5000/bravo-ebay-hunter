@@ -4,6 +4,8 @@
 // ============================================
 
 import * as dotenv from 'dotenv';
+import * as fs from 'fs';
+import * as path from 'path';
 import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
@@ -24,6 +26,23 @@ const TEST_SELLER_USERNAME = process.env.TEST_SELLER_USERNAME || 'pe952597';
 
 // Track test listings we've already notified about (in-memory cache)
 const notifiedTestListings = new Set<string>();
+
+// Test listings log file - only logs test seller detections
+const TEST_LISTINGS_LOG = path.join(__dirname, 'test-listings.log');
+
+function logTestListing(item: any, message: string): void {
+  const timestamp = new Date().toISOString();
+  const logEntry = `[${timestamp}] ${message}\n` +
+    `  Title: ${item.title}\n` +
+    `  Price: $${item.price}\n` +
+    `  Item ID: ${item.itemId}\n` +
+    `  URL: ${item.listingUrl}\n` +
+    `  Seller: ${item.sellerInfo?.name || 'Unknown'}\n` +
+    `---\n`;
+
+  fs.appendFileSync(TEST_LISTINGS_LOG, logEntry);
+  console.log(`📝 Logged to ${TEST_LISTINGS_LOG}`);
+}
 
 // ============================================
 // Slack Notification Functions
@@ -1025,6 +1044,36 @@ async function cacheRejectedItem(taskId: string, itemId: string, reason: string)
     }, { onConflict: 'task_id,ebay_listing_id' });
   } catch (e) {
     // Cache errors shouldn't break the flow
+  }
+}
+
+// ============================================
+// Pagination Tracking
+// ============================================
+
+// Track pagination offset per task (cycles through pages 0, 200, 400, etc.)
+const taskPaginationOffsets = new Map<string, number>();
+const MAX_PAGINATION_OFFSET = 800; // Max offset before resetting (eBay limits deep pagination)
+
+function getTaskPaginationOffset(taskId: string): number {
+  return taskPaginationOffsets.get(taskId) || 0;
+}
+
+function advanceTaskPagination(taskId: string, itemsReturned: number): void {
+  const currentOffset = taskPaginationOffsets.get(taskId) || 0;
+
+  // If we got fewer items than the limit (200), we've reached the end - reset to page 0
+  // Also reset if we've hit the max offset
+  if (itemsReturned < 200 || currentOffset >= MAX_PAGINATION_OFFSET) {
+    taskPaginationOffsets.set(taskId, 0);
+    if (currentOffset > 0) {
+      console.log(`📄 Pagination: Completed full cycle, resetting to page 0`);
+    }
+  } else {
+    // Advance to next page
+    const newOffset = currentOffset + 200;
+    taskPaginationOffsets.set(taskId, newOffset);
+    console.log(`📄 Pagination: Advanced to offset ${newOffset} for next poll`);
   }
 }
 
@@ -2108,6 +2157,12 @@ const processTask = async (task: Task): Promise<TaskStats> => {
     const lastRunDate = task.last_run ? new Date(task.last_run) : new Date(Date.now() - 24 * 60 * 60 * 1000);
     const dateFrom = lastRunDate.toISOString();
 
+    // Get pagination offset for this task
+    const paginationOffset = getTaskPaginationOffset(task.id);
+    if (paginationOffset > 0) {
+      console.log(`📄 Pagination: Using offset ${paginationOffset} (page ${paginationOffset / 200 + 1})`);
+    }
+
     // Build search parameters
     const searchParams = {
       keywords: buildSearchKeywords(task),
@@ -2126,6 +2181,8 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       // Add category filtering for gemstones and jewelry
       categoryIds: task.item_type === 'gemstone' ? GEMSTONE_CATEGORY_IDS.join(',') :
                    task.item_type === 'jewelry' ? JEWELRY_CATEGORY_IDS.join(',') : undefined,
+      // Pagination offset
+      offset: paginationOffset,
     };
 
     // Check if jewelry task has multiple metals - need to search for each
@@ -2186,6 +2243,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       console.log(`📦 Found ${items.length} items`);
     }
 
+    // Advance pagination for next poll cycle
+    advanceTaskPagination(task.id, items.length);
+
     if (!items || items.length === 0) {
       console.log(`📭 No new items found for task ${task.name}`);
       await supabase.from('tasks').update({ last_run: new Date().toISOString() }).eq('id', task.id);
@@ -2221,6 +2281,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         // Only notify once per test listing
         if (!notifiedTestListings.has(item.itemId)) {
           console.log(`🧪 TEST LISTING DETECTED from ${sellerName}: ${item.title.substring(0, 50)}...`);
+          logTestListing(item, '🧪 TEST LISTING DETECTED');
           await sendTestListingNotification(item);
           notifiedTestListings.add(item.itemId);
         }

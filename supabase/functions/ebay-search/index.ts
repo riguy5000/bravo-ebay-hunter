@@ -18,6 +18,7 @@ interface SearchRequest {
   itemType?: 'watch' | 'jewelry' | 'gemstone';
   typeSpecificFilters?: any;
   dateFrom?: string;
+  offset?: number; // Pagination offset (0, 200, 400, etc.)
   testKey?: {
     app_id: string;
     dev_id: string;
@@ -241,10 +242,18 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
 
 const buildEbayBrowseUrl = (params: SearchRequest): string => {
   const baseUrl = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
-  const searchParams = new URLSearchParams({
+  const urlParams: Record<string, string> = {
     q: params.keywords,
     limit: '200'
-  });
+  };
+
+  // Add pagination offset if provided
+  if (params.offset && params.offset > 0) {
+    urlParams.offset = params.offset.toString();
+    console.log(`📄 Pagination: offset=${params.offset}`);
+  }
+
+  const searchParams = new URLSearchParams(urlParams);
 
   let filters: string[] = [];
 
