@@ -2275,17 +2275,11 @@ const processTask = async (task: Task): Promise<TaskStats> => {
     }
 
     for (const item of items) {
-      // Check for test listing (from our test seller) - bypass all filters
+      // Log test listings (but process them normally through all filters)
       const sellerName = item.sellerInfo?.name?.toLowerCase() || '';
       if (sellerName === TEST_SELLER_USERNAME.toLowerCase()) {
-        // Only notify once per test listing
-        if (!notifiedTestListings.has(item.itemId)) {
-          console.log(`🧪 TEST LISTING DETECTED from ${sellerName}: ${item.title.substring(0, 50)}...`);
-          logTestListing(item, '🧪 TEST LISTING DETECTED');
-          await sendTestListingNotification(item);
-          notifiedTestListings.add(item.itemId);
-        }
-        continue;
+        console.log(`🧪 TEST LISTING from ${sellerName}: ${item.title.substring(0, 50)}... (processing normally)`);
+        logTestListing(item, '🧪 TEST LISTING - processing through normal pipeline');
       }
 
       // Skip already rejected items (saves API calls)
