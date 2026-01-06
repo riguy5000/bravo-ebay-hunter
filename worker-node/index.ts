@@ -1647,8 +1647,8 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
   // Check title
   const titleLower = title.toLowerCase();
 
-  // Match patterns like "5g", "5.5g", "10 grams" - the unit is required so "14K" won't match
-  let gramMatch = titleLower.match(/([\d.]+)\s*(?:g|gr|gram|grams)\b/i);
+  // Match patterns like "5g", "5.5g", "10 grams", "0.74gm" - the unit is required so "14K" won't match
+  let gramMatch = titleLower.match(/([\d.]+)\s*(?:g|gm|gr|gram|grams)\b/i);
   if (gramMatch) return parseFloat(gramMatch[1]);
 
   let ozMatch = titleLower.match(/([\d.]+)\s*(?:oz|ounce|ounces)\b/i);
@@ -1669,10 +1669,10 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
 
     // Weight patterns in description
     const weightPatterns = [
-      /(?:weight|weighs|wt)[:\s\-]+([\d.]+)\s*(?:g|gr|gram|grams)\b/i,  // handles "Weight - .53 grams"
-      /([\d.]+)\s*(?:g|gr|gram|grams)\s*(?:total|weight)/i,
-      /(?:total|approx\.?|approximately)\s*([\d.]+)\s*(?:g|gr|gram|grams)\b/i,
-      /([\d.]+)\s*(?:g|gr|gram|grams)\b/i,
+      /(?:weight|weighs|wt)[:\s\-]+([\d.]+)\s*(?:g|gm|gr|gram|grams)\b/i,  // handles "Weight - .53 grams"
+      /([\d.]+)\s*(?:g|gm|gr|gram|grams)\s*(?:total|weight)/i,
+      /(?:total|approx\.?|approximately)\s*([\d.]+)\s*(?:g|gm|gr|gram|grams)\b/i,
+      /([\d.]+)\s*(?:g|gm|gr|gram|grams)\b/i,
     ];
 
     for (const pattern of weightPatterns) {
@@ -2237,6 +2237,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       const exclusionCheck = shouldExcludeItem(task, item);
       if (exclusionCheck.exclude) {
         console.log(`🚫 Excluding: ${exclusionCheck.reason}`);
+        await cacheRejectedItem(task.id, item.itemId, exclusionCheck.reason || 'Basic exclusion');
         excludedItems++;
         continue;
       }
@@ -2260,7 +2261,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         });
 
         if (!conditionMatches) {
-          console.log(`🚫 Excluding wrong condition "${item.condition}" (want: ${selectedConditions.join(', ')}): ${item.title.substring(0, 40)}...`);
+          const reason = `Wrong condition "${item.condition}" (want: ${selectedConditions.join(', ')})`;
+          console.log(`🚫 Excluding ${reason}: ${item.title.substring(0, 40)}...`);
+          await cacheRejectedItem(task.id, item.itemId, reason);
           excludedItems++;
           continue;
         }
@@ -2274,7 +2277,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             titleLower.includes('silver-plated') || titleLower.includes('filled') ||
             titleLower.includes('gold-filled') || titleLower.includes('vermeil') ||
             titleLower.includes('gold tone') || titleLower.includes('goldtone')) {
-          console.log(`🚫 Excluding plated/filled: ${item.title.substring(0, 50)}...`);
+          const reason = 'Plated/filled/vermeil';
+          console.log(`🚫 Excluding ${reason}: ${item.title.substring(0, 50)}...`);
+          await cacheRejectedItem(task.id, item.itemId, reason);
           excludedItems++;
           continue;
         }
@@ -2282,7 +2287,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         const baseMet = ['brass', 'bronze', 'copper', 'pewter', 'alloy', 'stainless', 'titanium', 'tungsten', 'nickel'];
         const foundBaseMetal = baseMet.find(m => titleLower.includes(m));
         if (foundBaseMetal) {
-          console.log(`🚫 Excluding base metal "${foundBaseMetal}": ${item.title.substring(0, 50)}...`);
+          const reason = `Base metal "${foundBaseMetal}"`;
+          console.log(`🚫 Excluding ${reason}: ${item.title.substring(0, 50)}...`);
+          await cacheRejectedItem(task.id, item.itemId, reason);
           excludedItems++;
           continue;
         }
@@ -2295,7 +2302,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         if (!silverSelected && (titleLower.includes('sterling silver') ||
             titleLower.includes('925 silver') || titleLower.includes('.925') ||
             (titleLower.includes('silver') && !titleLower.includes('gold')))) {
-          console.log(`🚫 Excluding silver (not selected): ${item.title.substring(0, 50)}...`);
+          const reason = 'Silver (not selected)';
+          console.log(`🚫 Excluding ${reason}: ${item.title.substring(0, 50)}...`);
+          await cacheRejectedItem(task.id, item.itemId, reason);
           excludedItems++;
           continue;
         }
@@ -2303,10 +2312,14 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
       // Price filters
       if (task.min_price && item.price < task.min_price) {
+        const reason = `Below min price ($${item.price} < $${task.min_price})`;
+        await cacheRejectedItem(task.id, item.itemId, reason);
         excludedItems++;
         continue;
       }
       if (task.max_price && item.price > task.max_price) {
+        const reason = `Above max price ($${item.price} > $${task.max_price})`;
+        await cacheRejectedItem(task.id, item.itemId, reason);
         excludedItems++;
         continue;
       }
@@ -2315,7 +2328,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       if (task.min_seller_feedback && task.min_seller_feedback > 0) {
         const sellerFeedback = item.sellerInfo?.feedbackScore || 0;
         if (sellerFeedback < task.min_seller_feedback) {
-          console.log(`  🚫 Excluding low feedback seller (${sellerFeedback} < ${task.min_seller_feedback}): ${item.title.substring(0, 40)}...`);
+          const reason = `Low seller feedback (${sellerFeedback} < ${task.min_seller_feedback})`;
+          console.log(`  🚫 Excluding ${reason}: ${item.title.substring(0, 40)}...`);
+          await cacheRejectedItem(task.id, item.itemId, reason);
           excludedItems++;
           continue;
         }
