@@ -2303,61 +2303,67 @@ const processTask = async (task: Task): Promise<TaskStats> => {
     for (const item of items) {
       // Check for test listing (from our test seller) - bypass all filters
       const sellerName = item.sellerInfo?.name?.toLowerCase() || '';
-      if (sellerName === TEST_SELLER_USERNAME.toLowerCase()) {
+      const isTestListing = sellerName === TEST_SELLER_USERNAME.toLowerCase();
+
+      if (isTestListing) {
         // Only notify once per test listing
         if (!notifiedTestListings.has(item.itemId)) {
           console.log(`🧪 TEST LISTING DETECTED from ${sellerName}: ${item.title.substring(0, 50)}...`);
-          logTestListing(item, '🧪 TEST LISTING DETECTED');
+          logTestListing(item, '🧪 TEST LISTING DETECTED - will process through normal flow');
           await sendTestListingNotification(item);
           notifiedTestListings.add(item.itemId);
         }
-        continue;
+        // Don't continue - let it go through normal processing to add to matches
       }
 
-      // Skip already rejected items (saves API calls)
-      if (rejectedItemIds.has(item.itemId)) {
+      // Skip already rejected items (saves API calls) - but not test listings
+      if (!isTestListing && rejectedItemIds.has(item.itemId)) {
         skippedRejected++;
         continue;
       }
 
-      // Basic exclusion check
-      const exclusionCheck = shouldExcludeItem(task, item);
-      if (exclusionCheck.exclude) {
-        console.log(`🚫 Excluding: ${exclusionCheck.reason}`);
-        await cacheRejectedItem(task.id, item.itemId, exclusionCheck.reason || 'Basic exclusion');
-        excludedItems++;
-        continue;
-      }
-
-      // Condition filter - check if item matches selected conditions
-      const selectedConditions = getConditionsFromFilters(task);
-      if (selectedConditions.length > 0 && item.condition) {
-        const itemCondition = item.condition.toLowerCase();
-        const conditionsLower = selectedConditions.map((c: string) => c.toLowerCase());
-
-        // Check if item condition matches any selected condition
-        const conditionMatches = conditionsLower.some((selected: string) => {
-          // Handle variations: "Pre-owned" matches "pre-owned", "Pre-Owned", etc.
-          if (selected === 'pre-owned' && (itemCondition.includes('pre-owned') || itemCondition.includes('pre owned') || itemCondition === 'used')) {
-            return true;
-          }
-          if (selected === 'new' && itemCondition === 'new') {
-            return true;
-          }
-          return itemCondition.includes(selected);
-        });
-
-        if (!conditionMatches) {
-          const reason = `Wrong condition "${item.condition}" (want: ${selectedConditions.join(', ')})`;
-          console.log(`🚫 Excluding ${reason}: ${item.title.substring(0, 40)}...`);
-          await cacheRejectedItem(task.id, item.itemId, reason);
+      // Basic exclusion check - skip for test listings
+      if (!isTestListing) {
+        const exclusionCheck = shouldExcludeItem(task, item);
+        if (exclusionCheck.exclude) {
+          console.log(`🚫 Excluding: ${exclusionCheck.reason}`);
+          await cacheRejectedItem(task.id, item.itemId, exclusionCheck.reason || 'Basic exclusion');
           excludedItems++;
           continue;
         }
       }
 
-      // Early check for plated/filled/base metal items (common false positives)
-      if (task.item_type === 'jewelry') {
+      // Condition filter - check if item matches selected conditions (skip for test listings)
+      if (!isTestListing) {
+        const selectedConditions = getConditionsFromFilters(task);
+        if (selectedConditions.length > 0 && item.condition) {
+          const itemCondition = item.condition.toLowerCase();
+          const conditionsLower = selectedConditions.map((c: string) => c.toLowerCase());
+
+          // Check if item condition matches any selected condition
+          const conditionMatches = conditionsLower.some((selected: string) => {
+            // Handle variations: "Pre-owned" matches "pre-owned", "Pre-Owned", etc.
+            if (selected === 'pre-owned' && (itemCondition.includes('pre-owned') || itemCondition.includes('pre owned') || itemCondition === 'used')) {
+              return true;
+            }
+            if (selected === 'new' && itemCondition === 'new') {
+              return true;
+            }
+            return itemCondition.includes(selected);
+          });
+
+          if (!conditionMatches) {
+            const reason = `Wrong condition "${item.condition}" (want: ${selectedConditions.join(', ')})`;
+            console.log(`🚫 Excluding ${reason}: ${item.title.substring(0, 40)}...`);
+            await cacheRejectedItem(task.id, item.itemId, reason);
+            excludedItems++;
+            continue;
+          }
+        }
+      }
+
+      // Early check for plated/filled/base metal items (common false positives) - skip for test listings
+      if (!isTestListing && task.item_type === 'jewelry') {
         const titleLower = item.title.toLowerCase();
         // Check for plated/filled
         if (titleLower.includes('plated') || titleLower.includes('gold-plated') ||
@@ -2397,22 +2403,24 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         }
       }
 
-      // Price filters
-      if (task.min_price && item.price < task.min_price) {
-        const reason = `Below min price ($${item.price} < $${task.min_price})`;
-        await cacheRejectedItem(task.id, item.itemId, reason);
-        excludedItems++;
-        continue;
-      }
-      if (task.max_price && item.price > task.max_price) {
-        const reason = `Above max price ($${item.price} > $${task.max_price})`;
-        await cacheRejectedItem(task.id, item.itemId, reason);
-        excludedItems++;
-        continue;
+      // Price filters - skip for test listings
+      if (!isTestListing) {
+        if (task.min_price && item.price < task.min_price) {
+          const reason = `Below min price ($${item.price} < $${task.min_price})`;
+          await cacheRejectedItem(task.id, item.itemId, reason);
+          excludedItems++;
+          continue;
+        }
+        if (task.max_price && item.price > task.max_price) {
+          const reason = `Above max price ($${item.price} > $${task.max_price})`;
+          await cacheRejectedItem(task.id, item.itemId, reason);
+          excludedItems++;
+          continue;
+        }
       }
 
-      // Seller feedback filter
-      if (task.min_seller_feedback && task.min_seller_feedback > 0) {
+      // Seller feedback filter - skip for test listings
+      if (!isTestListing && task.min_seller_feedback && task.min_seller_feedback > 0) {
         const sellerFeedback = item.sellerInfo?.feedbackScore || 0;
         if (sellerFeedback < task.min_seller_feedback) {
           const reason = `Low seller feedback (${sellerFeedback} < ${task.min_seller_feedback})`;
@@ -2535,12 +2543,14 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           console.log(`  📦 Shipping: Free`);
         }
 
-        // Check total cost (price + shipping) against max price
-        const totalCostCheck = item.price + (item.shippingCost || 0);
-        if (task.max_price && totalCostCheck > task.max_price) {
-          console.log(`  🚫 Excluding: total cost $${totalCostCheck.toFixed(2)} > max $${task.max_price}: ${item.title.substring(0, 40)}...`);
-          excludedItems++;
-          continue;
+        // Check total cost (price + shipping) against max price - skip for test listings
+        if (!isTestListing) {
+          const totalCostCheck = item.price + (item.shippingCost || 0);
+          if (task.max_price && totalCostCheck > task.max_price) {
+            console.log(`  🚫 Excluding: total cost $${totalCostCheck.toFixed(2)} > max $${task.max_price}: ${item.title.substring(0, 40)}...`);
+            excludedItems++;
+            continue;
+          }
         }
 
         if (token) {
@@ -2549,29 +2559,31 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             specs = extractItemSpecifics(itemDetails);
             description = itemDetails.description || '';
 
-            // Check category - reject if in blacklist OR not in jewelry whitelist
-            const categoryId = String(itemDetails.categoryId || itemDetails.primaryCategory?.categoryId || '');
-            if (categoryId) {
-              if (JEWELRY_BLACKLIST_CATEGORIES.includes(categoryId)) {
-                const reason = `Blacklisted category ${categoryId}`;
-                console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
-                await cacheRejectedItem(task.id, item.itemId, reason);
-                excludedItems++;
-                continue;
-              }
-              // Also reject if not in jewelry categories whitelist
-              if (!JEWELRY_CATEGORY_IDS.includes(categoryId)) {
-                const reason = `Not a jewelry category ${categoryId}`;
-                console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
-                await cacheRejectedItem(task.id, item.itemId, reason);
-                excludedItems++;
-                continue;
+            // Check category - reject if in blacklist OR not in jewelry whitelist (skip for test listings)
+            if (!isTestListing) {
+              const categoryId = String(itemDetails.categoryId || itemDetails.primaryCategory?.categoryId || '');
+              if (categoryId) {
+                if (JEWELRY_BLACKLIST_CATEGORIES.includes(categoryId)) {
+                  const reason = `Blacklisted category ${categoryId}`;
+                  console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+                  await cacheRejectedItem(task.id, item.itemId, reason);
+                  excludedItems++;
+                  continue;
+                }
+                // Also reject if not in jewelry categories whitelist
+                if (!JEWELRY_CATEGORY_IDS.includes(categoryId)) {
+                  const reason = `Not a jewelry category ${categoryId}`;
+                  console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+                  await cacheRejectedItem(task.id, item.itemId, reason);
+                  excludedItems++;
+                  continue;
+                }
               }
             }
           }
 
-          // Check description for plated/base metal indicators
-          if (description) {
+          // Check description for plated/base metal indicators - skip for test listings
+          if (!isTestListing && description) {
             const descLower = description.toLowerCase().replace(/<[^>]*>/g, ' ');
             const platedTerms = ['gold plated', 'gold-plated', 'rose gold plated', 'silver plated', 'plated brass', 'brass plated', 'plated metal', 'electroplated', 'gold filled', 'gold-filled', 'rose gold filled', 'silver filled', 'gold toned', 'gold-toned', 'rose gold toned', 'silver toned', 'goldtone', 'silvertone'];
             const baseMetalTerms = ['made of brass', 'brass base', 'base metal: brass', 'brass with', 'brass material', 'solid brass'];
@@ -2603,23 +2615,27 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           }
         }
 
-        // Check for jewelry tools/supplies (welding, display stands, etc.)
-        const toolCheck = hasJewelryToolTerms(item.title);
-        if (toolCheck.hasTerm) {
-          const reason = `Jewelry tool/supply: "${toolCheck.term}"`;
-          console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
-          await cacheRejectedItem(task.id, item.itemId, reason);
-          excludedItems++;
-          continue;
+        // Check for jewelry tools/supplies (welding, display stands, etc.) - skip for test listings
+        if (!isTestListing) {
+          const toolCheck = hasJewelryToolTerms(item.title);
+          if (toolCheck.hasTerm) {
+            const reason = `Jewelry tool/supply: "${toolCheck.term}"`;
+            console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+            await cacheRejectedItem(task.id, item.itemId, reason);
+            excludedItems++;
+            continue;
+          }
         }
 
-        // Check item specifics (no stones, no plated/filled, no costume jewelry)
-        const specsCheck = passesJewelryItemSpecifics(item.title, specs, jewelryFilters);
-        if (!specsCheck.pass) {
-          console.log(`  ❌ REJECTED (${specsCheck.reason}): ${item.title.substring(0, 40)}...`);
-          await cacheRejectedItem(task.id, item.itemId, specsCheck.reason || 'Failed specs check');
-          excludedItems++;
-          continue;
+        // Check item specifics (no stones, no plated/filled, no costume jewelry) - skip for test listings
+        if (!isTestListing) {
+          const specsCheck = passesJewelryItemSpecifics(item.title, specs, jewelryFilters);
+          if (!specsCheck.pass) {
+            console.log(`  ❌ REJECTED (${specsCheck.reason}): ${item.title.substring(0, 40)}...`);
+            await cacheRejectedItem(task.id, item.itemId, specsCheck.reason || 'Failed specs check');
+            excludedItems++;
+            continue;
+          }
         }
 
         // Extract karat and weight (from title, specs, or description)
@@ -2667,22 +2683,24 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               breakEven = meltValue * 0.97; // 3% refining cost
               profitScrap = meltValue - totalCost;
 
-              // Check profit margin against user's minimum setting
-              const profitMarginPct = ((breakEven - totalCost) / totalCost) * 100;
-              // Check task-level setting first, then fall back to filter setting
-              const minProfitMargin = task.min_profit_margin ?? jewelryFilters.min_profit_margin;
+              // Check profit margin against user's minimum setting - skip for test listings
+              if (!isTestListing) {
+                const profitMarginPct = ((breakEven - totalCost) / totalCost) * 100;
+                // Check task-level setting first, then fall back to filter setting
+                const minProfitMargin = task.min_profit_margin ?? jewelryFilters.min_profit_margin;
 
-              // If user set a minimum profit margin, filter by that; otherwise use default -50%
-              const marginThreshold = minProfitMargin !== null && minProfitMargin !== undefined
-                ? minProfitMargin
-                : -50;
+                // If user set a minimum profit margin, filter by that; otherwise use default -50%
+                const marginThreshold = minProfitMargin !== null && minProfitMargin !== undefined
+                  ? minProfitMargin
+                  : -50;
 
-              if (profitMarginPct < marginThreshold) {
-                const reason = `Low margin ${profitMarginPct.toFixed(0)}% < min ${marginThreshold}% - BE $${breakEven.toFixed(0)} vs cost $${totalCost.toFixed(0)}`;
-                console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
-                await cacheRejectedItem(task.id, item.itemId, reason);
-                excludedItems++;
-                continue;
+                if (profitMarginPct < marginThreshold) {
+                  const reason = `Low margin ${profitMarginPct.toFixed(0)}% < min ${marginThreshold}% - BE $${breakEven.toFixed(0)} vs cost $${totalCost.toFixed(0)}`;
+                  console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+                  await cacheRejectedItem(task.id, item.itemId, reason);
+                  excludedItems++;
+                  continue;
+                }
               }
             }
           }
