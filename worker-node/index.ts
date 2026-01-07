@@ -1981,6 +1981,30 @@ interface Task {
 // Search & Processing Functions
 // ============================================
 
+// Expand metal types to include karat variations
+// "18K Gold" without a color = yellow gold, so add these variations for Yellow Gold
+const expandMetalSearchTerms = (metals: string[]): string[] => {
+  const expanded: string[] = [];
+
+  for (const metal of metals) {
+    expanded.push(metal); // Always include the original
+
+    // For Yellow Gold, add karat-only variations (18K Gold, 14K Gold, etc.)
+    // These are typically yellow gold when no color is specified
+    if (metal.toLowerCase() === 'yellow gold') {
+      expanded.push('18K Gold');
+      expanded.push('14K Gold');
+      expanded.push('10K Gold');
+      expanded.push('24K Gold');
+      expanded.push('18kt Gold');
+      expanded.push('14kt Gold');
+      expanded.push('10kt Gold');
+    }
+  }
+
+  return expanded;
+};
+
 const buildSearchKeywords = (task: Task, metalOverride: string | null = null): string => {
   let keywords = '';
   let exclusionKeywords: string[] = [];
@@ -2186,14 +2210,16 @@ const processTask = async (task: Task): Promise<TaskStats> => {
     };
 
     // Check if jewelry task has multiple metals - need to search for each
-    const metals = task.item_type === 'jewelry' ? (task.jewelry_filters?.metal || []) : [];
+    const basemetals = task.item_type === 'jewelry' ? (task.jewelry_filters?.metal || []) : [];
+    // Expand metals to include karat variations (e.g., "Yellow Gold" -> "Yellow Gold", "18K Gold", "14K Gold", etc.)
+    const metals = task.item_type === 'jewelry' ? expandMetalSearchTerms(basemetals) : basemetals;
     const needsMultiMetalSearch = task.item_type === 'jewelry' && metals.length > 1;
 
     let items: any[] = [];
 
     if (needsMultiMetalSearch) {
       // Run separate search for each metal type and combine results
-      console.log(`🔧 Searching for ${metals.length} metals: ${metals.join(', ')}`);
+      console.log(`🔧 Searching for ${metals.length} search terms (from ${basemetals.length} metals): ${metals.join(', ')}`);
       const seenItemIds = new Set<string>();
 
       for (const metal of metals) {
