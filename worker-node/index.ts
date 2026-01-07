@@ -1765,7 +1765,44 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
 // Token & API Functions
 // ============================================
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
+let cachedToken: { token: string; expiresAt: number; keyLabel: string } | null = null;
+
+// Invalidate cached token and mark key as rate-limited (called when we get a 429)
+const invalidateCachedToken = async () => {
+  if (cachedToken) {
+    const keyLabel = cachedToken.keyLabel;
+    console.log(`🔄 Invalidating cached token from key "${keyLabel}" due to rate limit`);
+
+    // Mark the key as rate-limited in the database
+    try {
+      const { data: settings } = await supabase
+        .from('settings')
+        .select('value_json')
+        .eq('key', 'ebay_keys')
+        .single();
+
+      if (settings?.value_json) {
+        const config = settings.value_json as { keys: any[] };
+        const updatedKeys = config.keys.map((k: any) => {
+          if (k.label === keyLabel) {
+            console.log(`⚠️ Marking key "${keyLabel}" as rate_limited`);
+            return { ...k, status: 'rate_limited' };
+          }
+          return k;
+        });
+
+        await supabase
+          .from('settings')
+          .update({ value_json: { ...config, keys: updatedKeys } })
+          .eq('key', 'ebay_keys');
+      }
+    } catch (error) {
+      console.error('Failed to update key status:', error);
+    }
+
+    cachedToken = null;
+  }
+};
 
 const getEbayToken = async (): Promise<string | null> => {
   if (cachedToken && cachedToken.expiresAt > Date.now()) {
@@ -1817,8 +1854,10 @@ const getEbayToken = async (): Promise<string | null> => {
     const tokenData: any = await response.json();
     cachedToken = {
       token: tokenData.access_token,
-      expiresAt: Date.now() + (tokenData.expires_in * 1000) - 60000
+      expiresAt: Date.now() + (tokenData.expires_in * 1000) - 60000,
+      keyLabel: keyToUse.label || 'unknown'
     };
+    console.log(`🔑 Got new OAuth token from key "${cachedToken.keyLabel}"`);
 
     return cachedToken.token;
   } catch (error) {
@@ -1827,7 +1866,7 @@ const getEbayToken = async (): Promise<string | null> => {
   }
 };
 
-const fetchItemDetails = async (itemId: string, token: string, includeShipping: boolean = true): Promise<any | null> => {
+const fetchItemDetails = async (itemId: string, token: string, includeShipping: boolean = true, retryCount: number = 0): Promise<any | null> => {
   // Check cache first (skip if we need shipping since cache doesn't store it)
   const cached = await getCachedItemDetails(itemId, includeShipping);
   if (cached) {
@@ -1846,6 +1885,15 @@ const fetchItemDetails = async (itemId: string, token: string, includeShipping: 
     });
 
     if (!response.ok) {
+      // Handle rate limiting - invalidate token and retry once with a new token
+      if (response.status === 429 && retryCount === 0) {
+        console.log(`⚠️ Rate limited (429) fetching ${itemId}, switching API key...`);
+        await invalidateCachedToken();
+        const newToken = await getEbayToken();
+        if (newToken) {
+          return fetchItemDetails(itemId, newToken, includeShipping, retryCount + 1);
+        }
+      }
       console.log(`⚠️ Failed to fetch details for ${itemId}: ${response.status}`);
       return null;
     }
