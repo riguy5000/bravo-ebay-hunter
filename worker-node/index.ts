@@ -640,6 +640,7 @@ const NO_STONE_VALUES = [
   'na',
   'not applicable',
   'not specified',
+  'unknown',
   'no main stone',
   'no gemstone',
   ''
