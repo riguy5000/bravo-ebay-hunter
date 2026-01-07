@@ -2277,25 +2277,30 @@ const processTask = async (task: Task): Promise<TaskStats> => {
     for (const item of items) {
       // Log test listings (but process them normally through all filters)
       const sellerName = item.sellerInfo?.name?.toLowerCase() || '';
-      if (sellerName === TEST_SELLER_USERNAME.toLowerCase()) {
+      const isTestListing = sellerName === TEST_SELLER_USERNAME.toLowerCase();
+      if (isTestListing) {
         console.log(`🧪 TEST LISTING from ${sellerName}: ${item.title.substring(0, 50)}... (processing normally)`);
         logTestListing(item, '🧪 TEST LISTING - processing through normal pipeline');
       }
 
       // Skip already rejected items (saves API calls)
       if (rejectedItemIds.has(item.itemId)) {
+        if (isTestListing) console.log(`🧪 TEST: Skipped - in rejection cache`);
         skippedRejected++;
         continue;
       }
+      if (isTestListing) console.log(`🧪 TEST: Passed rejection cache check`);
 
       // Basic exclusion check
       const exclusionCheck = shouldExcludeItem(task, item);
       if (exclusionCheck.exclude) {
+        if (isTestListing) console.log(`🧪 TEST: REJECTED - ${exclusionCheck.reason}`);
         console.log(`🚫 Excluding: ${exclusionCheck.reason}`);
         await cacheRejectedItem(task.id, item.itemId, exclusionCheck.reason || 'Basic exclusion');
         excludedItems++;
         continue;
       }
+      if (isTestListing) console.log(`🧪 TEST: Passed basic exclusion check`);
 
       // Condition filter - check if item matches selected conditions
       const selectedConditions = getConditionsFromFilters(task);
@@ -2317,12 +2322,14 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
         if (!conditionMatches) {
           const reason = `Wrong condition "${item.condition}" (want: ${selectedConditions.join(', ')})`;
+          if (isTestListing) console.log(`🧪 TEST: REJECTED - ${reason}`);
           console.log(`🚫 Excluding ${reason}: ${item.title.substring(0, 40)}...`);
           await cacheRejectedItem(task.id, item.itemId, reason);
           excludedItems++;
           continue;
         }
       }
+      if (isTestListing) console.log(`🧪 TEST: Passed condition check`);
 
       // Early check for plated/filled/base metal items (common false positives)
       if (task.item_type === 'jewelry') {
@@ -2358,38 +2365,45 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             titleLower.includes('925 silver') || titleLower.includes('.925') ||
             (titleLower.includes('silver') && !titleLower.includes('gold')))) {
           const reason = 'Silver (not selected)';
+          if (isTestListing) console.log(`🧪 TEST: REJECTED - ${reason}`);
           console.log(`🚫 Excluding ${reason}: ${item.title.substring(0, 50)}...`);
           await cacheRejectedItem(task.id, item.itemId, reason);
           excludedItems++;
           continue;
         }
       }
+      if (isTestListing) console.log(`🧪 TEST: Passed jewelry metal checks`);
 
       // Price filters
       if (task.min_price && item.price < task.min_price) {
         const reason = `Below min price ($${item.price} < $${task.min_price})`;
+        if (isTestListing) console.log(`🧪 TEST: REJECTED - ${reason}`);
         await cacheRejectedItem(task.id, item.itemId, reason);
         excludedItems++;
         continue;
       }
       if (task.max_price && item.price > task.max_price) {
         const reason = `Above max price ($${item.price} > $${task.max_price})`;
+        if (isTestListing) console.log(`🧪 TEST: REJECTED - ${reason}`);
         await cacheRejectedItem(task.id, item.itemId, reason);
         excludedItems++;
         continue;
       }
+      if (isTestListing) console.log(`🧪 TEST: Passed price filters ($${item.price})`);
 
       // Seller feedback filter
       if (task.min_seller_feedback && task.min_seller_feedback > 0) {
         const sellerFeedback = item.sellerInfo?.feedbackScore || 0;
         if (sellerFeedback < task.min_seller_feedback) {
           const reason = `Low seller feedback (${sellerFeedback} < ${task.min_seller_feedback})`;
+          if (isTestListing) console.log(`🧪 TEST: REJECTED - ${reason}`);
           console.log(`  🚫 Excluding ${reason}: ${item.title.substring(0, 40)}...`);
           await cacheRejectedItem(task.id, item.itemId, reason);
           excludedItems++;
           continue;
         }
       }
+      if (isTestListing) console.log(`🧪 TEST: Passed seller feedback check`);
 
       // Check for duplicates
       const { data: existingMatch } = await supabase
@@ -2400,8 +2414,10 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         .single();
 
       if (existingMatch) {
+        if (isTestListing) console.log(`🧪 TEST: Skipped - already in database`);
         continue;
       }
+      if (isTestListing) console.log(`🧪 TEST: Passed duplicate check - proceeding to AI extraction`);
 
       // Gemstone-specific processing
       if (task.item_type === 'gemstone') {
