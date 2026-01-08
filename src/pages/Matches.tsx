@@ -105,6 +105,30 @@ const Matches = () => {
     }
   };
 
+  // Get time-based display for matches
+  const getTimeBasedStatus = (foundAt: string) => {
+    const now = new Date();
+    const found = new Date(foundAt);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const foundDay = new Date(found.getFullYear(), found.getMonth(), found.getDate());
+
+    const diffDays = Math.floor((today.getTime() - foundDay.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return { label: 'New', color: 'bg-blue-100 text-blue-800' };
+    } else if (diffDays === 1) {
+      return { label: '1d ago', color: 'bg-gray-100 text-gray-600' };
+    } else if (diffDays < 7) {
+      return { label: `${diffDays}d ago`, color: 'bg-gray-100 text-gray-600' };
+    } else if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      return { label: `${weeks}w ago`, color: 'bg-gray-100 text-gray-500' };
+    } else {
+      const months = Math.floor(diffDays / 30);
+      return { label: `${months}mo ago`, color: 'bg-gray-100 text-gray-500' };
+    }
+  };
+
   const toggleRowExpansion = (matchId: string) => {
     setExpandedRows(prev => {
       const next = new Set(prev);
@@ -260,9 +284,14 @@ const Matches = () => {
                     {profit ? `$${profit.toFixed(0)} (${totalCost > 0 ? ((profit / totalCost) * 100).toFixed(0) : '-'}%)` : '-'}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
-                      {match.status}
-                    </Badge>
+                    {(() => {
+                      const timeStatus = getTimeBasedStatus(match.found_at);
+                      return (
+                        <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>
+                          {timeStatus.label}
+                        </Badge>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <MatchActions
@@ -405,9 +434,14 @@ const Matches = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
-                      {match.status}
-                    </Badge>
+                    {(() => {
+                      const timeStatus = getTimeBasedStatus(match.found_at);
+                      return (
+                        <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>
+                          {timeStatus.label}
+                        </Badge>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <MatchActions
@@ -516,9 +550,14 @@ const Matches = () => {
                   </TableCell>
                   <TableCell>{match.seller_feedback || '-'}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs`}>
-                      {match.status}
-                    </Badge>
+                    {(() => {
+                      const timeStatus = getTimeBasedStatus(match.found_at);
+                      return (
+                        <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>
+                          {timeStatus.label}
+                        </Badge>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <MatchActions
