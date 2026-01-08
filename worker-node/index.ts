@@ -110,7 +110,8 @@ async function sendJewelrySlackNotification(
   match: any,
   karat: number | null,
   weightG: number | null,
-  shippingCost: number,
+  shippingCost: number | undefined,
+  shippingType: string | undefined,
   meltValue: number | null
 ): Promise<boolean> {
   if (!SLACK_WEBHOOK_URL) {
@@ -121,12 +122,21 @@ async function sendJewelrySlackNotification(
   console.log(`  📤 Sending Slack notification for: ${match.ebay_title.substring(0, 50)}...`);
 
   try {
-    const totalCost = match.listed_price + shippingCost;
+    // Determine if shipping is known (free or fixed with a value)
+    const shippingKnown = shippingType === 'free' || (shippingCost !== undefined && shippingType !== 'calculated');
+    const actualShipping = shippingKnown ? (shippingCost || 0) : 0;
+    const totalCost = match.listed_price + actualShipping;
+
+    // Format price display: "$X total" if shipping known, "$X + shipping" if unknown
+    const priceDisplay = shippingKnown
+      ? `*$${totalCost.toFixed(2)}* total`
+      : `*$${match.listed_price.toFixed(2)}* + shipping`;
+
     const offerPrice = meltValue ? (meltValue * 0.87).toFixed(0) : null;
     const breakEven = meltValue ? meltValue * 0.97 : null;
     const profit = breakEven ? (breakEven - totalCost).toFixed(0) : null;
     const profitMarginPct = breakEven && totalCost > 0 ? ((breakEven - totalCost) / totalCost * 100).toFixed(0) : null;
-    const profitDisplay = profit ? `$${profit} (${profitMarginPct}%)` : '?';
+    const profitDisplay = shippingKnown && profit ? `$${profit} (${profitMarginPct}%)` : '?';
 
     const message = {
       blocks: [
@@ -141,7 +151,7 @@ async function sendJewelrySlackNotification(
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `💍 *$${totalCost}* total | *${karat || '?'}K* | *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | Offer: *${offerPrice ? '$' + offerPrice : '?'}* | Profit: *${profitDisplay}*`
+            text: `💍 ${priceDisplay} | *${karat || '?'}K* | *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | Offer: *${offerPrice ? '$' + offerPrice : '?'}* | Profit: *${profitDisplay}*`
           }
         },
         {
@@ -262,11 +272,14 @@ async function retryFailedNotifications(): Promise<void> {
     console.log(`  📋 Found ${jewelryMatches.length} jewelry matches to retry`);
 
     for (const match of jewelryMatches) {
+      // For retries, shipping_cost being null means unknown, otherwise it's known
+      const shippingKnown = match.shipping_cost !== null;
       const notificationSent = await sendJewelrySlackNotification(
         match,
         match.karat,
         match.weight_g,
-        match.shipping_cost || 0,
+        match.shipping_cost ?? undefined,
+        shippingKnown ? 'fixed' : undefined,  // Infer type from stored data
         match.melt_value
       );
 
@@ -2805,7 +2818,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for jewelry match
-          const notificationSent = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost || 0, meltValue);
+          const notificationSent = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue);
 
           // Update notification_sent flag
           if (notificationSent && insertedMatch?.id) {
