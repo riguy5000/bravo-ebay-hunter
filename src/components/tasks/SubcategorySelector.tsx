@@ -114,55 +114,37 @@ export const SubcategorySelector: React.FC<SubcategorySelectorProps> = ({
     onChange(selectedSubcategories.filter(id => id !== subcategoryId));
   };
 
-  // Map of all category IDs (including old incorrect ones) to names
+  // Map of category IDs to names
   const ALL_CATEGORY_NAMES: Record<string, string> = {
-    // Current correct IDs
+    // Fine Jewelry
     '261994': 'Fine Rings',
     '261993': 'Fine Necklaces & Pendants',
     '261990': 'Fine Earrings',
     '261988': 'Fine Bracelets / Charms',
     '261989': 'Fine Brooches & Pins',
     '261986': 'Fine Body Jewelry',
+    // Fashion Jewelry
     '67681': 'Fashion Rings',
     '155101': 'Fashion Necklaces & Pendants',
     '50647': 'Fashion Earrings',
     '261987': 'Fashion Bracelets',
     '50677': 'Fashion Pins & Brooches',
+    // Men's Jewelry
     '10290': "Men's Jewelry (General)",
     '137856': "Men's Rings",
     '137839': "Men's Necklaces",
     '137836': "Men's Bracelets",
+    // Wedding
     '261975': 'Engagement Rings',
     '261977': 'Wedding Bands',
     '261976': 'Wedding Sets',
+    // Vintage
     '262024': 'Vintage & Antique Jewelry',
     '262014': 'Vintage Fine Jewelry',
     '262023': 'Vintage Costume Jewelry',
+    // Metal
     '4196': 'Fine Jewelry (Gold/Silver/Platinum)',
     '10968': 'Fashion Jewelry',
-    // Old incorrect IDs (for backwards compatibility)
-    '164330': 'Fine Rings (old ID)',
-    '164331': 'Fine Necklaces & Pendants (old ID)',
-    '164332': 'Fine Earrings (old ID)',
-    '164333': 'Fine Bracelets (old ID)',
-    '164334': 'Fine Brooches & Pins (old ID)',
-    '164336': 'Fine Charms (old ID)',
-    '164338': 'Fine Body Jewelry (old ID)',
-    '45077': 'Fashion Rings (old ID)',
-    '45080': 'Fashion Necklaces (old ID)',
-    '45081': 'Fashion Earrings (old ID)',
-    '45079': 'Fashion Bracelets (old ID)',
-    '45078': 'Fashion Brooches (old ID)',
-    '155123': "Men's Jewelry (old ID)",
-    '155124': "Men's Rings (old ID)",
-    '155125': "Men's Necklaces (old ID)",
-    '155126': "Men's Bracelets (old ID)",
-    '164395': 'Engagement Rings (old ID)',
-    '164396': 'Wedding Bands (old ID)',
-    '164397': 'Wedding Sets (old ID)',
-    '48579': 'Vintage Jewelry (old ID)',
-    '48580': 'Vintage Fine (old ID)',
-    '48581': 'Vintage Costume (old ID)',
     // Watch IDs
     '31387': 'Luxury Watches',
     '14324': 'Casual Watches',
