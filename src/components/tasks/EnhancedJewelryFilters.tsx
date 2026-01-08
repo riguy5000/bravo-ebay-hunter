@@ -83,7 +83,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
         {/* Multi-select aspect filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <MultiSelectAspectFilter
-              title="Metal Types"
+              title={<>Metal Types <FilterBadge type="api" /></>}
               categoryId={categoryId}
               fallbackCategoryId={mergedCategory}
               aspectName="Metal"
@@ -93,7 +93,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
             />
 
           <MultiSelectAspectFilter
-            title="Colors"
+            title={<>Colors <FilterBadge type="api" /></>}
             categoryId={categoryId}
             fallbackCategoryId={fallbackCategory}
             aspectName="Color"
@@ -103,7 +103,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           />
 
           <MultiSelectAspectFilter
-            title="Jewelry Types"
+            title={<>Jewelry Types <FilterBadge type="api" /></>}
             categoryId={categoryId}
             fallbackCategoryId={fallbackCategory}
             aspectName="Type"
@@ -114,7 +114,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
           {/* Conditions - hardcoded since they're not aspects */}
           <div className="space-y-2">
-            <Label>Conditions</Label>
+            <Label>Conditions <FilterBadge type="api" /></Label>
             <div className="space-y-2 p-3 border rounded-md">
               {EBAY_CONDITIONS.map((condition) => {
                 const selectedConditions = filters.conditions || [];
@@ -142,7 +142,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           </div>
 
           <MultiSelectAspectFilter
-            title="Brands"
+            title={<>Brands <FilterBadge type="api" /></>}
             categoryId={categoryId}
             fallbackCategoryId={fallbackCategory}
             aspectName="Brand"
@@ -152,7 +152,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           />
 
           <MultiSelectAspectFilter
-            title="Main Stone"
+            title={<>Main Stone <FilterBadge type="api" /></>}
             categoryId={categoryId}
             fallbackCategoryId={fallbackCategory}
             aspectName="Main Stone"
@@ -162,7 +162,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           />
 
           <MultiSelectAspectFilter
-            title="Metal Purity"
+            title={<>Metal Purity <FilterBadge type="api" /></>}
             categoryId={categoryId}
             fallbackCategoryId={fallbackCategory}
             aspectName="Metal Purity"
@@ -172,7 +172,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           />
 
           <MultiSelectAspectFilter
-            title="Setting Style"
+            title={<>Setting Style <FilterBadge type="api" /></>}
             categoryId={categoryId}
             fallbackCategoryId={fallbackCategory}
             aspectName="Setting Style"
@@ -182,7 +182,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           />
 
           <MultiSelectAspectFilter
-            title="Era"
+            title={<>Era <FilterBadge type="api" /></>}
             categoryId={categoryId}
             fallbackCategoryId={fallbackCategory}
             aspectName="Era"
@@ -192,7 +192,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           />
 
           <MultiSelectAspectFilter
-            title="Features"
+            title={<>Features <FilterBadge type="api" /></>}
             categoryId={categoryId}
             fallbackCategoryId={fallbackCategory}
             aspectName="Features"

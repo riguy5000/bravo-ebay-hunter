@@ -378,7 +378,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="itemType">Item Type *</Label>
+              <Label htmlFor="itemType">Item Type * <FilterBadge type="api" /></Label>
               <Select value={itemType} onValueChange={(value: 'watch' | 'jewelry' | 'gemstone') => setItemType(value)}>
                 <SelectTrigger>
                   <SelectValue />

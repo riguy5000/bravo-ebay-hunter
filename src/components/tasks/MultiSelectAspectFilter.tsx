@@ -27,7 +27,7 @@ const POPULAR_WATCH_BRANDS = [
 const MAX_DISPLAY_RESULTS = 100;
 
 interface MultiSelectAspectFilterProps {
-  title: string;
+  title: React.ReactNode;
   categoryId?: string;
   fallbackCategoryId?: string;
   mergedCategoryId?: string;

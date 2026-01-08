@@ -105,7 +105,7 @@ const Matches = () => {
     }
   };
 
-  // Get time-based display for matches
+  // Get time-based display for matches - only show "New" for today's items
   const getTimeBasedStatus = (foundAt: string) => {
     const now = new Date();
     const found = new Date(foundAt);
@@ -116,16 +116,8 @@ const Matches = () => {
 
     if (diffDays === 0) {
       return { label: 'New', color: 'bg-blue-100 text-blue-800' };
-    } else if (diffDays === 1) {
-      return { label: '1d ago', color: 'bg-gray-100 text-gray-600' };
-    } else if (diffDays < 7) {
-      return { label: `${diffDays}d ago`, color: 'bg-gray-100 text-gray-600' };
-    } else if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7);
-      return { label: `${weeks}w ago`, color: 'bg-gray-100 text-gray-500' };
     } else {
-      const months = Math.floor(diffDays / 30);
-      return { label: `${months}mo ago`, color: 'bg-gray-100 text-gray-500' };
+      return { label: '', color: '' };
     }
   };
 
@@ -286,11 +278,11 @@ const Matches = () => {
                   <TableCell>
                     {(() => {
                       const timeStatus = getTimeBasedStatus(match.found_at);
-                      return (
+                      return timeStatus.label ? (
                         <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>
                           {timeStatus.label}
                         </Badge>
-                      );
+                      ) : null;
                     })()}
                   </TableCell>
                   <TableCell>
@@ -436,11 +428,11 @@ const Matches = () => {
                   <TableCell>
                     {(() => {
                       const timeStatus = getTimeBasedStatus(match.found_at);
-                      return (
+                      return timeStatus.label ? (
                         <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>
                           {timeStatus.label}
                         </Badge>
-                      );
+                      ) : null;
                     })()}
                   </TableCell>
                   <TableCell>
@@ -552,11 +544,11 @@ const Matches = () => {
                   <TableCell>
                     {(() => {
                       const timeStatus = getTimeBasedStatus(match.found_at);
-                      return (
+                      return timeStatus.label ? (
                         <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>
                           {timeStatus.label}
                         </Badge>
-                      );
+                      ) : null;
                     })()}
                   </TableCell>
                   <TableCell>
