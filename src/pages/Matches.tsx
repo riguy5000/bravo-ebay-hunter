@@ -269,7 +269,7 @@ const Matches = () => {
                   <TableCell className="text-green-700 font-semibold whitespace-nowrap">
                     {breakEven ? `$${breakEven.toFixed(0)}` : '-'}
                   </TableCell>
-                  <TableCell className="text-green-600 font-semibold whitespace-nowrap">
+                  <TableCell className="text-green-700 font-semibold whitespace-nowrap">
                     {suggestedOffer ? `$${suggestedOffer.toFixed(0)}` : '-'}
                   </TableCell>
                   <TableCell className={`font-semibold whitespace-nowrap ${profit && profit > 0 ? 'text-green-700' : 'text-red-700'}`}>
