@@ -18,41 +18,40 @@ interface SubcategorySelectorProps {
 
 const JEWELRY_SUBCATEGORIES: Record<string, Subcategory[]> = {
   fine: [
-    { id: '164330', name: 'Fine Rings' },
+    { id: '261994', name: 'Fine Rings' },
     { id: '261993', name: 'Fine Necklaces & Pendants' },
-    { id: '164332', name: 'Fine Earrings' },
-    { id: '164333', name: 'Fine Bracelets' },
-    { id: '164334', name: 'Fine Brooches & Pins' },
-    { id: '164336', name: 'Fine Charms & Charm Bracelets' },
-    { id: '164338', name: 'Fine Body Jewelry' },
+    { id: '261990', name: 'Fine Earrings' },
+    { id: '261988', name: 'Fine Bracelets' },
+    { id: '261989', name: 'Fine Brooches & Pins' },
+    { id: '261988', name: 'Fine Charms & Charm Bracelets' },
+    { id: '261986', name: 'Fine Body Jewelry' },
   ],
   fashion: [
-    { id: '45077', name: 'Fashion Rings' },
-    { id: '45080', name: 'Fashion Necklaces & Pendants' },
-    { id: '45081', name: 'Fashion Earrings' },
-    { id: '45079', name: 'Fashion Bracelets' },
-    { id: '45078', name: 'Fashion Pins & Brooches' },
+    { id: '67681', name: 'Fashion Rings' },
+    { id: '155101', name: 'Fashion Necklaces & Pendants' },
+    { id: '50647', name: 'Fashion Earrings' },
+    { id: '261987', name: 'Fashion Bracelets' },
+    { id: '50677', name: 'Fashion Pins & Brooches' },
   ],
   mens: [
-    { id: '155123', name: 'Men\'s Jewelry (General)' },
-    { id: '155124', name: 'Men\'s Rings' },
-    { id: '155125', name: 'Men\'s Necklaces' },
-    { id: '155126', name: 'Men\'s Bracelets' },
+    { id: '10290', name: 'Men\'s Jewelry (General)' },
+    { id: '137856', name: 'Men\'s Rings' },
+    { id: '137839', name: 'Men\'s Necklaces' },
+    { id: '137836', name: 'Men\'s Bracelets' },
   ],
   wedding: [
-    { id: '164395', name: 'Engagement Rings' },
-    { id: '164396', name: 'Wedding Bands' },
-    { id: '164397', name: 'Wedding Sets' },
+    { id: '261975', name: 'Engagement Rings' },
+    { id: '261977', name: 'Wedding Bands' },
+    { id: '261976', name: 'Wedding Sets' },
   ],
   vintage: [
-    { id: '48579', name: 'Vintage & Antique Jewelry' },
-    { id: '48580', name: 'Vintage Fine Jewelry' },
-    { id: '48581', name: 'Vintage Costume Jewelry' },
+    { id: '262024', name: 'Vintage & Antique Jewelry' },
+    { id: '262014', name: 'Vintage Fine Jewelry' },
+    { id: '262023', name: 'Vintage Costume Jewelry' },
   ],
   metal: [
-    { id: '164344', name: 'Gold Jewelry' },
-    { id: '164345', name: 'Silver Jewelry' },
-    { id: '164346', name: 'Platinum Jewelry' },
+    { id: '4196', name: 'Fine Jewelry (Gold/Silver/Platinum)' },
+    { id: '10968', name: 'Fashion Jewelry' },
   ]
 };
 
@@ -115,7 +114,71 @@ export const SubcategorySelector: React.FC<SubcategorySelectorProps> = ({
     onChange(selectedSubcategories.filter(id => id !== subcategoryId));
   };
 
+  // Map of all category IDs (including old incorrect ones) to names
+  const ALL_CATEGORY_NAMES: Record<string, string> = {
+    // Current correct IDs
+    '261994': 'Fine Rings',
+    '261993': 'Fine Necklaces & Pendants',
+    '261990': 'Fine Earrings',
+    '261988': 'Fine Bracelets / Charms',
+    '261989': 'Fine Brooches & Pins',
+    '261986': 'Fine Body Jewelry',
+    '67681': 'Fashion Rings',
+    '155101': 'Fashion Necklaces & Pendants',
+    '50647': 'Fashion Earrings',
+    '261987': 'Fashion Bracelets',
+    '50677': 'Fashion Pins & Brooches',
+    '10290': "Men's Jewelry (General)",
+    '137856': "Men's Rings",
+    '137839': "Men's Necklaces",
+    '137836': "Men's Bracelets",
+    '261975': 'Engagement Rings',
+    '261977': 'Wedding Bands',
+    '261976': 'Wedding Sets',
+    '262024': 'Vintage & Antique Jewelry',
+    '262014': 'Vintage Fine Jewelry',
+    '262023': 'Vintage Costume Jewelry',
+    '4196': 'Fine Jewelry (Gold/Silver/Platinum)',
+    '10968': 'Fashion Jewelry',
+    // Old incorrect IDs (for backwards compatibility)
+    '164330': 'Fine Rings (old ID)',
+    '164331': 'Fine Necklaces & Pendants (old ID)',
+    '164332': 'Fine Earrings (old ID)',
+    '164333': 'Fine Bracelets (old ID)',
+    '164334': 'Fine Brooches & Pins (old ID)',
+    '164336': 'Fine Charms (old ID)',
+    '164338': 'Fine Body Jewelry (old ID)',
+    '45077': 'Fashion Rings (old ID)',
+    '45080': 'Fashion Necklaces (old ID)',
+    '45081': 'Fashion Earrings (old ID)',
+    '45079': 'Fashion Bracelets (old ID)',
+    '45078': 'Fashion Brooches (old ID)',
+    '155123': "Men's Jewelry (old ID)",
+    '155124': "Men's Rings (old ID)",
+    '155125': "Men's Necklaces (old ID)",
+    '155126': "Men's Bracelets (old ID)",
+    '164395': 'Engagement Rings (old ID)',
+    '164396': 'Wedding Bands (old ID)',
+    '164397': 'Wedding Sets (old ID)',
+    '48579': 'Vintage Jewelry (old ID)',
+    '48580': 'Vintage Fine (old ID)',
+    '48581': 'Vintage Costume (old ID)',
+    // Watch IDs
+    '31387': 'Luxury Watches',
+    '14324': 'Casual Watches',
+    '31388': "Men's Watches",
+    '31389': "Women's Watches",
+    // Gemstone IDs
+    '10207': 'Loose Diamonds',
+    '51089': 'Loose Gemstones',
+  };
+
   const getSubcategoryName = (subcategoryId: string): string => {
+    // First check the complete mapping
+    if (ALL_CATEGORY_NAMES[subcategoryId]) {
+      return ALL_CATEGORY_NAMES[subcategoryId];
+    }
+    // Fall back to searching availableSubcategories
     for (const categoryGroup of Object.values(availableSubcategories)) {
       const found = categoryGroup.find(sub => sub.id === subcategoryId);
       if (found) return found.name;
