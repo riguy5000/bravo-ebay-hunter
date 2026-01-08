@@ -138,30 +138,38 @@ async function sendJewelrySlackNotification(
     const profitMarginPct = breakEven && totalCost > 0 ? ((breakEven - totalCost) / totalCost * 100).toFixed(0) : null;
     const profitDisplay = shippingKnown && profit ? `$${profit} (${profitMarginPct}%)` : '?';
 
+    // Determine sidebar color based on profit
+    const sidebarColor = profit && parseFloat(profit) > 0 ? '#36a64f' : '#dc3545';
+
     const message = {
-      blocks: [
+      attachments: [
         {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*${match.ebay_title.substring(0, 150)}*`
-          }
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `💍 ${priceDisplay} | *${karat || '?'}K* | *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | Offer: *${offerPrice ? '$' + offerPrice : '?'}* | Profit: *${profitDisplay}*`
-          }
-        },
-        {
-          type: "actions",
-          elements: [
+          color: sidebarColor,
+          blocks: [
             {
-              type: "button",
-              text: { type: "plain_text", text: "View on eBay", emoji: true },
-              url: match.ebay_url,
-              style: "primary"
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `*${match.ebay_title.substring(0, 150)}*`
+              }
+            },
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `💍 ${priceDisplay} | *${karat || '?'}K* | 🔵 *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | 💚 Offer: *${offerPrice ? '$' + offerPrice : '?'}* | 🔴 Profit: *${profitDisplay}*`
+              }
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "View on eBay", emoji: true },
+                  url: match.ebay_url,
+                  style: "primary"
+                }
+              ]
             }
           ]
         }
