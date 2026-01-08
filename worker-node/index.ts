@@ -2702,6 +2702,28 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           console.log(`    ⚠️ Weight not extracted from description: "${description.substring(0, 100)}..."`);
         }
 
+        // Check weight filters (min/max) - skip for test listings
+        if (!isTestListing && weight) {
+          const minWeight = jewelryFilters.weight_min;
+          const maxWeight = jewelryFilters.weight_max;
+
+          if (minWeight && weight < minWeight) {
+            const reason = `Below min weight (${weight}g < ${minWeight}g)`;
+            console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+            await cacheRejectedItem(task.id, item.itemId, reason);
+            excludedItems++;
+            continue;
+          }
+
+          if (maxWeight && weight > maxWeight) {
+            const reason = `Above max weight (${weight}g > ${maxWeight}g)`;
+            console.log(`  ❌ REJECTED (${reason}): ${item.title.substring(0, 40)}...`);
+            await cacheRejectedItem(task.id, item.itemId, reason);
+            excludedItems++;
+            continue;
+          }
+        }
+
         // Detect metal type (gold, silver, platinum, palladium)
         const metalInfo = detectMetalType(item.title, specs);
         const metalType = metalInfo.type;
