@@ -6,7 +6,22 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Save, Plus, X } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X, Cloud, Cpu } from 'lucide-react';
+
+// Badge to indicate if filter is applied via API or locally
+const FilterBadge = ({ type }: { type: 'api' | 'local' }) => (
+  <span
+    className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${
+      type === 'api'
+        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+        : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+    }`}
+    title={type === 'api' ? 'Filtered by eBay API (faster, less API usage)' : 'Filtered locally after fetching (more flexible)'}
+  >
+    {type === 'api' ? <Cloud className="w-3 h-3" /> : <Cpu className="w-3 h-3" />}
+    {type === 'api' ? 'API' : 'Local'}
+  </span>
+);
 import { toast } from 'sonner';
 import { useTasks, type Task } from '@/hooks/useTasks';
 import { useSettings } from '@/hooks/useSettings';
@@ -328,15 +343,25 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               }
             </CardTitle>
             <CardDescription>
-              {isEditing 
+              {isEditing
                 ? 'Update your automated eBay search configuration'
                 : 'Configure your automated eBay search with AI analysis'
               }
             </CardDescription>
+            <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <Cloud className="w-3 h-3 text-blue-600" />
+                <span className="text-blue-600 font-medium">API</span> = Filtered by eBay (faster)
+              </span>
+              <span className="flex items-center gap-1">
+                <Cpu className="w-3 h-3 text-orange-600" />
+                <span className="text-orange-600 font-medium">Local</span> = Filtered after fetching
+              </span>
+            </div>
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Settings */}
@@ -367,7 +392,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="maxPrice">Max Price ($)</Label>
+              <Label htmlFor="maxPrice">Max Price ($) <FilterBadge type="api" /></Label>
               <Input
                 id="maxPrice"
                 type="number"
@@ -379,7 +404,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="minPrice">Min Price ($)</Label>
+              <Label htmlFor="minPrice">Min Price ($) <FilterBadge type="api" /></Label>
               <Input
                 id="minPrice"
                 type="number"
@@ -424,7 +449,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="minProfitMargin">Minimum Profit Margin</Label>
+              <Label htmlFor="minProfitMargin">Minimum Profit Margin <FilterBadge type="local" /></Label>
               <Select
                 value={minProfitMargin}
                 onValueChange={setMinProfitMargin}
@@ -463,7 +488,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="minFeedback">Min Seller Feedback</Label>
+              <Label htmlFor="minFeedback">Min Seller Feedback <FilterBadge type="local" /></Label>
               <Input
                 id="minFeedback"
                 type="number"
@@ -475,9 +500,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             </div>
 
             <div className="space-y-2 col-span-2">
-              <Label>Exclude Keywords</Label>
+              <Label>Exclude Keywords <FilterBadge type="api" /> <FilterBadge type="local" /></Label>
               <p className="text-xs text-gray-500 mb-2">
-                Select keywords to exclude from search results
+                Excluded in search query (API) and double-checked locally
               </p>
 
               {/* Default suggested keywords */}
@@ -665,7 +690,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
 
           {/* Listing Format Options */}
           <div className="space-y-3">
-            <Label>Listing Formats *</Label>
+            <Label>Listing Formats * <FilterBadge type="api" /></Label>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {listingFormatOptions.map((option) => (
                 <div key={option.id} className="flex items-center space-x-2">

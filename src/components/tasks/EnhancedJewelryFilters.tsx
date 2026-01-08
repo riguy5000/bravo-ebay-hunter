@@ -5,6 +5,22 @@ import { MultiSelectAspectFilter } from './MultiSelectAspectFilter';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Cloud, Cpu } from 'lucide-react';
+
+// Badge to indicate if filter is applied via API or locally
+const FilterBadge = ({ type }: { type: 'api' | 'local' }) => (
+  <span
+    className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${
+      type === 'api'
+        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+        : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+    }`}
+    title={type === 'api' ? 'Filtered by eBay API (faster, less API usage)' : 'Filtered locally after fetching (more flexible)'}
+  >
+    {type === 'api' ? <Cloud className="w-3 h-3" /> : <Cpu className="w-3 h-3" />}
+    {type === 'api' ? 'API' : 'Local'}
+  </span>
+);
 
 // Standard eBay conditions (these are NOT aspects - they're a separate eBay concept)
 const EBAY_CONDITIONS = [
@@ -189,7 +205,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
         {/* Price and size filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="weight_min">Min Weight (grams)</Label>
+            <Label htmlFor="weight_min">Min Weight (grams) <FilterBadge type="local" /></Label>
             <Input
               id="weight_min"
               type="number"
@@ -201,7 +217,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
           </div>
 
           <div>
-            <Label htmlFor="weight_max">Max Weight (grams)</Label>
+            <Label htmlFor="weight_max">Max Weight (grams) <FilterBadge type="local" /></Label>
             <Input
               id="weight_max"
               type="number"
@@ -215,7 +231,7 @@ export const EnhancedJewelryFilters: React.FC<EnhancedJewelryFiltersProps> = ({
 
         {/* Additional keywords */}
         <div>
-          <Label htmlFor="keywords">Additional Keywords</Label>
+          <Label htmlFor="keywords">Additional Keywords <FilterBadge type="api" /></Label>
           <Input
             id="keywords"
             placeholder="Enter additional search terms (comma-separated)"
