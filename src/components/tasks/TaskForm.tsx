@@ -434,14 +434,27 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No minimum</SelectItem>
-                  <SelectItem value="-50">-50% (accept up to 50% loss)</SelectItem>
-                  <SelectItem value="-25">-25% (accept up to 25% loss)</SelectItem>
-                  <SelectItem value="-15">-15% (accept up to 15% loss)</SelectItem>
-                  <SelectItem value="-10">-10% (accept up to 10% loss)</SelectItem>
-                  <SelectItem value="0">0% (break even or better)</SelectItem>
-                  <SelectItem value="10">10% (minimum 10% profit)</SelectItem>
-                  <SelectItem value="25">25% (minimum 25% profit)</SelectItem>
-                  <SelectItem value="50">50% (minimum 50% profit)</SelectItem>
+                  <SelectItem value="-50">-50%</SelectItem>
+                  <SelectItem value="-45">-45%</SelectItem>
+                  <SelectItem value="-40">-40%</SelectItem>
+                  <SelectItem value="-35">-35%</SelectItem>
+                  <SelectItem value="-30">-30%</SelectItem>
+                  <SelectItem value="-25">-25%</SelectItem>
+                  <SelectItem value="-20">-20%</SelectItem>
+                  <SelectItem value="-15">-15%</SelectItem>
+                  <SelectItem value="-10">-10%</SelectItem>
+                  <SelectItem value="-5">-5%</SelectItem>
+                  <SelectItem value="0">0% (break even)</SelectItem>
+                  <SelectItem value="5">5%</SelectItem>
+                  <SelectItem value="10">10%</SelectItem>
+                  <SelectItem value="15">15%</SelectItem>
+                  <SelectItem value="20">20%</SelectItem>
+                  <SelectItem value="25">25%</SelectItem>
+                  <SelectItem value="30">30%</SelectItem>
+                  <SelectItem value="35">35%</SelectItem>
+                  <SelectItem value="40">40%</SelectItem>
+                  <SelectItem value="45">45%</SelectItem>
+                  <SelectItem value="50">50%</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500">
