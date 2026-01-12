@@ -157,7 +157,7 @@ async function sendJewelrySlackNotification(
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `💍 ${priceDisplay} | *${karat || '?'}K* | 🔵 *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | 💚 Offer: *${offerPrice ? '$' + offerPrice : '?'}* | 🔴 Profit: *${profitDisplay}*`
+                text: `💍 ${priceDisplay} | *${karat || '?'}K* | *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | Offer: *${offerPrice ? '$' + offerPrice : '?'}* | Profit: *${profitDisplay}*`
               }
             },
             {
