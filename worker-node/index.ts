@@ -141,10 +141,14 @@ async function sendJewelrySlackNotification(
     // Determine sidebar color based on profit
     const sidebarColor = profit && parseFloat(profit) > 0 ? '#36a64f' : '#dc3545';
 
+    // Fallback text for push notifications
+    const notificationText = `💍 ${match.ebay_title.substring(0, 80)} | ${karat || '?'}K | ${weightG ? weightG.toFixed(2) + 'g' : '?'} | Offer: ${offerPrice ? '$' + offerPrice : '?'}`;
+
     const message = {
       attachments: [
         {
           color: sidebarColor,
+          fallback: notificationText,
           blocks: [
             {
               type: "section",
