@@ -52,10 +52,11 @@ function logTestListing(item: any, message: string): void {
 // ============================================
 
 // Helper function to post to Slack using Bot API or webhook fallback
+// Returns message timestamp (ts) and channel ID for tracking reactions
 async function postToSlack(
   message: any,
   channel?: string
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; ts?: string; channelId?: string }> {
   // If we have a bot token and a channel, use the Slack API
   if (SLACK_BOT_TOKEN && channel) {
     try {
@@ -76,7 +77,8 @@ async function postToSlack(
         console.log(`  ⚠️ Slack API error: ${result.error}`);
         return { ok: false, error: result.error };
       }
-      return { ok: true };
+      // Return message timestamp and channel ID for reaction tracking
+      return { ok: true, ts: result.ts, channelId: result.channel };
     } catch (error: any) {
       console.log(`  ⚠️ Slack API request failed: ${error.message}`);
       return { ok: false, error: error.message };
@@ -328,10 +330,10 @@ async function sendJewelrySlackNotification(
   shippingType: string | undefined,
   meltValue: number | null,
   channel?: string
-): Promise<boolean> {
+): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
   if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) {
     console.log('  ⚠️ Slack not configured, skipping notification');
-    return false;
+    return { sent: false };
   }
 
   console.log(`  📤 Sending Slack notification for: ${match.ebay_title.substring(0, 50)}...`);
@@ -400,14 +402,14 @@ async function sendJewelrySlackNotification(
 
     if (!result.ok) {
       console.log(`  ⚠️ Slack notification failed: ${result.error}`);
-      return false;
+      return { sent: false };
     } else {
       console.log(`  ✅ Slack notification sent successfully${channel ? ` to ${channel}` : ''}`);
-      return true;
+      return { sent: true, ts: result.ts, channelId: result.channelId };
     }
   } catch (error: any) {
     console.log(`  ⚠️ Slack notification error: ${error.message}`);
-    return false;
+    return { sent: false };
   }
 }
 
@@ -417,8 +419,8 @@ async function sendGemstoneSlackNotification(
   dealScore: number,
   riskScore: number,
   channel?: string
-): Promise<void> {
-  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return;
+): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
+  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return { sent: false };
 
   try {
     const scoreEmoji = dealScore >= 80 ? '🔥' : dealScore >= 60 ? '💎' : '📋';
@@ -466,9 +468,12 @@ async function sendGemstoneSlackNotification(
 
     if (!result.ok) {
       console.log(`⚠️ Gemstone Slack notification failed: ${result.error}`);
+      return { sent: false };
     }
+    return { sent: true, ts: result.ts, channelId: result.channelId };
   } catch (error: any) {
     console.log(`⚠️ Gemstone Slack notification error: ${error.message}`);
+    return { sent: false };
   }
 }
 
@@ -496,7 +501,7 @@ async function retryFailedNotifications(): Promise<void> {
       // For retries, shipping_cost being null means unknown, otherwise it's known
       const shippingKnown = match.shipping_cost !== null;
       const slackChannel = (match.tasks as any)?.slack_channel;
-      const notificationSent = await sendJewelrySlackNotification(
+      const slackResult = await sendJewelrySlackNotification(
         match,
         match.karat,
         match.weight_g,
@@ -506,10 +511,14 @@ async function retryFailedNotifications(): Promise<void> {
         slackChannel
       );
 
-      if (notificationSent) {
+      if (slackResult.sent) {
+        const updateData: any = { notification_sent: true };
+        if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+        if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+
         await supabase
           .from('matches_jewelry')
-          .update({ notification_sent: true })
+          .update(updateData)
           .eq('id', match.id);
         console.log(`  ✅ Retry successful for: ${match.ebay_title.substring(0, 40)}...`);
       }
@@ -547,12 +556,19 @@ async function retryFailedNotifications(): Promise<void> {
 
       const slackChannel = (match.tasks as any)?.slack_channel;
       // Actually send the notification and mark as sent
-      await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0, slackChannel);
-      await supabase
-        .from('matches_gemstone')
-        .update({ notification_sent: true })
-        .eq('id', match.id);
-      console.log(`  ✅ Retry successful for: ${match.ebay_title?.substring(0, 40) || 'gemstone'}...`);
+      const slackResult = await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0, slackChannel);
+
+      if (slackResult.sent) {
+        const updateData: any = { notification_sent: true };
+        if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+        if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+
+        await supabase
+          .from('matches_gemstone')
+          .update(updateData)
+          .eq('id', match.id);
+        console.log(`  ✅ Retry successful for: ${match.ebay_title?.substring(0, 40) || 'gemstone'}...`);
+      }
 
       // Rate limit delay for Slack (they silently drop messages if sent too fast)
       await new Promise(resolve => setTimeout(resolve, 1100));
@@ -2803,7 +2819,11 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
         // Create match record
         const matchData = createMatchRecord(task, item, stone, dealScore, riskScore);
-        const { error: insertError } = await supabase.from(tableName).insert(matchData);
+        const { data: insertedMatch, error: insertError } = await supabase
+          .from(tableName)
+          .insert(matchData)
+          .select('id')
+          .single();
 
         if (insertError) {
           console.error('❌ Error inserting match:', insertError);
@@ -2812,7 +2832,19 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for gemstone match
-          await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel);
+          const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel);
+
+          // Update notification_sent flag and Slack message tracking
+          if (slackResult.sent && insertedMatch?.id) {
+            const updateData: any = { notification_sent: true };
+            if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+            if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+
+            await supabase
+              .from(tableName)
+              .update(updateData)
+              .eq('id', insertedMatch.id);
+          }
 
           // Rate limit delay for Slack (they silently drop messages if sent too fast)
           await new Promise(resolve => setTimeout(resolve, 1100));
@@ -3047,13 +3079,17 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for jewelry match
-          const notificationSent = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel);
+          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel);
 
-          // Update notification_sent flag
-          if (notificationSent && insertedMatch?.id) {
+          // Update notification_sent flag and Slack message tracking
+          if (slackResult.sent && insertedMatch?.id) {
+            const updateData: any = { notification_sent: true };
+            if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+            if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+
             await supabase
               .from(tableName)
-              .update({ notification_sent: true })
+              .update(updateData)
               .eq('id', insertedMatch.id);
           }
 
