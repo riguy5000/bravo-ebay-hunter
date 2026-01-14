@@ -688,7 +688,7 @@ const Matches = () => {
                           className={showOnlyWithWeight ? 'bg-blue-600 hover:bg-blue-700' : ''}
                         >
                           <Filter className="h-4 w-4 mr-2" />
-                          {showOnlyWithWeight ? 'With Weight Only' : 'Show All'}
+                          {showOnlyWithWeight ? 'Show All' : 'With Weight Only'}
                         </Button>
                       )}
                       <Button
