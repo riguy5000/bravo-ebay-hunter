@@ -33,6 +33,7 @@ export interface Task {
   cron_job_id?: number;
   // Slack notification settings
   slack_channel?: string;
+  slack_channel_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -181,6 +182,9 @@ export const useTasks = () => {
   const deleteTask = async (id: string) => {
     if (!user) return;
 
+    // Get the task to check for Slack channel
+    const taskToDelete = tasks.find(t => t.id === id);
+
     // Always try to unschedule the cron job before deletion (regardless of status)
     // This prevents orphaned cron jobs if the task was active or had a lingering cron job
     try {
@@ -190,6 +194,24 @@ export const useTasks = () => {
     } catch (cronError) {
       console.error('Failed to unschedule cron job before deletion:', cronError);
       // Continue with deletion even if cron cleanup fails - the cron job might not exist
+    }
+
+    // Archive the Slack channel if it exists
+    if (taskToDelete?.slack_channel_id) {
+      try {
+        console.log(`Archiving Slack channel ${taskToDelete.slack_channel_id} for task ${id}...`);
+        const { error: archiveError } = await supabase.functions.invoke('archive-slack-channel', {
+          body: { channelId: taskToDelete.slack_channel_id }
+        });
+        if (archiveError) {
+          console.error('Failed to archive Slack channel:', archiveError);
+        } else {
+          console.log(`Slack channel archived successfully for task ${id}`);
+        }
+      } catch (slackError) {
+        console.error('Failed to archive Slack channel:', slackError);
+        // Continue with deletion even if Slack archive fails
+      }
     }
 
     const { error } = await supabase

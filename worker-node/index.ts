@@ -105,7 +105,7 @@ async function postToSlack(
 }
 
 // Create a Slack channel for a task
-async function createSlackChannel(taskName: string): Promise<{ ok: boolean; channel?: string; error?: string }> {
+async function createSlackChannel(taskName: string): Promise<{ ok: boolean; channel?: string; channelId?: string; error?: string }> {
   if (!SLACK_BOT_TOKEN) {
     return { ok: false, error: 'No Slack bot token configured' };
   }
@@ -140,10 +140,11 @@ async function createSlackChannel(taskName: string): Promise<{ ok: boolean; chan
     const result = await response.json() as any;
 
     if (!result.ok) {
-      // If channel already exists, try to get its ID
+      // If channel already exists, try to get its ID by looking it up
       if (result.error === 'name_taken') {
-        console.log(`  ℹ️ Channel #${channelName} already exists, using it`);
-        return { ok: true, channel: channelName };
+        console.log(`  ℹ️ Channel #${channelName} already exists, looking up ID...`);
+        const existingChannelId = await getChannelIdByName(channelName);
+        return { ok: true, channel: channelName, channelId: existingChannelId };
       }
       console.log(`  ⚠️ Failed to create channel: ${result.error}`);
       return { ok: false, error: result.error };
@@ -155,10 +156,32 @@ async function createSlackChannel(taskName: string): Promise<{ ok: boolean; chan
     const channelId = result.channel.id;
     await inviteUsersToChannel(channelId, channelName);
 
-    return { ok: true, channel: result.channel.name };
+    return { ok: true, channel: result.channel.name, channelId: channelId };
   } catch (error: any) {
     console.log(`  ⚠️ Error creating Slack channel: ${error.message}`);
     return { ok: false, error: error.message };
+  }
+}
+
+// Get channel ID by name
+async function getChannelIdByName(channelName: string): Promise<string | undefined> {
+  if (!SLACK_BOT_TOKEN) return undefined;
+
+  try {
+    const response = await fetch(`https://slack.com/api/conversations.list?types=public_channel&limit=1000`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${SLACK_BOT_TOKEN}`
+      }
+    });
+
+    const result = await response.json() as any;
+    if (!result.ok) return undefined;
+
+    const channel = result.channels?.find((c: any) => c.name === channelName);
+    return channel?.id;
+  } catch {
+    return undefined;
   }
 }
 
@@ -217,18 +240,24 @@ async function ensureTaskSlackChannel(task: Task): Promise<string | undefined> {
   const result = await createSlackChannel(task.name);
 
   if (result.ok && result.channel) {
-    // Update the task with the new channel
+    // Update the task with the new channel and channel ID
+    const updateData: any = { slack_channel: result.channel };
+    if (result.channelId) {
+      updateData.slack_channel_id = result.channelId;
+    }
+
     const { error } = await supabase
       .from('tasks')
-      .update({ slack_channel: result.channel })
+      .update(updateData)
       .eq('id', task.id);
 
     if (error) {
       console.log(`  ⚠️ Failed to save channel to task: ${error.message}`);
     } else {
-      console.log(`  ✅ Saved channel #${result.channel} to task`);
+      console.log(`  ✅ Saved channel #${result.channel} (ID: ${result.channelId}) to task`);
       // Update the task object in memory too
       task.slack_channel = result.channel;
+      task.slack_channel_id = result.channelId;
     }
 
     return result.channel;
@@ -2230,6 +2259,7 @@ interface Task {
   min_profit_margin?: number;
   last_run?: string;
   slack_channel?: string;
+  slack_channel_id?: string;
   created_at: string;
   updated_at: string;
 }
