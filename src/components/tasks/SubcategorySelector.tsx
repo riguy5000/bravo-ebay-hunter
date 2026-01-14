@@ -3,7 +3,18 @@ import React, { useState, useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { X, Cloud } from 'lucide-react';
+
+// Badge to indicate if filter is applied via API
+const FilterBadge = () => (
+  <span
+    className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+    title="Filtered by eBay API (faster, less API usage)"
+  >
+    <Cloud className="w-3 h-3" />
+    API
+  </span>
+);
 
 interface Subcategory {
   id: string;
@@ -174,7 +185,7 @@ export const SubcategorySelector: React.FC<SubcategorySelectorProps> = ({
 
   return (
     <div className="space-y-4">
-      <Label>Select Specific Subcategories (Optional)</Label>
+      <Label>Select Specific Subcategories (Optional) <FilterBadge /></Label>
       <p className="text-sm text-gray-600">
         Choose specific subcategories to get more targeted aspect data and search results.
       </p>

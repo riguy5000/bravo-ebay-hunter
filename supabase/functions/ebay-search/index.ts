@@ -426,6 +426,10 @@ const buildAspectFilters = (itemType: string, filters: any, conditions?: string[
     stone_types: normalizeFilterValue(filters.stone_types || filters.stone_type),
     cuts: normalizeFilterValue(filters.cuts || filters.cut),
     conditions: normalizeFilterValue(filters.conditions || filters.condition),
+    colors: normalizeFilterValue(filters.colors || filters.color),
+    categories: normalizeFilterValue(filters.categories || filters.category),
+    era: normalizeFilterValue(filters.era),
+    features: normalizeFilterValue(filters.features || filters.feature),
   };
 
   console.log(`🔄 Normalized filters:`, JSON.stringify(normalizedFilters, null, 2));
@@ -508,6 +512,38 @@ const buildAspectFilters = (itemType: string, filters: any, conditions?: string[
           .join('|');
         aspectFilters.push(`aspects:Setting%20Style:${styleValues}`);
         console.log(`✅ Added setting style filter: aspects:Setting%20Style:${styleValues}`);
+      }
+
+      if (filters.colors && filters.colors.length > 0) {
+        const colorValues = filters.colors
+          .map((c: string) => encodeURIComponent(c))
+          .join('|');
+        aspectFilters.push(`aspects:Color:${colorValues}`);
+        console.log(`✅ Added color filter: aspects:Color:${colorValues}`);
+      }
+
+      if (filters.categories && filters.categories.length > 0) {
+        const typeValues = filters.categories
+          .map((t: string) => encodeURIComponent(t))
+          .join('|');
+        aspectFilters.push(`aspects:Type:${typeValues}`);
+        console.log(`✅ Added type filter: aspects:Type:${typeValues}`);
+      }
+
+      if (filters.era && filters.era.length > 0) {
+        const eraValues = filters.era
+          .map((e: string) => encodeURIComponent(e))
+          .join('|');
+        aspectFilters.push(`aspects:Era:${eraValues}`);
+        console.log(`✅ Added era filter: aspects:Era:${eraValues}`);
+      }
+
+      if (filters.features && filters.features.length > 0) {
+        const featureValues = filters.features
+          .map((f: string) => encodeURIComponent(f))
+          .join('|');
+        aspectFilters.push(`aspects:Features:${featureValues}`);
+        console.log(`✅ Added features filter: aspects:Features:${featureValues}`);
       }
 
       break;

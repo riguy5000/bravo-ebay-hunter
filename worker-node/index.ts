@@ -136,7 +136,8 @@ async function sendJewelrySlackNotification(
     const breakEven = meltValue ? meltValue * 0.97 : null;
     const profit = breakEven ? (breakEven - totalCost).toFixed(0) : null;
     const profitMarginPct = breakEven && totalCost > 0 ? ((breakEven - totalCost) / totalCost * 100).toFixed(0) : null;
-    const profitDisplay = shippingKnown && profitMarginPct ? `${profitMarginPct}%` : '?';
+    const profitEmoji = profit && parseFloat(profit) >= 0 ? '🟢 ' : '';
+    const profitDisplay = shippingKnown && profitMarginPct ? `${profitEmoji}${profitMarginPct}%` : '?';
 
     // Determine sidebar color based on profit
     const sidebarColor = profit && parseFloat(profit) > 0 ? '#36a64f' : '#dc3545';
