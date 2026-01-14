@@ -22,6 +22,7 @@ const supabase = createClient(
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || ''; // Legacy fallback
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || '';
 const DEFAULT_SLACK_CHANNEL = process.env.DEFAULT_SLACK_CHANNEL || ''; // Default channel if none specified
+const SLACK_INVITE_USERS = process.env.SLACK_INVITE_USERS || 'U0A4V979EKZ,U0A4P0XL9E3'; // Users to auto-invite to new channels
 
 // Test seller username - listings from this seller bypass all filters
 const TEST_SELLER_USERNAME = process.env.TEST_SELLER_USERNAME || 'pe952597';
@@ -149,10 +150,54 @@ async function createSlackChannel(taskName: string): Promise<{ ok: boolean; chan
     }
 
     console.log(`  ✅ Created Slack channel: #${channelName}`);
+
+    // Auto-invite users to the new channel
+    const channelId = result.channel.id;
+    await inviteUsersToChannel(channelId, channelName);
+
     return { ok: true, channel: result.channel.name };
   } catch (error: any) {
     console.log(`  ⚠️ Error creating Slack channel: ${error.message}`);
     return { ok: false, error: error.message };
+  }
+}
+
+// Invite users to a Slack channel
+async function inviteUsersToChannel(channelId: string, channelName: string): Promise<void> {
+  if (!SLACK_BOT_TOKEN || !SLACK_INVITE_USERS) return;
+
+  const userIds = SLACK_INVITE_USERS.split(',').map(id => id.trim()).filter(id => id);
+  if (userIds.length === 0) return;
+
+  console.log(`  👥 Inviting ${userIds.length} user(s) to #${channelName}...`);
+
+  for (const userId of userIds) {
+    try {
+      const response = await fetch('https://slack.com/api/conversations.invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SLACK_BOT_TOKEN}`
+        },
+        body: JSON.stringify({
+          channel: channelId,
+          users: userId
+        })
+      });
+
+      const result = await response.json() as any;
+
+      if (!result.ok) {
+        // already_in_channel is fine, other errors we log
+        if (result.error !== 'already_in_channel') {
+          console.log(`  ⚠️ Failed to invite ${userId}: ${result.error}`);
+        }
+      } else {
+        console.log(`  ✅ Invited user ${userId} to #${channelName}`);
+      }
+    } catch (error: any) {
+      console.log(`  ⚠️ Error inviting ${userId}: ${error.message}`);
+    }
   }
 }
 
