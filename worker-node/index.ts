@@ -18,8 +18,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
 
-// Slack webhook URL (optional)
-const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || '';
+// Slack configuration
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || ''; // Legacy fallback
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || '';
+const DEFAULT_SLACK_CHANNEL = process.env.DEFAULT_SLACK_CHANNEL || ''; // Default channel if none specified
 
 // Test seller username - listings from this seller bypass all filters
 const TEST_SELLER_USERNAME = process.env.TEST_SELLER_USERNAME || 'pe952597';
@@ -48,9 +50,62 @@ function logTestListing(item: any, message: string): void {
 // Slack Notification Functions
 // ============================================
 
+// Helper function to post to Slack using Bot API or webhook fallback
+async function postToSlack(
+  message: any,
+  channel?: string
+): Promise<{ ok: boolean; error?: string }> {
+  // If we have a bot token and a channel, use the Slack API
+  if (SLACK_BOT_TOKEN && channel) {
+    try {
+      const response = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SLACK_BOT_TOKEN}`
+        },
+        body: JSON.stringify({
+          channel: channel,
+          ...message
+        })
+      });
+
+      const result = await response.json() as any;
+      if (!result.ok) {
+        console.log(`  ⚠️ Slack API error: ${result.error}`);
+        return { ok: false, error: result.error };
+      }
+      return { ok: true };
+    } catch (error: any) {
+      console.log(`  ⚠️ Slack API request failed: ${error.message}`);
+      return { ok: false, error: error.message };
+    }
+  }
+
+  // Fallback to webhook if no bot token or no channel specified
+  if (SLACK_WEBHOOK_URL) {
+    try {
+      const response = await fetch(SLACK_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(message)
+      });
+
+      if (!response.ok) {
+        return { ok: false, error: `${response.status} ${response.statusText}` };
+      }
+      return { ok: true };
+    } catch (error: any) {
+      return { ok: false, error: error.message };
+    }
+  }
+
+  return { ok: false, error: 'No Slack configuration available' };
+}
+
 // Special notification for test listings (bypasses all filters)
-async function sendTestListingNotification(item: any): Promise<void> {
-  if (!SLACK_WEBHOOK_URL) return;
+async function sendTestListingNotification(item: any, channel?: string): Promise<void> {
+  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return;
 
   try {
     const message = {
@@ -90,14 +145,10 @@ async function sendTestListingNotification(item: any): Promise<void> {
       ]
     };
 
-    const response = await fetch(SLACK_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message)
-    });
+    const result = await postToSlack(message, channel || DEFAULT_SLACK_CHANNEL);
 
-    if (!response.ok) {
-      console.log(`⚠️ Test listing Slack notification failed: ${response.status}`);
+    if (!result.ok) {
+      console.log(`⚠️ Test listing Slack notification failed: ${result.error}`);
     } else {
       console.log(`🧪 Test listing notification sent!`);
     }
@@ -112,10 +163,11 @@ async function sendJewelrySlackNotification(
   weightG: number | null,
   shippingCost: number | undefined,
   shippingType: string | undefined,
-  meltValue: number | null
+  meltValue: number | null,
+  channel?: string
 ): Promise<boolean> {
-  if (!SLACK_WEBHOOK_URL) {
-    console.log('  ⚠️ Slack webhook not configured, skipping notification');
+  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) {
+    console.log('  ⚠️ Slack not configured, skipping notification');
     return false;
   }
 
@@ -181,17 +233,13 @@ async function sendJewelrySlackNotification(
       ]
     };
 
-    const response = await fetch(SLACK_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message)
-    });
+    const result = await postToSlack(message, channel || DEFAULT_SLACK_CHANNEL);
 
-    if (!response.ok) {
-      console.log(`  ⚠️ Slack notification failed: ${response.status} ${response.statusText}`);
+    if (!result.ok) {
+      console.log(`  ⚠️ Slack notification failed: ${result.error}`);
       return false;
     } else {
-      console.log(`  ✅ Slack notification sent successfully`);
+      console.log(`  ✅ Slack notification sent successfully${channel ? ` to ${channel}` : ''}`);
       return true;
     }
   } catch (error: any) {
@@ -204,9 +252,10 @@ async function sendGemstoneSlackNotification(
   match: any,
   stone: any,
   dealScore: number,
-  riskScore: number
+  riskScore: number,
+  channel?: string
 ): Promise<void> {
-  if (!SLACK_WEBHOOK_URL) return;
+  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return;
 
   try {
     const scoreEmoji = dealScore >= 80 ? '🔥' : dealScore >= 60 ? '💎' : '📋';
@@ -250,14 +299,10 @@ async function sendGemstoneSlackNotification(
       ]
     };
 
-    const response = await fetch(SLACK_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message)
-    });
+    const result = await postToSlack(message, channel || DEFAULT_SLACK_CHANNEL);
 
-    if (!response.ok) {
-      console.log(`⚠️ Gemstone Slack notification failed: ${response.status}`);
+    if (!result.ok) {
+      console.log(`⚠️ Gemstone Slack notification failed: ${result.error}`);
     }
   } catch (error: any) {
     console.log(`⚠️ Gemstone Slack notification error: ${error.message}`);
@@ -271,10 +316,10 @@ async function sendGemstoneSlackNotification(
 async function retryFailedNotifications(): Promise<void> {
   console.log('🔄 Checking for failed notifications to retry...');
 
-  // Retry jewelry notifications
+  // Retry jewelry notifications - join with tasks to get slack_channel
   const { data: jewelryMatches, error: jewelryError } = await supabase
     .from('matches_jewelry')
-    .select('*')
+    .select('*, tasks!inner(slack_channel)')
     .eq('notification_sent', false)
     .order('found_at', { ascending: false })
     .limit(10);
@@ -287,13 +332,15 @@ async function retryFailedNotifications(): Promise<void> {
     for (const match of jewelryMatches) {
       // For retries, shipping_cost being null means unknown, otherwise it's known
       const shippingKnown = match.shipping_cost !== null;
+      const slackChannel = (match.tasks as any)?.slack_channel;
       const notificationSent = await sendJewelrySlackNotification(
         match,
         match.karat,
         match.weight_g,
         match.shipping_cost ?? undefined,
         shippingKnown ? 'fixed' : undefined,  // Infer type from stored data
-        match.melt_value
+        match.melt_value,
+        slackChannel
       );
 
       if (notificationSent) {
@@ -309,10 +356,10 @@ async function retryFailedNotifications(): Promise<void> {
     }
   }
 
-  // Retry gemstone notifications
+  // Retry gemstone notifications - join with tasks to get slack_channel
   const { data: gemstoneMatches, error: gemstoneError } = await supabase
     .from('matches_gemstone')
-    .select('*')
+    .select('*, tasks!inner(slack_channel)')
     .eq('notification_sent', false)
     .order('found_at', { ascending: false })
     .limit(10);
@@ -335,8 +382,9 @@ async function retryFailedNotifications(): Promise<void> {
         is_natural: match.is_natural,
       };
 
+      const slackChannel = (match.tasks as any)?.slack_channel;
       // Actually send the notification and mark as sent
-      await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0);
+      await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0, slackChannel);
       await supabase
         .from('matches_gemstone')
         .update({ notification_sent: true })
@@ -2047,6 +2095,7 @@ interface Task {
   gemstone_filters?: any;
   min_profit_margin?: number;
   last_run?: string;
+  slack_channel?: string;
   created_at: string;
   updated_at: string;
 }
@@ -2384,7 +2433,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         if (!notifiedTestListings.has(item.itemId)) {
           console.log(`🧪 TEST LISTING DETECTED from ${sellerName}: ${item.title.substring(0, 50)}...`);
           logTestListing(item, '🧪 TEST LISTING DETECTED - will process through normal flow');
-          await sendTestListingNotification(item);
+          await sendTestListingNotification(item, task.slack_channel);
           notifiedTestListings.add(item.itemId);
         }
         // Don't continue - let it go through normal processing to add to matches
@@ -2596,7 +2645,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for gemstone match
-          await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore);
+          await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel);
 
           // Rate limit delay for Slack (they silently drop messages if sent too fast)
           await new Promise(resolve => setTimeout(resolve, 1100));
@@ -2831,7 +2880,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for jewelry match
-          const notificationSent = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue);
+          const notificationSent = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel);
 
           // Update notification_sent flag
           if (notificationSent && insertedMatch?.id) {

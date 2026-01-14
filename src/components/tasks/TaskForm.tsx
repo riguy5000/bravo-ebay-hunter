@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Save, Plus, X, Cloud, Cpu } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X, Cloud, Cpu, MessageSquare } from 'lucide-react';
 
 // Badge to indicate if filter is applied via API or locally
 const FilterBadge = ({ type }: { type: 'api' | 'local' }) => (
@@ -90,6 +90,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   ];
   const [maxDetailFetches, setMaxDetailFetches] = useState('50');
   const [minProfitMargin, setMinProfitMargin] = useState<string>('none');
+  const [slackChannel, setSlackChannel] = useState('');
 
   // Expanded listing format options
   const [listingFormats, setListingFormats] = useState<string[]>(['Fixed Price (BIN)', 'Auction']);
@@ -138,6 +139,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         type: typeof editingTask.min_profit_margin
       });
       setMinProfitMargin(profitMarginValue);
+      setSlackChannel(editingTask.slack_channel || '');
       
       // Safely load type-specific filters with proper fallbacks and validation
       const safeWatchFilters = editingTask.watch_filters && typeof editingTask.watch_filters === 'object' && !Array.isArray(editingTask.watch_filters) ? editingTask.watch_filters : {};
@@ -179,6 +181,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setWatchFilters({});
       setJewelryFilters({});
       setGemstoneFilters({});
+      setSlackChannel('');
     }
   }, [template, editingTask]);
 
@@ -250,6 +253,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         watch_filters: itemType === 'watch' ? cleanWatchFilters : undefined,
         jewelry_filters: itemType === 'jewelry' ? cleanJewelryFilters : undefined,
         gemstone_filters: itemType === 'gemstone' ? cleanGemstoneFilters : undefined,
+        slack_channel: slackChannel.trim() || null,
       };
 
       console.log('💾 Saving task data:', taskData);
@@ -497,6 +501,22 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                 placeholder="0"
                 min="0"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="slackChannel" className="flex items-center gap-1">
+                <MessageSquare className="h-4 w-4" />
+                Slack Channel
+              </Label>
+              <Input
+                id="slackChannel"
+                value={slackChannel}
+                onChange={(e) => setSlackChannel(e.target.value)}
+                placeholder="#channel-name"
+              />
+              <p className="text-xs text-gray-500">
+                Optional. Send notifications to a specific channel (e.g., #gold-jewelry)
+              </p>
             </div>
 
             <div className="space-y-2 col-span-2">

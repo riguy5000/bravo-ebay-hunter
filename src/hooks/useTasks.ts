@@ -31,6 +31,8 @@ export interface Task {
   // Automatic scheduling fields
   last_run?: string;
   cron_job_id?: number;
+  // Slack notification settings
+  slack_channel?: string;
   created_at: string;
   updated_at: string;
 }
