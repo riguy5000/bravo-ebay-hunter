@@ -76,7 +76,7 @@ export const useHealthMetrics = () => {
       if (settingsError) {
         console.error('Error fetching API keys:', settingsError);
       } else if (settingsData?.value_json) {
-        const keysConfig = settingsData.value_json as { keys: ApiKeyStatus[] };
+        const keysConfig = settingsData.value_json as unknown as { keys: ApiKeyStatus[] };
         setApiKeys(keysConfig.keys || []);
       }
 
