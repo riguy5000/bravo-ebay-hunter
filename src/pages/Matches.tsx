@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useMatches, type Match } from '@/hooks/useMatches';
-import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle, XCircle, Trash2, Pencil, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Eye, ShoppingCart, RotateCcw, Package, RefreshCw, Watch, Gem, CircleDot, Radio, AlertTriangle, AlertCircle, CheckCircle, XCircle, Trash2, Pencil, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Filter } from 'lucide-react';
 import { toast } from 'sonner';
 import { MatchActions, type MatchStatus } from '@/components/matches/MatchActions';
 import { MatchDetailsPanel } from '@/components/matches/MatchDetailsPanel';
@@ -24,6 +24,7 @@ const Matches = () => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(50);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [showOnlyWithWeight, setShowOnlyWithWeight] = useState<boolean>(false);
 
   const handleDeleteTask = async (taskId: string, taskName: string) => {
     if (confirm(`Are you sure you want to delete "${taskName}"? This will also delete all matches and remove its automatic schedule.`)) {
@@ -50,27 +51,36 @@ const Matches = () => {
     }
   }, [taskGroups, activeTaskId]);
 
-  // Reset to page 1 when switching tasks
+  // Reset to page 1 when switching tasks or changing filter
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [activeTaskId]);
+  }, [activeTaskId, showOnlyWithWeight]);
 
   // Get active group and paginate matches
   const activeGroup = useMemo(() => {
     return taskGroups.find(g => g.task.id === activeTaskId);
   }, [taskGroups, activeTaskId]);
 
-  const paginatedMatches = useMemo(() => {
+  // Filter matches by weight if filter is enabled (for jewelry)
+  const filteredMatches = useMemo(() => {
     if (!activeGroup) return [];
+    if (showOnlyWithWeight && activeGroup.task.item_type === 'jewelry') {
+      return activeGroup.matches.filter((match: any) => match.weight_g != null);
+    }
+    return activeGroup.matches;
+  }, [activeGroup, showOnlyWithWeight]);
+
+  const paginatedMatches = useMemo(() => {
+    if (!filteredMatches.length) return [];
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    return activeGroup.matches.slice(startIndex, endIndex);
-  }, [activeGroup, currentPage, itemsPerPage]);
+    return filteredMatches.slice(startIndex, endIndex);
+  }, [filteredMatches, currentPage, itemsPerPage]);
 
   const totalPages = useMemo(() => {
-    if (!activeGroup) return 1;
-    return Math.ceil(activeGroup.matches.length / itemsPerPage);
-  }, [activeGroup, itemsPerPage]);
+    if (!filteredMatches.length) return 1;
+    return Math.ceil(filteredMatches.length / itemsPerPage);
+  }, [filteredMatches, itemsPerPage]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
@@ -663,11 +673,24 @@ const Matches = () => {
                       </CardTitle>
                       <CardDescription>
                         {group.task.max_price && `Max price: $${group.task.max_price} • `}
-                        {group.matchCount} {group.matchCount === 1 ? 'match' : 'matches'} found
-                        {group.matchCount > itemsPerPage && ` • Showing ${(currentPage - 1) * itemsPerPage + 1}-${Math.min(currentPage * itemsPerPage, group.matchCount)}`}
+                        {showOnlyWithWeight && group.task.item_type === 'jewelry' && group.task.id === activeTaskId
+                          ? `${filteredMatches.length} of ${group.matchCount} matches (with weight)`
+                          : `${group.matchCount} ${group.matchCount === 1 ? 'match' : 'matches'} found`}
+                        {(showOnlyWithWeight && group.task.item_type === 'jewelry' ? filteredMatches.length : group.matchCount) > itemsPerPage && group.task.id === activeTaskId && ` • Showing ${(currentPage - 1) * itemsPerPage + 1}-${Math.min(currentPage * itemsPerPage, showOnlyWithWeight ? filteredMatches.length : group.matchCount)}`}
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
+                      {group.task.item_type === 'jewelry' && (
+                        <Button
+                          variant={showOnlyWithWeight ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setShowOnlyWithWeight(!showOnlyWithWeight)}
+                          className={showOnlyWithWeight ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                        >
+                          <Filter className="h-4 w-4 mr-2" />
+                          {showOnlyWithWeight ? 'With Weight Only' : 'Show All'}
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -699,7 +722,7 @@ const Matches = () => {
                       }
 
                       {/* Pagination Controls */}
-                      {group.matchCount > 25 && group.task.id === activeTaskId && (
+                      {filteredMatches.length > 25 && group.task.id === activeTaskId && (
                         <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50">
                           <div className="flex items-center gap-2">
                             <span className="text-sm text-gray-600">Items per page:</span>
@@ -760,7 +783,7 @@ const Matches = () => {
                           </div>
 
                           <div className="text-sm text-gray-600">
-                            {(currentPage - 1) * itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, group.matchCount)} of {group.matchCount}
+                            {(currentPage - 1) * itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, filteredMatches.length)} of {filteredMatches.length}
                           </div>
                         </div>
                       )}
