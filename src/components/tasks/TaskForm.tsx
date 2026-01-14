@@ -174,7 +174,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       setMinPrice('');
       setPollInterval('300');
       setMinSellerFeedback('0');
-      setExcludeKeywords('');
+      setExcludeKeywords([]);
       setListingFormats(['Fixed Price (BIN)', 'Auction']);
       setWatchFilters({});
       setJewelryFilters({});

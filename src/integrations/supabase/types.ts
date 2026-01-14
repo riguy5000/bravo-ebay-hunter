@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_usage: {
+        Row: {
+          api_key_label: string
+          call_type: string
+          called_at: string | null
+          date_bucket: string | null
+          endpoint: string | null
+          id: string
+        }
+        Insert: {
+          api_key_label: string
+          call_type: string
+          called_at?: string | null
+          date_bucket?: string | null
+          endpoint?: string | null
+          id?: string
+        }
+        Update: {
+          api_key_label?: string
+          call_type?: string
+          called_at?: string | null
+          date_bucket?: string | null
+          endpoint?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
       ebay_aspects: {
         Row: {
           aspect_name: string
@@ -44,6 +71,36 @@ export type Database = {
         }
         Relationships: []
       }
+      ebay_item_cache: {
+        Row: {
+          description: string | null
+          ebay_item_id: string
+          expires_at: string
+          fetched_at: string | null
+          id: number
+          item_specifics: Json | null
+          title: string | null
+        }
+        Insert: {
+          description?: string | null
+          ebay_item_id: string
+          expires_at: string
+          fetched_at?: string | null
+          id?: number
+          item_specifics?: Json | null
+          title?: string | null
+        }
+        Update: {
+          description?: string | null
+          ebay_item_id?: string
+          expires_at?: string
+          fetched_at?: string | null
+          id?: number
+          item_specifics?: Json | null
+          title?: string | null
+        }
+        Relationships: []
+      }
       matches_gemstone: {
         Row: {
           ai_reasoning: string | null
@@ -53,32 +110,42 @@ export type Database = {
           carat: number | null
           cert_lab: string | null
           clarity: string | null
+          classification: string | null
           colour: string | null
           created_at: string
           currency: string | null
           cut_grade: string | null
+          deal_score: number | null
+          dimensions: Json | null
           ebay_listing_id: string
           ebay_title: string
           ebay_url: string | null
           found_at: string
           id: string
+          is_natural: boolean | null
           listed_price: number
+          notification_sent: boolean | null
           offer1: number | null
           offer2: number | null
           offer3: number | null
           offer4: number | null
           offer5: number | null
+          origin: string | null
           price_diff_percent: number | null
           purchased_toggle: boolean | null
           rapaport_list: number | null
           rapnet_avg: number | null
           refunded_toggle: boolean | null
           return_toggle: boolean | null
+          risk_score: number | null
           seller_feedback: number | null
           shape: string | null
           shipped_back_toggle: boolean | null
+          shipping_cost: number | null
           status: Database["public"]["Enums"]["match_status"]
+          stone_type: string | null
           task_id: string
+          treatment: string | null
           updated_at: string
           user_id: string
         }
@@ -90,32 +157,42 @@ export type Database = {
           carat?: number | null
           cert_lab?: string | null
           clarity?: string | null
+          classification?: string | null
           colour?: string | null
           created_at?: string
           currency?: string | null
           cut_grade?: string | null
+          deal_score?: number | null
+          dimensions?: Json | null
           ebay_listing_id: string
           ebay_title: string
           ebay_url?: string | null
           found_at?: string
           id?: string
+          is_natural?: boolean | null
           listed_price: number
+          notification_sent?: boolean | null
           offer1?: number | null
           offer2?: number | null
           offer3?: number | null
           offer4?: number | null
           offer5?: number | null
+          origin?: string | null
           price_diff_percent?: number | null
           purchased_toggle?: boolean | null
           rapaport_list?: number | null
           rapnet_avg?: number | null
           refunded_toggle?: boolean | null
           return_toggle?: boolean | null
+          risk_score?: number | null
           seller_feedback?: number | null
           shape?: string | null
           shipped_back_toggle?: boolean | null
+          shipping_cost?: number | null
           status?: Database["public"]["Enums"]["match_status"]
+          stone_type?: string | null
           task_id: string
+          treatment?: string | null
           updated_at?: string
           user_id: string
         }
@@ -127,32 +204,42 @@ export type Database = {
           carat?: number | null
           cert_lab?: string | null
           clarity?: string | null
+          classification?: string | null
           colour?: string | null
           created_at?: string
           currency?: string | null
           cut_grade?: string | null
+          deal_score?: number | null
+          dimensions?: Json | null
           ebay_listing_id?: string
           ebay_title?: string
           ebay_url?: string | null
           found_at?: string
           id?: string
+          is_natural?: boolean | null
           listed_price?: number
+          notification_sent?: boolean | null
           offer1?: number | null
           offer2?: number | null
           offer3?: number | null
           offer4?: number | null
           offer5?: number | null
+          origin?: string | null
           price_diff_percent?: number | null
           purchased_toggle?: boolean | null
           rapaport_list?: number | null
           rapnet_avg?: number | null
           refunded_toggle?: boolean | null
           return_toggle?: boolean | null
+          risk_score?: number | null
           seller_feedback?: number | null
           shape?: string | null
           shipped_back_toggle?: boolean | null
+          shipping_cost?: number | null
           status?: Database["public"]["Enums"]["match_status"]
+          stone_type?: string | null
           task_id?: string
+          treatment?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -171,6 +258,7 @@ export type Database = {
           ai_reasoning: string | null
           ai_score: number | null
           arrived_toggle: boolean | null
+          break_even: number | null
           buy_format: string | null
           created_at: string
           currency: string | null
@@ -183,6 +271,7 @@ export type Database = {
           listed_price: number
           melt_value: number | null
           metal_type: string | null
+          notification_sent: boolean | null
           offer1: number | null
           offer2: number | null
           offer3: number | null
@@ -195,8 +284,10 @@ export type Database = {
           return_toggle: boolean | null
           seller_feedback: number | null
           shipped_back_toggle: boolean | null
+          shipping_cost: number | null
           spot_price_oz: number | null
           status: Database["public"]["Enums"]["match_status"]
+          suggested_offer: number | null
           task_id: string
           updated_at: string
           user_id: string
@@ -206,6 +297,7 @@ export type Database = {
           ai_reasoning?: string | null
           ai_score?: number | null
           arrived_toggle?: boolean | null
+          break_even?: number | null
           buy_format?: string | null
           created_at?: string
           currency?: string | null
@@ -218,6 +310,7 @@ export type Database = {
           listed_price: number
           melt_value?: number | null
           metal_type?: string | null
+          notification_sent?: boolean | null
           offer1?: number | null
           offer2?: number | null
           offer3?: number | null
@@ -230,8 +323,10 @@ export type Database = {
           return_toggle?: boolean | null
           seller_feedback?: number | null
           shipped_back_toggle?: boolean | null
+          shipping_cost?: number | null
           spot_price_oz?: number | null
           status?: Database["public"]["Enums"]["match_status"]
+          suggested_offer?: number | null
           task_id: string
           updated_at?: string
           user_id: string
@@ -241,6 +336,7 @@ export type Database = {
           ai_reasoning?: string | null
           ai_score?: number | null
           arrived_toggle?: boolean | null
+          break_even?: number | null
           buy_format?: string | null
           created_at?: string
           currency?: string | null
@@ -253,6 +349,7 @@ export type Database = {
           listed_price?: number
           melt_value?: number | null
           metal_type?: string | null
+          notification_sent?: boolean | null
           offer1?: number | null
           offer2?: number | null
           offer3?: number | null
@@ -265,8 +362,10 @@ export type Database = {
           return_toggle?: boolean | null
           seller_feedback?: number | null
           shipped_back_toggle?: boolean | null
+          shipping_cost?: number | null
           spot_price_oz?: number | null
           status?: Database["public"]["Enums"]["match_status"]
+          suggested_offer?: number | null
           task_id?: string
           updated_at?: string
           user_id?: string
@@ -288,6 +387,7 @@ export type Database = {
           ai_score: number | null
           arrived_toggle: boolean | null
           band_material: string | null
+          brand: string | null
           buy_format: string | null
           case_material: string | null
           case_size_mm: number | null
@@ -302,7 +402,9 @@ export type Database = {
           found_at: string
           id: string
           listed_price: number
+          model: string | null
           movement: string | null
+          notification_sent: boolean | null
           offer1: number | null
           offer2: number | null
           offer3: number | null
@@ -314,16 +416,19 @@ export type Database = {
           return_toggle: boolean | null
           seller_feedback: number | null
           shipped_back_toggle: boolean | null
+          shipping_cost: number | null
           status: Database["public"]["Enums"]["match_status"]
           task_id: string
           updated_at: string
           user_id: string
+          year_manufactured: number | null
         }
         Insert: {
           ai_reasoning?: string | null
           ai_score?: number | null
           arrived_toggle?: boolean | null
           band_material?: string | null
+          brand?: string | null
           buy_format?: string | null
           case_material?: string | null
           case_size_mm?: number | null
@@ -338,7 +443,9 @@ export type Database = {
           found_at?: string
           id?: string
           listed_price: number
+          model?: string | null
           movement?: string | null
+          notification_sent?: boolean | null
           offer1?: number | null
           offer2?: number | null
           offer3?: number | null
@@ -350,16 +457,19 @@ export type Database = {
           return_toggle?: boolean | null
           seller_feedback?: number | null
           shipped_back_toggle?: boolean | null
+          shipping_cost?: number | null
           status?: Database["public"]["Enums"]["match_status"]
           task_id: string
           updated_at?: string
           user_id: string
+          year_manufactured?: number | null
         }
         Update: {
           ai_reasoning?: string | null
           ai_score?: number | null
           arrived_toggle?: boolean | null
           band_material?: string | null
+          brand?: string | null
           buy_format?: string | null
           case_material?: string | null
           case_size_mm?: number | null
@@ -374,7 +484,9 @@ export type Database = {
           found_at?: string
           id?: string
           listed_price?: number
+          model?: string | null
           movement?: string | null
+          notification_sent?: boolean | null
           offer1?: number | null
           offer2?: number | null
           offer3?: number | null
@@ -386,10 +498,12 @@ export type Database = {
           return_toggle?: boolean | null
           seller_feedback?: number | null
           shipped_back_toggle?: boolean | null
+          shipping_cost?: number | null
           status?: Database["public"]["Enums"]["match_status"]
           task_id?: string
           updated_at?: string
           user_id?: string
+          year_manufactured?: number | null
         }
         Relationships: [
           {
@@ -400,6 +514,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      metal_price_history: {
+        Row: {
+          currency: string | null
+          id: string
+          metal: string
+          price: number
+          price_gram_10k: number | null
+          price_gram_14k: number | null
+          price_gram_18k: number | null
+          price_gram_24k: number | null
+          recorded_at: string | null
+          source: string | null
+          symbol: string
+        }
+        Insert: {
+          currency?: string | null
+          id?: string
+          metal: string
+          price: number
+          price_gram_10k?: number | null
+          price_gram_14k?: number | null
+          price_gram_18k?: number | null
+          price_gram_24k?: number | null
+          recorded_at?: string | null
+          source?: string | null
+          symbol: string
+        }
+        Update: {
+          currency?: string | null
+          id?: string
+          metal?: string
+          price?: number
+          price_gram_10k?: number | null
+          price_gram_14k?: number | null
+          price_gram_18k?: number | null
+          price_gram_24k?: number | null
+          recorded_at?: string | null
+          source?: string | null
+          symbol?: string
+        }
+        Relationships: []
       }
       metal_prices: {
         Row: {
@@ -505,6 +661,41 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      rejected_items: {
+        Row: {
+          ebay_listing_id: string
+          expires_at: string
+          id: string
+          rejected_at: string
+          rejection_reason: string
+          task_id: string
+        }
+        Insert: {
+          ebay_listing_id: string
+          expires_at?: string
+          id?: string
+          rejected_at?: string
+          rejection_reason: string
+          task_id: string
+        }
+        Update: {
+          ebay_listing_id?: string
+          expires_at?: string
+          id?: string
+          rejected_at?: string
+          rejection_reason?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rejected_items_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       resales: {
         Row: {
@@ -660,8 +851,10 @@ export type Database = {
           jewelry_filters: Json | null
           last_run: string | null
           listing_format: string[] | null
+          max_detail_fetches: number | null
           max_price: number | null
           min_price: number | null
+          min_profit_margin: number | null
           min_seller_feedback: number | null
           name: string
           poll_interval: number | null
@@ -687,8 +880,10 @@ export type Database = {
           jewelry_filters?: Json | null
           last_run?: string | null
           listing_format?: string[] | null
+          max_detail_fetches?: number | null
           max_price?: number | null
           min_price?: number | null
+          min_profit_margin?: number | null
           min_seller_feedback?: number | null
           name: string
           poll_interval?: number | null
@@ -714,8 +909,10 @@ export type Database = {
           jewelry_filters?: Json | null
           last_run?: string | null
           listing_format?: string[] | null
+          max_detail_fetches?: number | null
           max_price?: number | null
           min_price?: number | null
+          min_profit_margin?: number | null
           min_seller_feedback?: number | null
           name?: string
           poll_interval?: number | null
@@ -774,11 +971,75 @@ export type Database = {
         }
         Relationships: []
       }
+      worker_health_metrics: {
+        Row: {
+          api_key_used: string | null
+          created_at: string | null
+          cycle_duration_ms: number | null
+          cycle_timestamp: string | null
+          id: string
+          memory_usage_mb: number | null
+          tasks_failed: number | null
+          tasks_processed: number | null
+          total_excluded: number | null
+          total_items_found: number | null
+          total_matches: number | null
+          worker_id: string | null
+        }
+        Insert: {
+          api_key_used?: string | null
+          created_at?: string | null
+          cycle_duration_ms?: number | null
+          cycle_timestamp?: string | null
+          id?: string
+          memory_usage_mb?: number | null
+          tasks_failed?: number | null
+          tasks_processed?: number | null
+          total_excluded?: number | null
+          total_items_found?: number | null
+          total_matches?: number | null
+          worker_id?: string | null
+        }
+        Update: {
+          api_key_used?: string | null
+          created_at?: string | null
+          cycle_duration_ms?: number | null
+          cycle_timestamp?: string | null
+          id?: string
+          memory_usage_mb?: number | null
+          tasks_failed?: number | null
+          tasks_processed?: number | null
+          total_excluded?: number | null
+          total_items_found?: number | null
+          total_matches?: number | null
+          worker_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      get_api_usage_history: {
+        Args: { days_back?: number }
+        Returns: {
+          api_key: string
+          date: string
+          detail_calls: number
+          search_calls: number
+          total_calls: number
+        }[]
+      }
+      get_api_usage_today: {
+        Args: never
+        Returns: {
+          api_key: string
+          detail_calls: number
+          search_calls: number
+          total_calls: number
+        }[]
+      }
       schedule_task_cron: {
         Args: { poll_interval_param: number; task_id_param: string }
         Returns: number

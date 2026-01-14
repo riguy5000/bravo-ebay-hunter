@@ -91,11 +91,11 @@ export const MultiSelectAspectFilter: React.FC<MultiSelectAspectFilterProps> = (
   const popularBrands = useMemo(() => {
     if (aspectName.toLowerCase().includes('brand')) {
       // Try to detect if this is for watches based on category
-      const isWatch = categoryId?.includes('watch') || title.toLowerCase().includes('watch');
+      const isWatch = categoryId?.toLowerCase().includes('watch');
       return isWatch ? POPULAR_WATCH_BRANDS : POPULAR_JEWELRY_BRANDS;
     }
     return [];
-  }, [aspectName, categoryId, title]);
+  }, [aspectName, categoryId]);
 
   // Filter and limit displayed values
   const displayedValues = useMemo(() => {
