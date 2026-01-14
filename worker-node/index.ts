@@ -103,6 +103,95 @@ async function postToSlack(
   return { ok: false, error: 'No Slack configuration available' };
 }
 
+// Create a Slack channel for a task
+async function createSlackChannel(taskName: string): Promise<{ ok: boolean; channel?: string; error?: string }> {
+  if (!SLACK_BOT_TOKEN) {
+    return { ok: false, error: 'No Slack bot token configured' };
+  }
+
+  // Convert task name to valid Slack channel name (lowercase, no spaces, max 80 chars)
+  const channelName = taskName
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]/g, '-')  // Replace invalid chars with dashes
+    .replace(/-+/g, '-')           // Collapse multiple dashes
+    .replace(/^-|-$/g, '')         // Remove leading/trailing dashes
+    .substring(0, 80);             // Max 80 chars
+
+  if (!channelName) {
+    return { ok: false, error: 'Invalid channel name' };
+  }
+
+  try {
+    console.log(`  📢 Creating Slack channel: #${channelName}`);
+
+    const response = await fetch('https://slack.com/api/conversations.create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SLACK_BOT_TOKEN}`
+      },
+      body: JSON.stringify({
+        name: channelName,
+        is_private: false
+      })
+    });
+
+    const result = await response.json() as any;
+
+    if (!result.ok) {
+      // If channel already exists, try to get its ID
+      if (result.error === 'name_taken') {
+        console.log(`  ℹ️ Channel #${channelName} already exists, using it`);
+        return { ok: true, channel: channelName };
+      }
+      console.log(`  ⚠️ Failed to create channel: ${result.error}`);
+      return { ok: false, error: result.error };
+    }
+
+    console.log(`  ✅ Created Slack channel: #${channelName}`);
+    return { ok: true, channel: result.channel.name };
+  } catch (error: any) {
+    console.log(`  ⚠️ Error creating Slack channel: ${error.message}`);
+    return { ok: false, error: error.message };
+  }
+}
+
+// Ensure a task has a Slack channel, creating one if needed
+async function ensureTaskSlackChannel(task: Task): Promise<string | undefined> {
+  // If task already has a channel, use it
+  if (task.slack_channel) {
+    return task.slack_channel;
+  }
+
+  // If no bot token, can't create channels
+  if (!SLACK_BOT_TOKEN) {
+    return undefined;
+  }
+
+  // Create a channel based on task name
+  const result = await createSlackChannel(task.name);
+
+  if (result.ok && result.channel) {
+    // Update the task with the new channel
+    const { error } = await supabase
+      .from('tasks')
+      .update({ slack_channel: result.channel })
+      .eq('id', task.id);
+
+    if (error) {
+      console.log(`  ⚠️ Failed to save channel to task: ${error.message}`);
+    } else {
+      console.log(`  ✅ Saved channel #${result.channel} to task`);
+      // Update the task object in memory too
+      task.slack_channel = result.channel;
+    }
+
+    return result.channel;
+  }
+
+  return undefined;
+}
+
 // Special notification for test listings (bypasses all filters)
 async function sendTestListingNotification(item: any, channel?: string): Promise<void> {
   if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return;
@@ -2299,6 +2388,9 @@ interface TaskStats {
 
 const processTask = async (task: Task): Promise<TaskStats> => {
   console.log(`🔄 Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}`);
+
+  // Ensure task has a Slack channel (creates one if needed)
+  await ensureTaskSlackChannel(task);
 
   try {
     const lastRunDate = task.last_run ? new Date(task.last_run) : new Date(Date.now() - 24 * 60 * 60 * 1000);
