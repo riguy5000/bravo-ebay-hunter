@@ -206,10 +206,10 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
         else if (isAuthError) newStatus = 'auth_error';
         else if (!success) newStatus = 'error';
 
-        // Reset counter if it's a new day, otherwise increment
+        // Reset counter if it's a new day, only increment on successful calls
         const needsReset = shouldResetDailyCount(key.calls_reset_date);
         const currentCalls = needsReset ? 0 : (key.calls_today || 0);
-        const newCallCount = currentCalls + 1;
+        const newCallCount = success ? currentCalls + 1 : currentCalls;
 
         return {
           ...key,
