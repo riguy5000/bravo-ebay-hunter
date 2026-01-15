@@ -224,6 +224,28 @@ export const useMatches = () => {
       );
     };
 
+    // Helper to update an existing match in the React Query cache
+    const handleUpdateMatch = (updatedMatch: Match) => {
+      queryClient.setQueryData<{ groups: TaskWithMatches[]; totalCount: number }>(
+        ['matches', user.id],
+        (oldData) => {
+          if (!oldData) return oldData;
+
+          const newGroups = oldData.groups.map(group => ({
+            ...group,
+            matches: group.matches.map(match =>
+              match.id === updatedMatch.id ? { ...match, ...updatedMatch } : match
+            )
+          }));
+
+          return {
+            ...oldData,
+            groups: newGroups
+          };
+        }
+      );
+    };
+
     // Subscribe to each matches table
     const tables = ['matches_watch', 'matches_jewelry', 'matches_gemstone'] as const;
 
@@ -240,6 +262,18 @@ export const useMatches = () => {
           (payload) => {
             console.log(`🔔 New ${table} match:`, payload.new);
             handleNewMatch(payload.new as Match);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: table
+          },
+          (payload) => {
+            console.log(`🔄 Updated ${table} match:`, payload.new);
+            handleUpdateMatch(payload.new as Match);
           }
         )
         .subscribe((status) => {
