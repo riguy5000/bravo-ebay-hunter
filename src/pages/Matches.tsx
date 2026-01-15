@@ -287,6 +287,14 @@ const Matches = () => {
                   </TableCell>
                   <TableCell>
                     {(() => {
+                      // Show actual status if not 'new', otherwise show time-based status for today's items
+                      if (match.status && match.status !== 'new') {
+                        return (
+                          <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs capitalize`}>
+                            {match.status}
+                          </Badge>
+                        );
+                      }
                       const timeStatus = getTimeBasedStatus(match.found_at);
                       return timeStatus.label ? (
                         <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>
@@ -437,6 +445,14 @@ const Matches = () => {
                   </TableCell>
                   <TableCell>
                     {(() => {
+                      // Show actual status if not 'new', otherwise show time-based status for today's items
+                      if (match.status && match.status !== 'new') {
+                        return (
+                          <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs capitalize`}>
+                            {match.status}
+                          </Badge>
+                        );
+                      }
                       const timeStatus = getTimeBasedStatus(match.found_at);
                       return timeStatus.label ? (
                         <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>
@@ -553,6 +569,14 @@ const Matches = () => {
                   <TableCell>{match.seller_feedback || '-'}</TableCell>
                   <TableCell>
                     {(() => {
+                      // Show actual status if not 'new', otherwise show time-based status for today's items
+                      if (match.status && match.status !== 'new') {
+                        return (
+                          <Badge variant="secondary" className={`${getStatusColor(match.status)} text-xs capitalize`}>
+                            {match.status}
+                          </Badge>
+                        );
+                      }
                       const timeStatus = getTimeBasedStatus(match.found_at);
                       return timeStatus.label ? (
                         <Badge variant="secondary" className={`${timeStatus.color} text-xs`}>

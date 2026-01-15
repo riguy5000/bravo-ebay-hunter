@@ -30,10 +30,11 @@ const handler = async (req: Request): Promise<Response> => {
     // Handle Slack URL verification challenge
     if (body.type === 'url_verification') {
       console.log('🔐 Slack URL verification challenge received');
-      return new Response(
-        JSON.stringify({ challenge: body.challenge }),
-        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
+      // Respond with just the challenge string (Slack's preferred format)
+      return new Response(body.challenge, {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain', ...corsHeaders }
+      });
     }
 
     // Handle event callbacks
