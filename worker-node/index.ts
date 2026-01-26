@@ -2026,13 +2026,16 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
 
 let cachedToken: { token: string; expiresAt: number; keyLabel: string } | null = null;
 
+// Rate limit cooldown period (60 seconds)
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+
 // Invalidate cached token and mark key as rate-limited (called when we get a 429)
 const invalidateCachedToken = async () => {
   if (cachedToken) {
     const keyLabel = cachedToken.keyLabel;
     console.log(`🔄 Invalidating cached token from key "${keyLabel}" due to rate limit`);
 
-    // Mark the key as rate-limited in the database
+    // Mark the key as rate-limited in the database with a timestamp
     try {
       const { data: settings } = await supabase
         .from('settings')
@@ -2044,8 +2047,12 @@ const invalidateCachedToken = async () => {
         const config = settings.value_json as { keys: any[] };
         const updatedKeys = config.keys.map((k: any) => {
           if (k.label === keyLabel) {
-            console.log(`⚠️ Marking key "${keyLabel}" as rate_limited`);
-            return { ...k, status: 'rate_limited' };
+            console.log(`⚠️ Marking key "${keyLabel}" as rate_limited for ${RATE_LIMIT_COOLDOWN_MS / 1000}s`);
+            return {
+              ...k,
+              status: 'rate_limited',
+              rate_limited_at: new Date().toISOString()
+            };
           }
           return k;
         });
@@ -2080,9 +2087,60 @@ const getEbayToken = async (): Promise<string | null> => {
       return null;
     }
 
-    const config = settings.value_json as { keys: any[] };
-    const availableKeys = config.keys.filter((k: any) => k.status !== 'rate_limited' && k.status !== 'error');
-    const keyToUse = availableKeys.length > 0 ? availableKeys[0] : config.keys[0];
+    const config = settings.value_json as { keys: any[], rotation_strategy?: string };
+    const now = Date.now();
+    let keysUpdated = false;
+
+    // Auto-reset rate_limited keys after cooldown period
+    const keysWithReset = config.keys.map((k: any) => {
+      if (k.status === 'rate_limited' && k.rate_limited_at) {
+        const rateLimitedTime = new Date(k.rate_limited_at).getTime();
+        if (now - rateLimitedTime > RATE_LIMIT_COOLDOWN_MS) {
+          console.log(`✅ Key "${k.label}" cooldown expired, resetting to active`);
+          keysUpdated = true;
+          return { ...k, status: 'active', rate_limited_at: null };
+        }
+      }
+      return k;
+    });
+
+    // Update database if any keys were reset
+    if (keysUpdated) {
+      await supabase
+        .from('settings')
+        .update({ value_json: { ...config, keys: keysWithReset } })
+        .eq('key', 'ebay_keys');
+    }
+
+    // Filter available keys (not rate_limited, not error)
+    const availableKeys = keysWithReset.filter((k: any) => k.status !== 'rate_limited' && k.status !== 'error');
+
+    // Select key based on rotation strategy
+    let keyToUse: any;
+    if (availableKeys.length === 0) {
+      // All keys rate limited - use the one that was rate limited longest ago
+      const sortedByRateLimitTime = [...keysWithReset].sort((a: any, b: any) => {
+        const timeA = a.rate_limited_at ? new Date(a.rate_limited_at).getTime() : 0;
+        const timeB = b.rate_limited_at ? new Date(b.rate_limited_at).getTime() : 0;
+        return timeA - timeB; // Oldest first
+      });
+      keyToUse = sortedByRateLimitTime[0];
+      console.log(`⚠️ All keys rate limited, using oldest: "${keyToUse?.label}"`);
+    } else if (config.rotation_strategy === 'least_used') {
+      // Sort by calls_today ascending (least used first)
+      const sortedByUsage = [...availableKeys].sort((a: any, b: any) => {
+        return (a.calls_today || 0) - (b.calls_today || 0);
+      });
+      keyToUse = sortedByUsage[0];
+    } else {
+      // Default: round-robin (use least recently used)
+      const sortedByLastUsed = [...availableKeys].sort((a: any, b: any) => {
+        const timeA = a.last_used ? new Date(a.last_used).getTime() : 0;
+        const timeB = b.last_used ? new Date(b.last_used).getTime() : 0;
+        return timeA - timeB; // Oldest first
+      });
+      keyToUse = sortedByLastUsed[0];
+    }
 
     if (!keyToUse) {
       console.error('❌ No eBay API keys available');
