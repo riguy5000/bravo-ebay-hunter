@@ -56,6 +56,7 @@ interface EbayApiKey {
   calls_reset_date?: string;
   oauth_token?: string;
   token_expires_at?: string;
+  rate_limited_at?: string | null;
 }
 
 const DAILY_RATE_LIMIT = 5000; // eBay Browse API daily limit per key
@@ -141,31 +142,57 @@ const getAvailableApiKeys = async (): Promise<EbayApiKey[]> => {
   }
 };
 
-const selectApiKey = (keys: EbayApiKey[], strategy: string = 'round_robin'): EbayApiKey | null => {
-  const availableKeys = keys.filter(key => 
+// Rate limit cooldown period (60 seconds)
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+
+const selectApiKey = (keys: EbayApiKey[], strategy: string = 'round_robin'): { key: EbayApiKey | null, keysToReset: EbayApiKey[] } => {
+  const now = Date.now();
+  const keysToReset: EbayApiKey[] = [];
+
+  // Check for keys that have passed the rate limit cooldown
+  const keysWithCooldownCheck = keys.map(key => {
+    if (key.status === 'rate_limited' && key.rate_limited_at) {
+      const rateLimitedTime = new Date(key.rate_limited_at).getTime();
+      if (now - rateLimitedTime > RATE_LIMIT_COOLDOWN_MS) {
+        console.log(`✅ Key "${key.label}" cooldown expired, resetting to active`);
+        keysToReset.push(key);
+        return { ...key, status: 'active', rate_limited_at: null };
+      }
+    }
+    return key;
+  });
+
+  const availableKeys = keysWithCooldownCheck.filter(key =>
     key.status !== 'rate_limited' && key.status !== 'error'
   );
 
   if (availableKeys.length === 0) {
-    console.log('No available API keys, trying all keys as fallback');
-    return keys.length > 0 ? keys[0] : null;
+    console.log('No available API keys, trying key with oldest rate limit');
+    // Use the key that was rate limited longest ago
+    const sortedByRateLimitTime = [...keysWithCooldownCheck].sort((a, b) => {
+      const timeA = a.rate_limited_at ? new Date(a.rate_limited_at).getTime() : 0;
+      const timeB = b.rate_limited_at ? new Date(b.rate_limited_at).getTime() : 0;
+      return timeA - timeB;
+    });
+    return { key: sortedByRateLimitTime.length > 0 ? sortedByRateLimitTime[0] : null, keysToReset };
   }
 
   switch (strategy) {
     case 'least_used':
-      return availableKeys.reduce((least, current) => {
+      const leastUsedKey = availableKeys.reduce((least, current) => {
         const leastUsed = new Date(least.last_used || '1970-01-01').getTime();
         const currentUsed = new Date(current.last_used || '1970-01-01').getTime();
         return currentUsed < leastUsed ? current : least;
       });
-    
+      return { key: leastUsedKey, keysToReset };
+
     case 'random':
-      return availableKeys[Math.floor(Math.random() * availableKeys.length)];
-    
+      return { key: availableKeys[Math.floor(Math.random() * availableKeys.length)], keysToReset };
+
     case 'round_robin':
     default:
       const index = Math.floor(Date.now() / 60000) % availableKeys.length;
-      return availableKeys[index];
+      return { key: availableKeys[index], keysToReset };
   }
 };
 
@@ -218,7 +245,9 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
           calls_today: newCallCount,
           calls_reset_date: today,
           oauth_token: keyToUpdate.oauth_token,
-          token_expires_at: keyToUpdate.token_expires_at
+          token_expires_at: keyToUpdate.token_expires_at,
+          // Store timestamp when rate limited for cooldown tracking
+          rate_limited_at: isRateLimited ? new Date().toISOString() : (newStatus === 'active' ? null : key.rate_limited_at)
         };
       }
       return key;
@@ -942,8 +971,37 @@ const handler = async (req: Request): Promise<Response> => {
         break;
       }
 
-      const selectedKey = selectApiKey(availableKeys, rotationStrategy);
-      
+      const { key: selectedKey, keysToReset } = selectApiKey(availableKeys, rotationStrategy);
+
+      // Reset any keys that have passed their cooldown period
+      if (keysToReset.length > 0) {
+        try {
+          const { data: settingsData } = await supabase
+            .from('settings')
+            .select('value_json')
+            .eq('key', 'ebay_keys')
+            .single();
+
+          if (settingsData?.value_json) {
+            const config = settingsData.value_json as { keys: EbayApiKey[], rotation_strategy: string };
+            const updatedKeys = config.keys.map(k => {
+              const shouldReset = keysToReset.some(r => r.app_id === k.app_id);
+              if (shouldReset) {
+                return { ...k, status: 'active', rate_limited_at: null };
+              }
+              return k;
+            });
+
+            await supabase
+              .from('settings')
+              .update({ value_json: { ...config, keys: updatedKeys } })
+              .eq('key', 'ebay_keys');
+          }
+        } catch (e) {
+          console.error('Error resetting keys:', e);
+        }
+      }
+
       if (!selectedKey) {
         throw new Error('No API keys available for use');
       }
