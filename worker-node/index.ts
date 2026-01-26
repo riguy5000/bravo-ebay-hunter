@@ -501,6 +501,7 @@ async function retryFailedNotifications(): Promise<void> {
       // For retries, shipping_cost being null means unknown, otherwise it's known
       const shippingKnown = match.shipping_cost !== null;
       const slackChannel = (match.tasks as any)?.slack_channel;
+      console.log(`  🔄 Retrying notification for match ${match.id} to channel: ${slackChannel || 'default'}...`);
       const slackResult = await sendJewelrySlackNotification(
         match,
         match.karat,
@@ -520,7 +521,9 @@ async function retryFailedNotifications(): Promise<void> {
           .from('matches_jewelry')
           .update(updateData)
           .eq('id', match.id);
-        console.log(`  ✅ Retry successful for: ${match.ebay_title.substring(0, 40)}...`);
+        console.log(`  ✅ Retry successful for: ${match.ebay_title.substring(0, 40)}... (ts: ${slackResult.ts})`);
+      } else {
+        console.log(`  ❌ Retry FAILED for match ${match.id}: ${match.ebay_title.substring(0, 40)}...`);
       }
 
       // Rate limit delay for Slack (they silently drop messages if sent too fast)
@@ -556,6 +559,7 @@ async function retryFailedNotifications(): Promise<void> {
 
       const slackChannel = (match.tasks as any)?.slack_channel;
       // Actually send the notification and mark as sent
+      console.log(`  🔄 Retrying gemstone notification for match ${match.id} to channel: ${slackChannel || 'default'}...`);
       const slackResult = await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0, slackChannel);
 
       if (slackResult.sent) {
@@ -567,7 +571,9 @@ async function retryFailedNotifications(): Promise<void> {
           .from('matches_gemstone')
           .update(updateData)
           .eq('id', match.id);
-        console.log(`  ✅ Retry successful for: ${match.ebay_title?.substring(0, 40) || 'gemstone'}...`);
+        console.log(`  ✅ Retry successful for: ${match.ebay_title?.substring(0, 40) || 'gemstone'}... (ts: ${slackResult.ts})`);
+      } else {
+        console.log(`  ❌ Retry FAILED for gemstone match ${match.id}: ${match.ebay_title?.substring(0, 40) || 'gemstone'}...`);
       }
 
       // Rate limit delay for Slack (they silently drop messages if sent too fast)
@@ -2832,6 +2838,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for gemstone match
+          console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
           const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel);
 
           // Update notification_sent flag and Slack message tracking
@@ -2844,6 +2851,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               .from(tableName)
               .update(updateData)
               .eq('id', insertedMatch.id);
+            console.log(`  ✅ Slack notification sent successfully (ts: ${slackResult.ts})`);
+          } else {
+            console.log(`  ❌ Slack notification FAILED for gemstone match ${insertedMatch?.id} - will retry later`);
           }
 
           // Rate limit delay for Slack (they silently drop messages if sent too fast)
@@ -3079,6 +3089,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for jewelry match
+          console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
           const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel);
 
           // Update notification_sent flag and Slack message tracking
@@ -3091,6 +3102,9 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               .from(tableName)
               .update(updateData)
               .eq('id', insertedMatch.id);
+            console.log(`  ✅ Slack notification sent successfully (ts: ${slackResult.ts})`);
+          } else {
+            console.log(`  ❌ Slack notification FAILED for match ${insertedMatch?.id} - will retry later`);
           }
 
           // Rate limit delay for Slack (they silently drop messages if sent too fast)
