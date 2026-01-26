@@ -1907,7 +1907,7 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
   const weightFieldNames = [
     'total weight', 'gram weight', 'total gram weight', 'metal weight(grams)',
     'item weight', 'weight', 'item weight (approx.)',
-    'approximate weight', 'metal weight', 'chain weight', 'necklace weight',
+    'approximate weight', 'metal weight', 'metal weight gram', 'chain weight', 'necklace weight',
     'ring weight', 'bracelet weight', 'gold weight', 'total metal weight',
     'net weight', 'jewelry weight', 'metal wt.', 'metal wt', 'gross weight',
     'platinum weight', 'silver weight', 'weight (approx.)', 'approx. weight'
