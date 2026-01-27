@@ -3302,35 +3302,36 @@ async function runOnce(): Promise<void> {
 
     console.log(`📋 Found ${tasks.length} active task(s) to process`);
 
-    // Process all tasks in parallel
-    console.log(`🚀 Running ${tasks.length} task(s) in parallel...`);
+    // Process tasks sequentially to avoid rate limiting
+    console.log(`🚀 Running ${tasks.length} task(s) sequentially...`);
 
-    const results = await Promise.allSettled(
-      tasks.map(async (task: any) => {
-        console.log(`\n--- Starting Task: ${task.name} ---`);
-        const stats = await processTask(task);
-        return { name: task.name, stats };
-      })
-    );
-
-    const successCount = results.filter(r => r.status === 'fulfilled').length;
-    const errorCount = results.filter(r => r.status === 'rejected').length;
-
-    // Aggregate stats from all tasks
+    let successCount = 0;
+    let errorCount = 0;
     let totalItemsFound = 0;
     let totalMatches = 0;
     let totalExcluded = 0;
 
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        const taskResult = result.value as { name: string; stats: TaskStats };
-        totalItemsFound += taskResult.stats.itemsFound;
-        totalMatches += taskResult.stats.newMatches;
-        totalExcluded += taskResult.stats.excludedItems;
-      } else {
-        console.error(`❌ Task ${tasks[index].name} failed:`, (result as PromiseRejectedResult).reason);
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      console.log(`\n--- Starting Task ${i + 1}/${tasks.length}: ${task.name} ---`);
+
+      try {
+        const stats = await processTask(task);
+        successCount++;
+        totalItemsFound += stats.itemsFound;
+        totalMatches += stats.newMatches;
+        totalExcluded += stats.excludedItems;
+      } catch (error) {
+        errorCount++;
+        console.error(`❌ Task ${task.name} failed:`, error);
       }
-    });
+
+      // Add delay between tasks to avoid rate limiting
+      if (i < tasks.length - 1) {
+        console.log(`⏳ Waiting 3s before next task...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
 
     console.log(`✅ Poll cycle completed: ${successCount} successful, ${errorCount} failed`);
 
