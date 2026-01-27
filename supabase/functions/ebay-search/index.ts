@@ -80,10 +80,10 @@ const supabase = createClient(
 );
 
 const getOAuthToken = async (appId: string, certId: string): Promise<string> => {
-  console.log(`Getting OAuth token for app ID: ${appId.substring(0, 10)}...`);
-  
+  console.log(`Getting fresh OAuth token for app ID: ${appId.substring(0, 10)}...`);
+
   const credentials = btoa(`${appId}:${certId}`);
-  
+
   const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
     method: 'POST',
     headers: {
@@ -104,8 +104,30 @@ const getOAuthToken = async (appId: string, certId: string): Promise<string> => 
 
   const tokenData: OAuthTokenResponse = await response.json();
   console.log('OAuth token obtained successfully');
-  
+
   return tokenData.access_token;
+};
+
+// Get OAuth token with caching - reuse valid tokens from database
+const getOAuthTokenCached = async (apiKey: EbayApiKey): Promise<{ token: string, isNew: boolean, expiresAt: string }> => {
+  // Check if we have a valid cached token (with 5 minute buffer)
+  if (apiKey.oauth_token && apiKey.token_expires_at) {
+    const expiresAt = new Date(apiKey.token_expires_at).getTime();
+    const now = Date.now();
+    const bufferMs = 5 * 60 * 1000; // 5 minute buffer
+
+    if (expiresAt > now + bufferMs) {
+      console.log(`✅ Using cached OAuth token for "${apiKey.label}" (expires in ${Math.round((expiresAt - now) / 60000)}min)`);
+      return { token: apiKey.oauth_token, isNew: false, expiresAt: apiKey.token_expires_at };
+    }
+  }
+
+  // Get fresh token
+  const token = await getOAuthToken(apiKey.app_id, apiKey.cert_id);
+  // eBay OAuth tokens are valid for 2 hours
+  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+  return { token, isNew: true, expiresAt };
 };
 
 const getAvailableApiKeys = async (): Promise<EbayApiKey[]> => {
@@ -736,10 +758,21 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
   try {
     console.log(`Trying API key "${apiKey.label}" for eBay search...`);
 
-    // Get OAuth token
+    // Get OAuth token (with caching)
     let accessToken: string;
+    let tokenIsNew = false;
+    let tokenExpiresAt: string | undefined;
     try {
-      accessToken = await getOAuthToken(apiKey.app_id, apiKey.cert_id);
+      const tokenResult = await getOAuthTokenCached(apiKey);
+      accessToken = tokenResult.token;
+      tokenIsNew = tokenResult.isNew;
+      tokenExpiresAt = tokenResult.expiresAt;
+
+      // Update the apiKey object with new token for later saving
+      if (tokenIsNew) {
+        apiKey.oauth_token = accessToken;
+        apiKey.token_expires_at = tokenExpiresAt;
+      }
     } catch (error: any) {
       console.error(`OAuth failed for "${apiKey.label}":`, error.message);
       await updateKeyUsage(apiKey, false, false, true);
@@ -1036,7 +1069,9 @@ const handler = async (req: Request): Promise<Response> => {
         
         if (result.rateLimited) {
           rateLimitedCount++;
-          console.log(`⏳ API key "${selectedKey.label}" is rate limited, trying next key...`);
+          console.log(`⏳ API key "${selectedKey.label}" is rate limited, waiting 1s before next key...`);
+          // Add delay before trying next key to avoid hammering eBay
+          await new Promise(resolve => setTimeout(resolve, 1000));
           continue;
         }
         
