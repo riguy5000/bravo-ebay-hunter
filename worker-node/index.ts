@@ -2027,7 +2027,7 @@ function extractWeight(title: string, specs: Record<string, string> = {}, descri
 let cachedToken: { token: string; expiresAt: number; keyLabel: string } | null = null;
 
 // Rate limit cooldown period (60 seconds)
-const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes - eBay needs time to reset
 
 // Invalidate cached token and mark key as rate-limited (called when we get a 429)
 const invalidateCachedToken = async () => {

@@ -142,8 +142,8 @@ const getAvailableApiKeys = async (): Promise<EbayApiKey[]> => {
   }
 };
 
-// Rate limit cooldown period (60 seconds)
-const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+// Rate limit cooldown period (5 minutes - eBay needs time to reset)
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
 
 const selectApiKey = (keys: EbayApiKey[], strategy: string = 'round_robin'): { key: EbayApiKey | null, keysToReset: EbayApiKey[] } => {
   const now = Date.now();
