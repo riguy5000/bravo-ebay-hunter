@@ -2592,7 +2592,8 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       console.log(`🔧 Searching for ${metals.length} search terms (from ${basemetals.length} metals): ${metals.join(', ')}`);
       const seenItemIds = new Set<string>();
 
-      for (const metal of metals) {
+      for (let i = 0; i < metals.length; i++) {
+        const metal = metals[i];
         const metalSearchParams = {
           ...searchParams,
           keywords: buildSearchKeywords(task, metal),
@@ -2606,6 +2607,10 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
         if (searchResponse.error) {
           console.error(`❌ Error searching for ${metal}:`, searchResponse.error);
+          // Add delay even on error to avoid hammering rate-limited API
+          if (i < metals.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
           continue;
         }
 
@@ -2618,6 +2623,11 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             seenItemIds.add(item.itemId);
             items.push(item);
           }
+        }
+
+        // Add 2-second delay between searches to avoid eBay rate limiting
+        if (i < metals.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
 
