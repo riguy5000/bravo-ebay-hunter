@@ -2609,7 +2609,8 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           console.error(`❌ Error searching for ${metal}:`, searchResponse.error);
           // Add delay even on error to avoid hammering rate-limited API
           if (i < metals.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 10000)); // 10s delay to avoid eBay rate limits
+            console.log(`⏳ Waiting 10s before next search (after error)...`);
+            await new Promise(resolve => setTimeout(resolve, 10000));
           }
           continue;
         }
