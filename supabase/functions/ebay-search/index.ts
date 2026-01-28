@@ -1090,7 +1090,7 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    if (rateLimitedCount === apiKeys.length) {
+    if (rateLimitedCount >= maxAttempts) {
       return new Response(JSON.stringify({ 
         success: false, 
         error: 'All eBay API keys are currently rate limited.',
