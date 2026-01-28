@@ -11,7 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 dotenv.config();
 
 // Configuration
-const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '1000', 10);
+const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '60000', 10); // 60 seconds
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
