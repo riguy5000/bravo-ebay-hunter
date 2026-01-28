@@ -997,8 +997,8 @@ const handler = async (req: Request): Promise<Response> => {
     let authErrorCount = 0;
     const triedKeys = new Set<string>();
 
-    // Only try up to 2 keys per request to avoid burning through all keys on rate limits
-    const maxAttempts = Math.min(2, apiKeys.length);
+    // Try up to 5 keys per request - enough to find a working key without burning through all of them
+    const maxAttempts = Math.min(5, apiKeys.length);
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const availableKeys = apiKeys.filter(key => !triedKeys.has(key.app_id));
       
