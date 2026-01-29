@@ -3545,6 +3545,119 @@ if (process.argv.includes('--test-notification')) {
     }
     process.exit(results.failed > 0 ? 1 : 0);
   })();
+} else if (process.argv.includes('--test-match-flow')) {
+  // Test the full match flow: insert → notify → update
+  const argIndex = process.argv.indexOf('--test-match-flow');
+  const channel = process.argv[argIndex + 1] || 'tester';
+
+  // Hardcoded task/user IDs - change these for your setup
+  const TASK_ID = '51dd5383-4851-4049-8d90-bf0e455ede51';
+  const USER_ID = 'f155eca6-5792-45e1-bc33-17bd23a9c06d';
+
+  console.log('🧪 Testing FULL match flow: Insert → Notify → Update');
+  console.log(`   Channel: ${channel}`);
+  console.log(`   Task ID: ${TASK_ID}`);
+  console.log('');
+
+  (async () => {
+    const itemId = 'TEST' + Date.now();
+    const matchData = {
+      task_id: TASK_ID,
+      user_id: USER_ID,
+      ebay_listing_id: itemId,
+      ebay_title: '14K Gold Ring - Full Flow Test',
+      ebay_url: `https://www.ebay.com/itm/${itemId}`,
+      listed_price: 99.99,
+      shipping_cost: 8.99,
+      currency: 'USD',
+      buy_format: 'Buy It Now',
+      seller_feedback: 500,
+      found_at: new Date().toISOString(),
+      item_creation_date: new Date().toISOString(),
+      status: 'new',
+      notification_sent: false,
+      karat: 14,
+      weight_g: 5.5,
+      metal_type: 'gold',
+      melt_value: 250.00,
+      profit_scrap: 150.00,
+      break_even: 108.98,
+      suggested_offer: 92.00,
+    };
+
+    // Step 1: Insert match
+    console.log('Step 1: Inserting match into database...');
+    const insertStart = Date.now();
+    const { data: insertedMatch, error: insertError } = await supabase
+      .from('matches_jewelry')
+      .insert(matchData)
+      .select('id')
+      .single();
+    const insertTime = Date.now() - insertStart;
+
+    if (insertError) {
+      console.error(`❌ Insert FAILED: ${insertError.message}`);
+      process.exit(1);
+    }
+    console.log(`   ✅ Inserted in ${insertTime}ms (ID: ${insertedMatch.id})`);
+
+    // Step 2: Send notification
+    console.log('Step 2: Sending Slack notification...');
+    const notifyStart = Date.now();
+    const slackResult = await sendJewelrySlackNotification(
+      matchData,
+      14,
+      5.5,
+      8.99,
+      'fixed',
+      250.00,
+      channel,
+      matchData.item_creation_date
+    );
+    const notifyTime = Date.now() - notifyStart;
+
+    if (slackResult.sent) {
+      console.log(`   ✅ Notification sent in ${notifyTime}ms (ts: ${slackResult.ts})`);
+    } else {
+      console.log(`   ❌ Notification FAILED in ${notifyTime}ms`);
+    }
+
+    // Step 3: Update notification_sent
+    console.log('Step 3: Updating notification_sent flag...');
+    const updateStart = Date.now();
+    if (slackResult.sent && insertedMatch?.id) {
+      const updateData: any = { notification_sent: true };
+      if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+      if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+
+      const { error: updateError } = await supabase
+        .from('matches_jewelry')
+        .update(updateData)
+        .eq('id', insertedMatch.id);
+      const updateTime = Date.now() - updateStart;
+
+      if (updateError) {
+        console.log(`   ❌ Update FAILED: ${updateError.message}`);
+      } else {
+        console.log(`   ✅ Updated in ${updateTime}ms`);
+      }
+    } else {
+      console.log(`   ⏭️ Skipped (notification failed)`);
+    }
+
+    // Summary
+    const totalTime = Date.now() - insertStart;
+    console.log('');
+    console.log('📊 SUMMARY:');
+    console.log(`   Insert:  ${insertTime}ms`);
+    console.log(`   Notify:  ${notifyTime}ms`);
+    console.log(`   Update:  ${Date.now() - updateStart}ms`);
+    console.log(`   TOTAL:   ${totalTime}ms`);
+    console.log('');
+    console.log(slackResult.sent ? '✅ Full flow completed successfully!' : '❌ Flow completed with notification failure');
+
+    process.exit(slackResult.sent ? 0 : 1);
+  })();
 } else {
   // Start the worker
   main().catch(err => {
