@@ -3475,40 +3475,76 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-// Test mode - send a test notification and exit
+// Test mode - send test notifications and exit
 if (process.argv.includes('--test-notification')) {
-  const testMatch = {
-    ebay_item_id: 'TEST123',
-    ebay_title: '14K Gold Ring Test Notification - Latency Test',
-    ebay_price: 99.99,
-    ebay_url: 'https://www.ebay.com/itm/TEST123',
-    image_url: 'https://via.placeholder.com/150',
-  };
-
-  const channel = process.argv[process.argv.indexOf('--test-notification') + 1] || 'tester';
+  const argIndex = process.argv.indexOf('--test-notification');
+  const channel = process.argv[argIndex + 1] || 'tester';
+  const countArg = process.argv[argIndex + 2];
+  const count = countArg ? parseInt(countArg) : 1;
 
   console.log('🧪 Testing sendJewelrySlackNotification...');
   console.log(`   Channel: ${channel}`);
-  const start = Date.now();
+  console.log(`   Count: ${count}`);
+  console.log('');
 
-  sendJewelrySlackNotification(
-    testMatch,
-    14,           // karat
-    5.5,          // weight
-    8.99,         // shipping
-    'fixed',      // shipping type
-    250.00,       // melt value
-    channel,      // slack channel
-    new Date().toISOString()  // item creation date
-  ).then(result => {
-    const elapsed = Date.now() - start;
-    console.log(`✅ Result: sent=${result.sent}, ts=${result.ts}`);
-    console.log(`⏱️ Latency: ${elapsed}ms`);
-    process.exit(0);
-  }).catch(err => {
-    console.error('❌ Error:', err);
-    process.exit(1);
-  });
+  const results: { success: number; failed: number; latencies: number[] } = {
+    success: 0,
+    failed: 0,
+    latencies: []
+  };
+
+  (async () => {
+    for (let i = 1; i <= count; i++) {
+      const testMatch = {
+        ebay_item_id: `TEST${i}`,
+        ebay_title: `14K Gold Ring Test #${i} of ${count}`,
+        ebay_price: 99.99,
+        ebay_url: `https://www.ebay.com/itm/TEST${i}`,
+        image_url: 'https://via.placeholder.com/150',
+      };
+
+      const start = Date.now();
+      const result = await sendJewelrySlackNotification(
+        testMatch,
+        14,           // karat
+        5.5,          // weight
+        8.99,         // shipping
+        'fixed',      // shipping type
+        250.00,       // melt value
+        channel,      // slack channel
+        new Date().toISOString()  // item creation date
+      );
+      const elapsed = Date.now() - start;
+
+      if (result.sent) {
+        results.success++;
+        results.latencies.push(elapsed);
+        console.log(`✅ ${i}/${count}: sent in ${elapsed}ms`);
+      } else {
+        results.failed++;
+        console.log(`❌ ${i}/${count}: FAILED - ${result.error || 'unknown error'}`);
+      }
+
+      // Small delay between messages to avoid obvious rate limiting
+      if (i < count) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    // Print summary
+    console.log('');
+    console.log('📊 SUMMARY:');
+    console.log(`   Success: ${results.success}/${count}`);
+    console.log(`   Failed:  ${results.failed}/${count}`);
+    if (results.latencies.length > 0) {
+      const avg = results.latencies.reduce((a, b) => a + b, 0) / results.latencies.length;
+      const min = Math.min(...results.latencies);
+      const max = Math.max(...results.latencies);
+      console.log(`   Avg latency: ${avg.toFixed(0)}ms`);
+      console.log(`   Min: ${min}ms, Max: ${max}ms`);
+    }
+    process.exit(results.failed > 0 ? 1 : 0);
+  })();
 } else {
   // Start the worker
   main().catch(err => {
