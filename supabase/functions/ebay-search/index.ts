@@ -32,6 +32,7 @@ interface EbayItem {
   price: number;
   currency: string;
   endTime?: string;
+  itemCreationDate?: string; // When the item was listed on eBay
   listingUrl: string;
   imageUrl?: string;
   condition?: string;
@@ -255,10 +256,10 @@ const updateKeyUsage = async (keyToUpdate: EbayApiKey, success: boolean, isRateL
         else if (isAuthError) newStatus = 'auth_error';
         else if (!success) newStatus = 'error';
 
-        // Reset counter if it's a new day, only increment on successful calls
+        // Reset counter if it's a new day, always increment (eBay counts all requests, not just successful ones)
         const needsReset = shouldResetDailyCount(key.calls_reset_date);
         const currentCalls = needsReset ? 0 : (key.calls_today || 0);
-        const newCallCount = success ? currentCalls + 1 : currentCalls;
+        const newCallCount = currentCalls + 1;
 
         return {
           ...key,
@@ -731,6 +732,7 @@ const parseEbayBrowseResponse = (response: any, allowedCategoryIds?: string[]): 
         price: price,
         currency: item.price?.currency || 'USD',
         endTime: item.itemEndDate,
+        itemCreationDate: item.itemCreationDate, // When item was listed on eBay
         listingUrl: item.itemWebUrl || '',
         imageUrl: item.image?.imageUrl,
         condition: item.condition,

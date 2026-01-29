@@ -51,6 +51,33 @@ function logTestListing(item: any, message: string): void {
 // Slack Notification Functions
 // ============================================
 
+// Helper function to calculate latency from item creation to now
+function calculateLatency(itemCreationDate?: string | null): string {
+  if (!itemCreationDate) return 'N/A';
+
+  try {
+    const listingTime = new Date(itemCreationDate).getTime();
+    const now = Date.now();
+    const latencyMs = now - listingTime;
+
+    if (latencyMs < 0) return 'N/A'; // Future date (shouldn't happen)
+
+    const hours = Math.floor(latencyMs / 3600000);
+    const mins = Math.floor((latencyMs % 3600000) / 60000);
+    const secs = Math.floor((latencyMs % 60000) / 1000);
+
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    } else if (mins > 0) {
+      return `${mins}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  } catch (e) {
+    return 'N/A';
+  }
+}
+
 // Helper function to post to Slack using Bot API or webhook fallback
 // Returns message timestamp (ts) and channel ID for tracking reactions
 async function postToSlack(
@@ -329,7 +356,8 @@ async function sendJewelrySlackNotification(
   shippingCost: number | undefined,
   shippingType: string | undefined,
   meltValue: number | null,
-  channel?: string
+  channel?: string,
+  itemCreationDate?: string | null
 ): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
   if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) {
     console.log('  ⚠️ Slack not configured, skipping notification');
@@ -339,6 +367,9 @@ async function sendJewelrySlackNotification(
   console.log(`  📤 Sending Slack notification for: ${match.ebay_title.substring(0, 50)}...`);
 
   try {
+    // Calculate latency (time from item listed on eBay to notification)
+    const latency = calculateLatency(itemCreationDate);
+
     // Determine if shipping is known (free or fixed with a value)
     const shippingKnown = shippingType === 'free' || (shippingCost !== undefined && shippingType !== 'calculated');
     const actualShipping = shippingKnown ? (shippingCost || 0) : 0;
@@ -383,6 +414,15 @@ async function sendJewelrySlackNotification(
               }
             },
             {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: `⏱️ Latency: *${latency}*`
+                }
+              ]
+            },
+            {
               type: "actions",
               elements: [
                 {
@@ -418,11 +458,15 @@ async function sendGemstoneSlackNotification(
   stone: any,
   dealScore: number,
   riskScore: number,
-  channel?: string
+  channel?: string,
+  itemCreationDate?: string | null
 ): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
   if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return { sent: false };
 
   try {
+    // Calculate latency (time from item listed on eBay to notification)
+    const latency = calculateLatency(itemCreationDate);
+
     const scoreEmoji = dealScore >= 80 ? '🔥' : dealScore >= 60 ? '💎' : '📋';
     const riskEmoji = riskScore >= 50 ? '⚠️' : riskScore >= 30 ? '🔶' : '✅';
     const riskText = riskScore >= 50 ? 'High' : riskScore >= 30 ? 'Med' : 'Low';
@@ -449,6 +493,15 @@ async function sendGemstoneSlackNotification(
             type: "mrkdwn",
             text: match.ebay_title.substring(0, 150)
           }
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: `⏱️ Latency: *${latency}*`
+            }
+          ]
         },
         {
           type: "actions",
@@ -509,7 +562,8 @@ async function retryFailedNotifications(): Promise<void> {
         match.shipping_cost ?? undefined,
         shippingKnown ? 'fixed' : undefined,  // Infer type from stored data
         match.melt_value,
-        slackChannel
+        slackChannel,
+        match.item_creation_date
       );
 
       if (slackResult.sent) {
@@ -560,7 +614,7 @@ async function retryFailedNotifications(): Promise<void> {
       const slackChannel = (match.tasks as any)?.slack_channel;
       // Actually send the notification and mark as sent
       console.log(`  🔄 Retrying gemstone notification for match ${match.id} to channel: ${slackChannel || 'default'}...`);
-      const slackResult = await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0, slackChannel);
+      const slackResult = await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0, slackChannel, match.item_creation_date);
 
       if (slackResult.sent) {
         const updateData: any = { notification_sent: true };
@@ -2482,6 +2536,7 @@ const createMatchRecord = (task: Task, item: any, stone?: any, dealScore?: numbe
     buy_format: item.listingType || 'Unknown',
     seller_feedback: item.sellerInfo?.feedbackScore || 0,
     found_at: new Date().toISOString(),
+    item_creation_date: item.itemCreationDate || null, // When item was listed on eBay (for latency tracking)
     status: 'new' as const,
     notification_sent: false, // Track if Slack notification was sent
   };
@@ -2909,7 +2964,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
           // Send Slack notification for gemstone match
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
-          const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel);
+          const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, item.itemCreationDate);
 
           // Update notification_sent flag and Slack message tracking
           if (slackResult.sent && insertedMatch?.id) {
@@ -3160,7 +3215,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
           // Send Slack notification for jewelry match
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
-          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel);
+          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, item.itemCreationDate);
 
           // Update notification_sent flag and Slack message tracking
           if (slackResult.sent && insertedMatch?.id) {
