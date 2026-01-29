@@ -3475,8 +3475,44 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-// Start the worker
-main().catch(err => {
-  console.error('💥 Fatal error:', err);
-  process.exit(1);
-});
+// Test mode - send a test notification and exit
+if (process.argv.includes('--test-notification')) {
+  const testMatch = {
+    ebay_item_id: 'TEST123',
+    ebay_title: '14K Gold Ring Test Notification - Latency Test',
+    ebay_price: 99.99,
+    ebay_url: 'https://www.ebay.com/itm/TEST123',
+    image_url: 'https://via.placeholder.com/150',
+  };
+
+  const channel = process.argv[process.argv.indexOf('--test-notification') + 1] || 'tester';
+
+  console.log('🧪 Testing sendJewelrySlackNotification...');
+  console.log(`   Channel: ${channel}`);
+  const start = Date.now();
+
+  sendJewelrySlackNotification(
+    testMatch,
+    14,           // karat
+    5.5,          // weight
+    8.99,         // shipping
+    'fixed',      // shipping type
+    250.00,       // melt value
+    channel,      // slack channel
+    new Date().toISOString()  // item creation date
+  ).then(result => {
+    const elapsed = Date.now() - start;
+    console.log(`✅ Result: sent=${result.sent}, ts=${result.ts}`);
+    console.log(`⏱️ Latency: ${elapsed}ms`);
+    process.exit(0);
+  }).catch(err => {
+    console.error('❌ Error:', err);
+    process.exit(1);
+  });
+} else {
+  // Start the worker
+  main().catch(err => {
+    console.error('💥 Fatal error:', err);
+    process.exit(1);
+  });
+}
