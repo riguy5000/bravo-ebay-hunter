@@ -2664,8 +2664,8 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           console.error(`❌ Error searching for ${metal}:`, searchResponse.error);
           // Add delay even on error to avoid hammering rate-limited API
           if (i < metals.length - 1) {
-            console.log(`⏳ Waiting 30s before next search (after error)...`);
-            await new Promise(resolve => setTimeout(resolve, 30000));
+            console.log(`⏳ Waiting 5s before next search (after error)...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
           }
           continue;
         }
@@ -2681,10 +2681,10 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           }
         }
 
-        // Add 30-second delay between searches to avoid eBay rate limits
+        // Add delay between searches to avoid eBay rate limits
         if (i < metals.length - 1) {
-          console.log(`⏳ Waiting 30s before next search...`);
-          await new Promise(resolve => setTimeout(resolve, 30000));
+          console.log(`⏳ Waiting 5s before next search...`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
         }
       }
 
