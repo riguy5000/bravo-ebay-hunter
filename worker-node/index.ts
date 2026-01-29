@@ -438,17 +438,25 @@ async function sendJewelrySlackNotification(
       ]
     };
 
-    const result = await postToSlack(message, channel || DEFAULT_SLACK_CHANNEL);
+    const targetChannel = channel || DEFAULT_SLACK_CHANNEL;
+    if (!targetChannel) {
+      console.log(`  ⚠️ No Slack channel specified and no DEFAULT_SLACK_CHANNEL set`);
+      return { sent: false };
+    }
+
+    const result = await postToSlack(message, targetChannel);
 
     if (!result.ok) {
       console.log(`  ⚠️ Slack notification failed: ${result.error}`);
+      console.log(`  ⚠️ [DEBUG] Failed channel: ${targetChannel}, BOT_TOKEN set: ${!!SLACK_BOT_TOKEN}`);
       return { sent: false };
     } else {
-      console.log(`  ✅ Slack notification sent successfully${channel ? ` to ${channel}` : ''}`);
+      console.log(`  ✅ Slack notification sent successfully to ${targetChannel}`);
       return { sent: true, ts: result.ts, channelId: result.channelId };
     }
   } catch (error: any) {
     console.log(`  ⚠️ Slack notification error: ${error.message}`);
+    console.log(`  ⚠️ [DEBUG] Error stack: ${error.stack}`);
     return { sent: false };
   }
 }
@@ -3247,6 +3255,8 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             console.log(`  ⏱️ [TIMING] TOTAL match flow: ${Date.now() - matchFlowStart}ms`);
           } else {
             console.log(`  ❌ Slack notification FAILED for match ${insertedMatch?.id} - will retry later`);
+            console.log(`  ❌ [DEBUG] slackResult.sent=${slackResult.sent}, channel=${task.slack_channel}, matchId=${insertedMatch?.id}`);
+            console.log(`  ❌ [DEBUG] SLACK_BOT_TOKEN set: ${!!SLACK_BOT_TOKEN}, SLACK_WEBHOOK_URL set: ${!!SLACK_WEBHOOK_URL}`);
             console.log(`  ⏱️ [TIMING] Flow failed after: ${Date.now() - matchFlowStart}ms`);
           }
 
@@ -3413,10 +3423,8 @@ async function runOnce(): Promise<void> {
     // Record health metrics
     await recordHealthMetrics(cycleStartTime, successCount, errorCount, totalItemsFound, totalMatches, totalExcluded);
 
-    // Retry any failed notifications (every 10th cycle to avoid excessive checks)
-    if (Math.random() < 0.1) {
-      await retryFailedNotifications();
-    }
+    // Retry any failed notifications every cycle (was 10%, now 100%)
+    await retryFailedNotifications();
 
   } catch (error: any) {
     console.error('💥 Error in poll cycle:', error);
