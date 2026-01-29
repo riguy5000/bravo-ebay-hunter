@@ -3522,7 +3522,7 @@ if (process.argv.includes('--test-notification')) {
         console.log(`✅ ${i}/${count}: sent in ${elapsed}ms`);
       } else {
         results.failed++;
-        console.log(`❌ ${i}/${count}: FAILED - ${result.error || 'unknown error'}`);
+        console.log(`❌ ${i}/${count}: FAILED`);
       }
 
       // Small delay between messages to avoid obvious rate limiting
