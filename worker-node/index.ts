@@ -3658,6 +3658,140 @@ if (process.argv.includes('--test-notification')) {
 
     process.exit(slackResult.sent ? 0 : 1);
   })();
+} else if (process.argv.includes('--test-process-item')) {
+  // Test the REAL item processing flow: extraction → calculation → insert → notify
+  const argIndex = process.argv.indexOf('--test-process-item');
+  const channel = process.argv[argIndex + 1] || 'tester';
+
+  const TASK_ID = '51dd5383-4851-4049-8d90-bf0e455ede51';
+  const USER_ID = 'f155eca6-5792-45e1-bc33-17bd23a9c06d';
+
+  console.log('🧪 Testing REAL item processing flow');
+  console.log(`   Channel: ${channel}`);
+  console.log('');
+
+  (async () => {
+    const totalStart = Date.now();
+
+    // Fake item that looks like it came from eBay search
+    const fakeItem = {
+      itemId: 'TESTPROCESS' + Date.now(),
+      title: '14K Yellow Gold Chain Necklace 18" 5.5g - Test Item',
+      price: 150.00,
+      currency: 'USD',
+      listingUrl: 'https://www.ebay.com/itm/test123',
+      listingType: 'Buy It Now',
+      condition: 'Pre-owned',
+      shippingCost: 8.99,
+      shippingType: 'fixed',
+      itemCreationDate: new Date().toISOString(),
+      sellerInfo: { name: 'testseller', feedbackScore: 500 },
+    };
+
+    // Fake task
+    const fakeTask: any = {
+      id: TASK_ID,
+      user_id: USER_ID,
+      name: 'Test Task',
+      item_type: 'jewelry',
+      slack_channel: channel,
+      jewelry_filters: { metal: ['Yellow Gold'] },
+    };
+
+    console.log('Step 1: Extracting karat and weight...');
+    const extractStart = Date.now();
+    const karat = extractKarat(fakeItem.title, {}, '');
+    const weight = extractWeight(fakeItem.title, {}, '');
+    const extractTime = Date.now() - extractStart;
+    console.log(`   Karat: ${karat}, Weight: ${weight}g (${extractTime}ms)`);
+
+    console.log('Step 2: Detecting metal type...');
+    const metalStart = Date.now();
+    const metalInfo = detectMetalType(fakeItem.title, {});
+    const metalTime = Date.now() - metalStart;
+    console.log(`   Metal: ${metalInfo.type}, Purity: ${metalInfo.purity} (${metalTime}ms)`);
+
+    console.log('Step 3: Calculating melt value...');
+    const meltStart = Date.now();
+    const metalPrices = await getMetalPrices();
+    let meltValue: number | null = null;
+    if (karat && weight && metalPrices?.Gold) {
+      meltValue = calculateGoldMeltValue(karat, weight, metalPrices.Gold);
+    }
+    const breakEven = meltValue ? meltValue * 0.97 : null;
+    const meltTime = Date.now() - meltStart;
+    console.log(`   Melt: $${meltValue?.toFixed(2) || 'N/A'}, Break-even: $${breakEven?.toFixed(2) || 'N/A'} (${meltTime}ms)`);
+
+    console.log('Step 4: Creating match record...');
+    const recordStart = Date.now();
+    const matchData = createMatchRecord(fakeTask, {
+      ...fakeItem,
+      karat,
+      weight_g: weight,
+      metalType: metalInfo.type,
+      meltValue,
+      profitScrap: meltValue ? meltValue - (fakeItem.price + fakeItem.shippingCost) : null,
+      breakEven,
+      suggestedOffer: breakEven ? Math.floor(breakEven * 0.85) : null,
+    });
+    const recordTime = Date.now() - recordStart;
+    console.log(`   ✅ Record created (${recordTime}ms)`);
+
+    console.log('Step 5: Inserting into database...');
+    const insertStart = Date.now();
+    const { data: insertedMatch, error: insertError } = await supabase
+      .from('matches_jewelry')
+      .insert(matchData)
+      .select('id')
+      .single();
+    const insertTime = Date.now() - insertStart;
+
+    if (insertError) {
+      console.error(`   ❌ Insert FAILED: ${insertError.message}`);
+      process.exit(1);
+    }
+    console.log(`   ✅ Inserted (${insertTime}ms) ID: ${insertedMatch.id}`);
+
+    console.log('Step 6: Sending Slack notification...');
+    const notifyStart = Date.now();
+    const slackResult = await sendJewelrySlackNotification(
+      matchData, karat, weight, fakeItem.shippingCost, fakeItem.shippingType,
+      meltValue, channel, fakeItem.itemCreationDate
+    );
+    const notifyTime = Date.now() - notifyStart;
+
+    if (slackResult.sent) {
+      console.log(`   ✅ Notification sent (${notifyTime}ms) ts: ${slackResult.ts}`);
+    } else {
+      console.log(`   ❌ Notification FAILED (${notifyTime}ms)`);
+    }
+
+    console.log('Step 7: Updating notification_sent flag...');
+    const updateStart = Date.now();
+    if (slackResult.sent) {
+      await supabase
+        .from('matches_jewelry')
+        .update({ notification_sent: true, slack_message_ts: slackResult.ts })
+        .eq('id', insertedMatch.id);
+    }
+    const updateTime = Date.now() - updateStart;
+    console.log(`   ✅ Updated (${updateTime}ms)`);
+
+    const totalTime = Date.now() - totalStart;
+    console.log('');
+    console.log('📊 TIMING BREAKDOWN:');
+    console.log(`   1. Extract karat/weight:  ${extractTime}ms`);
+    console.log(`   2. Detect metal:          ${metalTime}ms`);
+    console.log(`   3. Calculate melt:        ${meltTime}ms`);
+    console.log(`   4. Create record:         ${recordTime}ms`);
+    console.log(`   5. DB insert:             ${insertTime}ms`);
+    console.log(`   6. Slack notification:    ${notifyTime}ms`);
+    console.log(`   7. DB update:             ${updateTime}ms`);
+    console.log(`   ─────────────────────────────`);
+    console.log(`   TOTAL:                    ${totalTime}ms`);
+
+    process.exit(0);
+  })();
 } else {
   // Start the worker
   main().catch(err => {
