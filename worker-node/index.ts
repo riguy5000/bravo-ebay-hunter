@@ -3011,7 +3011,10 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         }
 
         if (token) {
+          const fetchDetailsStart = Date.now();
           const itemDetails = await fetchItemDetails(item.itemId, token);
+          const fetchDetailsTime = Date.now() - fetchDetailsStart;
+          console.log(`  ⏱️ [TIMING] fetchItemDetails: ${fetchDetailsTime}ms ${itemDetails ? '(success)' : '(failed)'}`);
           if (itemDetails) {
             specs = extractItemSpecifics(itemDetails);
             description = itemDetails.description || '';
@@ -3199,11 +3202,17 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           suggestedOffer,
         });
 
+        // TIMING: Track the full match → notify flow
+        const matchFlowStart = Date.now();
+        console.log(`  ⏱️ [TIMING] Starting match flow at ${new Date().toISOString()}`);
+
+        const insertStart = Date.now();
         const { data: insertedMatch, error: insertError } = await supabase
           .from(tableName)
           .insert(matchData)
           .select('id')
           .single();
+        const insertTime = Date.now() - insertStart;
 
         if (insertError) {
           console.error('❌ Error inserting match:', insertError);
@@ -3211,11 +3220,15 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           const meltStr = meltValue ? `Melt: $${meltValue.toFixed(0)}` : '';
           const breakEvenStr = breakEven ? `BE: $${breakEven.toFixed(0)}` : '';
           console.log(`✅ Match: ${karat || '?'}K ${weight || '?'}g - $${item.price} ${meltStr} ${breakEvenStr}`);
+          console.log(`  ⏱️ [TIMING] DB insert: ${insertTime}ms`);
           newMatches++;
 
           // Send Slack notification for jewelry match
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
+          const notifyStart = Date.now();
           const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, item.itemCreationDate);
+          const notifyTime = Date.now() - notifyStart;
+          console.log(`  ⏱️ [TIMING] Slack API call: ${notifyTime}ms`);
 
           // Update notification_sent flag and Slack message tracking
           if (slackResult.sent && insertedMatch?.id) {
@@ -3223,13 +3236,18 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
             if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
 
+            const updateStart = Date.now();
             await supabase
               .from(tableName)
               .update(updateData)
               .eq('id', insertedMatch.id);
+            const updateTime = Date.now() - updateStart;
+            console.log(`  ⏱️ [TIMING] DB update: ${updateTime}ms`);
             console.log(`  ✅ Slack notification sent successfully (ts: ${slackResult.ts})`);
+            console.log(`  ⏱️ [TIMING] TOTAL match flow: ${Date.now() - matchFlowStart}ms`);
           } else {
             console.log(`  ❌ Slack notification FAILED for match ${insertedMatch?.id} - will retry later`);
+            console.log(`  ⏱️ [TIMING] Flow failed after: ${Date.now() - matchFlowStart}ms`);
           }
 
           // Rate limit delay for Slack (they silently drop messages if sent too fast)
