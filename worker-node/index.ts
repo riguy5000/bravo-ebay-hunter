@@ -3792,6 +3792,167 @@ if (process.argv.includes('--test-notification')) {
 
     process.exit(0);
   })();
+} else if (process.argv.includes('--test-edge-function')) {
+  // Test calling the eBay search edge function
+  console.log('🧪 Testing edge function (eBay search)...');
+  console.log('');
+
+  (async () => {
+    const searchParams = {
+      keywords: '14K gold ring',
+      maxPrice: 500,
+      minPrice: 10,
+      listingType: ['Auction', 'Fixed Price (BIN)'],
+      minFeedback: 0,
+      itemType: 'jewelry',
+    };
+
+    console.log('Step 1: Calling edge function...');
+    const start = Date.now();
+    const response = await supabase.functions.invoke('ebay-search', {
+      body: searchParams
+    });
+    const elapsed = Date.now() - start;
+
+    if (response.error) {
+      console.log(`   ❌ Error: ${response.error.message} (${elapsed}ms)`);
+      process.exit(1);
+    }
+
+    const items = response.data?.items || [];
+    console.log(`   ✅ Found ${items.length} items (${elapsed}ms)`);
+
+    if (items.length > 0) {
+      console.log('');
+      console.log('Sample items:');
+      for (let i = 0; i < Math.min(3, items.length); i++) {
+        console.log(`   ${i + 1}. ${items[i].title?.substring(0, 50)}... - $${items[i].price}`);
+      }
+    }
+
+    console.log('');
+    console.log('📊 RESULT:');
+    console.log(`   Edge function latency: ${elapsed}ms`);
+    console.log(`   Items returned: ${items.length}`);
+
+    process.exit(0);
+  })();
+} else if (process.argv.includes('--test-fetch-details')) {
+  // Test fetching item details from eBay API
+  const argIndex = process.argv.indexOf('--test-fetch-details');
+  const itemId = process.argv[argIndex + 1];
+
+  if (!itemId) {
+    console.log('Usage: --test-fetch-details <ebay_item_id>');
+    console.log('Example: --test-fetch-details v1|123456789|0');
+    process.exit(1);
+  }
+
+  console.log('🧪 Testing fetchItemDetails (eBay API)...');
+  console.log(`   Item ID: ${itemId}`);
+  console.log('');
+
+  (async () => {
+    console.log('Step 1: Getting eBay token...');
+    const tokenStart = Date.now();
+    const token = await getEbayToken();
+    const tokenTime = Date.now() - tokenStart;
+
+    if (!token) {
+      console.log(`   ❌ Failed to get token (${tokenTime}ms)`);
+      process.exit(1);
+    }
+    console.log(`   ✅ Token obtained (${tokenTime}ms)`);
+
+    console.log('Step 2: Fetching item details...');
+    const fetchStart = Date.now();
+    const details = await fetchItemDetails(itemId, token);
+    const fetchTime = Date.now() - fetchStart;
+
+    if (!details) {
+      console.log(`   ❌ Failed to fetch details (${fetchTime}ms)`);
+      process.exit(1);
+    }
+    console.log(`   ✅ Details fetched (${fetchTime}ms)`);
+
+    console.log('Step 3: Extracting specs...');
+    const specsStart = Date.now();
+    const specs = extractItemSpecifics(details);
+    const specsTime = Date.now() - specsStart;
+    console.log(`   ✅ Specs extracted: ${Object.keys(specs).length} fields (${specsTime}ms)`);
+
+    console.log('');
+    console.log('📊 TIMING:');
+    console.log(`   Get token:      ${tokenTime}ms`);
+    console.log(`   Fetch details:  ${fetchTime}ms`);
+    console.log(`   Extract specs:  ${specsTime}ms`);
+    console.log(`   TOTAL:          ${tokenTime + fetchTime + specsTime}ms`);
+
+    if (Object.keys(specs).length > 0) {
+      console.log('');
+      console.log('📋 Item specs:');
+      for (const [key, value] of Object.entries(specs).slice(0, 10)) {
+        console.log(`   ${key}: ${value}`);
+      }
+    }
+
+    process.exit(0);
+  })();
+} else if (process.argv.includes('--test-retry')) {
+  // Test the retry mechanism timing
+  console.log('🧪 Testing retry mechanism...');
+  console.log('');
+  console.log('This test inserts a match with notification_sent=false');
+  console.log('and measures how long until retry picks it up.');
+  console.log('');
+
+  const TASK_ID = '51dd5383-4851-4049-8d90-bf0e455ede51';
+  const USER_ID = 'f155eca6-5792-45e1-bc33-17bd23a9c06d';
+
+  (async () => {
+    // Insert match with notification_sent = false
+    const matchData = {
+      task_id: TASK_ID,
+      user_id: USER_ID,
+      ebay_listing_id: 'RETRY_TEST_' + Date.now(),
+      ebay_title: '14K Gold Retry Test - Waiting for retry',
+      ebay_url: 'https://www.ebay.com/itm/test',
+      listed_price: 99.99,
+      shipping_cost: 8.99,
+      currency: 'USD',
+      buy_format: 'Buy It Now',
+      seller_feedback: 500,
+      found_at: new Date().toISOString(),
+      status: 'new',
+      notification_sent: false,  // This triggers retry
+      karat: 14,
+      weight_g: 5.5,
+      metal_type: 'gold',
+    };
+
+    console.log('Step 1: Inserting match with notification_sent=false...');
+    const { data: inserted, error } = await supabase
+      .from('matches_jewelry')
+      .insert(matchData)
+      .select('id')
+      .single();
+
+    if (error) {
+      console.log(`   ❌ Insert failed: ${error.message}`);
+      process.exit(1);
+    }
+    console.log(`   ✅ Inserted match ID: ${inserted.id}`);
+    console.log('');
+    console.log('Now watch the worker logs for retry:');
+    console.log('   pm2 logs worker --lines 0');
+    console.log('');
+    console.log('The retry runs ~10% of poll cycles (every ~10 mins on average).');
+    console.log('When it runs, you\'ll see:');
+    console.log('   🔄 Checking for failed notifications to retry...');
+    console.log('   📋 Found 1 jewelry matches to retry');
+
+    process.exit(0);
+  })();
 } else {
   // Start the worker
   main().catch(err => {
