@@ -2267,11 +2267,15 @@ const fetchItemDetails = async (itemId: string, token: string, includeShipping: 
       }
     });
 
-    // Log API call to api_usage table (fire and forget - don't await)
-    void supabase.from('api_usage').insert({
+    // Log API call to api_usage table
+    supabase.from('api_usage').insert({
       api_key_label: keyLabel,
       call_type: 'item_detail',
-      endpoint: `/buy/browse/v1/item/${itemId}`
+      endpoint: `/buy/browse/v1/item/${itemId}`,
+      date_bucket: new Date().toISOString().split('T')[0],
+      source: 'worker'
+    }).then(({ error }) => {
+      if (error) console.log(`⚠️ API usage log failed: ${error.message}`);
     });
 
     if (!response.ok) {
