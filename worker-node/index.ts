@@ -2616,6 +2616,8 @@ interface TaskStats {
 }
 
 const processTask = async (task: Task): Promise<TaskStats> => {
+  // Track when the scan starts for latency calculation
+  const scanStartTime = Date.now();
   console.log(`🔄 Processing task: ${task.name} (${task.id}) - Type: ${task.item_type}`);
 
   // Ensure task has a Slack channel (creates one if needed)
@@ -2985,7 +2987,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
           // Send Slack notification for gemstone match
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
-          const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, matchFlowStart);
+          const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, scanStartTime);
 
           // Update notification_sent flag and Slack message tracking
           if (slackResult.sent && insertedMatch?.id) {
@@ -3247,7 +3249,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           // Send Slack notification for jewelry match
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
           const notifyStart = Date.now();
-          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, matchFlowStart);
+          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
           const notifyTime = Date.now() - notifyStart;
           console.log(`  ⏱️ [TIMING] Slack API call: ${notifyTime}ms`);
 
