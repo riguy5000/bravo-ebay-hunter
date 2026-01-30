@@ -2682,6 +2682,10 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
         console.log(`🎯 Search [${metal}]: ${metalSearchParams.keywords}`);
 
+        // Rate limit delay before each search to conserve API quota
+        console.log(`⏳ Waiting 30s before search to conserve quota...`);
+        await new Promise(resolve => setTimeout(resolve, 30000));
+
         const searchResponse = await supabase.functions.invoke('ebay-search', {
           body: metalSearchParams
         });
@@ -2718,6 +2722,10 @@ const processTask = async (task: Task): Promise<TaskStats> => {
     } else {
       // Single search (non-jewelry or single metal)
       console.log(`🎯 Search: ${searchParams.keywords}`);
+
+      // Rate limit delay before each search to conserve API quota
+      console.log(`⏳ Waiting 30s before search to conserve quota...`);
+      await new Promise(resolve => setTimeout(resolve, 30000));
 
       const searchResponse = await supabase.functions.invoke('ebay-search', {
         body: searchParams
