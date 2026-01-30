@@ -813,17 +813,20 @@ const tryApiKeyRequest = async (apiKey: EbayApiKey, searchParams: SearchRequest)
       
       if (isRateLimited) {
         await updateKeyUsage(apiKey, false, true, false);
+        await logApiUsage(apiKey.label, 'search', 'browse/search (rate_limited)');
         console.log(`API key "${apiKey.label}" hit eBay rate limit`);
         return { items: [], success: false, rateLimited: true, authError: false, errorType: 'rate_limit' };
       }
-      
+
       if (isAuthError) {
         await updateKeyUsage(apiKey, false, false, true);
+        await logApiUsage(apiKey.label, 'search', 'browse/search (auth_error)');
         console.log(`API key "${apiKey.label}" has authentication issues`);
         return { items: [], success: false, rateLimited: false, authError: true, errorType: 'auth_error' };
       }
-      
+
       await updateKeyUsage(apiKey, false, false, false);
+      await logApiUsage(apiKey.label, 'search', 'browse/search (error)');
       throw new Error(`eBay Browse API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
