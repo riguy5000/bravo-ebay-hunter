@@ -51,14 +51,13 @@ function logTestListing(item: any, message: string): void {
 // Slack Notification Functions
 // ============================================
 
-// Helper function to calculate latency from item creation to now
-function calculateLatency(itemCreationDate?: string | null): string {
-  if (!itemCreationDate) return 'N/A';
+// Helper function to calculate latency from scan start to now (notification sent)
+function calculateLatency(scanStartTime?: number | null): string {
+  if (!scanStartTime) return 'N/A';
 
   try {
-    const listingTime = new Date(itemCreationDate).getTime();
     const now = Date.now();
-    const latencyMs = now - listingTime;
+    const latencyMs = now - scanStartTime;
 
     if (latencyMs < 0) return 'N/A'; // Future date (shouldn't happen)
 
@@ -357,7 +356,7 @@ async function sendJewelrySlackNotification(
   shippingType: string | undefined,
   meltValue: number | null,
   channel?: string,
-  itemCreationDate?: string | null
+  scanStartTime?: number | null
 ): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
   if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) {
     console.log('  ⚠️ Slack not configured, skipping notification');
@@ -367,8 +366,8 @@ async function sendJewelrySlackNotification(
   console.log(`  📤 Sending Slack notification for: ${match.ebay_title.substring(0, 50)}...`);
 
   try {
-    // Calculate latency (time from item listed on eBay to notification)
-    const latency = calculateLatency(itemCreationDate);
+    // Calculate latency (time from scan start to notification sent)
+    const latency = calculateLatency(scanStartTime);
 
     // Determine if shipping is known (free or fixed with a value)
     const shippingKnown = shippingType === 'free' || (shippingCost !== undefined && shippingType !== 'calculated');
@@ -418,7 +417,7 @@ async function sendJewelrySlackNotification(
               elements: [
                 {
                   type: "mrkdwn",
-                  text: `⏱️ Latency: *${latency}*`
+                  text: `⏱️ Scan→Notify: *${latency}*`
                 }
               ]
             },
@@ -467,13 +466,13 @@ async function sendGemstoneSlackNotification(
   dealScore: number,
   riskScore: number,
   channel?: string,
-  itemCreationDate?: string | null
+  scanStartTime?: number | null
 ): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
   if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return { sent: false };
 
   try {
-    // Calculate latency (time from item listed on eBay to notification)
-    const latency = calculateLatency(itemCreationDate);
+    // Calculate latency (time from scan start to notification sent)
+    const latency = calculateLatency(scanStartTime);
 
     const scoreEmoji = dealScore >= 80 ? '🔥' : dealScore >= 60 ? '💎' : '📋';
     const riskEmoji = riskScore >= 50 ? '⚠️' : riskScore >= 30 ? '🔶' : '✅';
@@ -507,7 +506,7 @@ async function sendGemstoneSlackNotification(
           elements: [
             {
               type: "mrkdwn",
-              text: `⏱️ Latency: *${latency}*`
+              text: `⏱️ Scan→Notify: *${latency}*`
             }
           ]
         },
@@ -563,6 +562,7 @@ async function retryFailedNotifications(): Promise<void> {
       const shippingKnown = match.shipping_cost !== null;
       const slackChannel = (match.tasks as any)?.slack_channel;
       console.log(`  🔄 Retrying notification for match ${match.id} to channel: ${slackChannel || 'default'}...`);
+      const retryStartTime = Date.now();
       const slackResult = await sendJewelrySlackNotification(
         match,
         match.karat,
@@ -571,7 +571,7 @@ async function retryFailedNotifications(): Promise<void> {
         shippingKnown ? 'fixed' : undefined,  // Infer type from stored data
         match.melt_value,
         slackChannel,
-        match.item_creation_date
+        retryStartTime
       );
 
       if (slackResult.sent) {
@@ -622,7 +622,8 @@ async function retryFailedNotifications(): Promise<void> {
       const slackChannel = (match.tasks as any)?.slack_channel;
       // Actually send the notification and mark as sent
       console.log(`  🔄 Retrying gemstone notification for match ${match.id} to channel: ${slackChannel || 'default'}...`);
-      const slackResult = await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0, slackChannel, match.item_creation_date);
+      const retryStartTime = Date.now();
+      const slackResult = await sendGemstoneSlackNotification(match, stone, match.deal_score || 0, match.risk_score || 0, slackChannel, retryStartTime);
 
       if (slackResult.sent) {
         const updateData: any = { notification_sent: true };
@@ -2252,6 +2253,9 @@ const fetchItemDetails = async (itemId: string, token: string, includeShipping: 
     return cached;
   }
 
+  // Get current key label for logging
+  const keyLabel = cachedToken?.keyLabel || 'unknown';
+
   try {
     const url = `https://api.ebay.com/buy/browse/v1/item/${itemId}`;
     const response = await fetch(url, {
@@ -2261,6 +2265,13 @@ const fetchItemDetails = async (itemId: string, token: string, includeShipping: 
         'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country=US,zip=10001',
         'Content-Type': 'application/json'
       }
+    });
+
+    // Log API call to api_usage table (fire and forget - don't await)
+    void supabase.from('api_usage').insert({
+      api_key_label: keyLabel,
+      call_type: 'item_detail',
+      endpoint: `/buy/browse/v1/item/${itemId}`
     });
 
     if (!response.ok) {
@@ -2544,7 +2555,7 @@ const createMatchRecord = (task: Task, item: any, stone?: any, dealScore?: numbe
     buy_format: item.listingType || 'Unknown',
     seller_feedback: item.sellerInfo?.feedbackScore || 0,
     found_at: new Date().toISOString(),
-    item_creation_date: item.itemCreationDate || null, // When item was listed on eBay (for latency tracking)
+    item_creation_date: item.itemCreationDate || null, // When item was listed on eBay (stored for reference)
     status: 'new' as const,
     notification_sent: false, // Track if Slack notification was sent
   };
@@ -2958,6 +2969,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
         // Create match record
         const matchData = createMatchRecord(task, item, stone, dealScore, riskScore);
+        const matchFlowStart = Date.now();
         const { data: insertedMatch, error: insertError } = await supabase
           .from(tableName)
           .insert(matchData)
@@ -2972,7 +2984,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
           // Send Slack notification for gemstone match
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
-          const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, item.itemCreationDate);
+          const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, matchFlowStart);
 
           // Update notification_sent flag and Slack message tracking
           if (slackResult.sent && insertedMatch?.id) {
@@ -3234,7 +3246,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           // Send Slack notification for jewelry match
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
           const notifyStart = Date.now();
-          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, item.itemCreationDate);
+          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, matchFlowStart);
           const notifyTime = Date.now() - notifyStart;
           console.log(`  ⏱️ [TIMING] Slack API call: ${notifyTime}ms`);
 
@@ -3538,7 +3550,7 @@ if (process.argv.includes('--test-notification')) {
         'fixed',      // shipping type
         250.00,       // melt value
         channel,      // slack channel
-        new Date().toISOString()  // item creation date
+        start         // scan start time
       );
       const elapsed = Date.now() - start;
 
@@ -3638,7 +3650,7 @@ if (process.argv.includes('--test-notification')) {
       'fixed',
       250.00,
       channel,
-      matchData.item_creation_date
+      insertStart  // scan start time (when we started processing)
     );
     const notifyTime = Date.now() - notifyStart;
 
@@ -3782,7 +3794,7 @@ if (process.argv.includes('--test-notification')) {
     const notifyStart = Date.now();
     const slackResult = await sendJewelrySlackNotification(
       matchData, karat, weight, fakeItem.shippingCost, fakeItem.shippingType,
-      meltValue, channel, fakeItem.itemCreationDate
+      meltValue, channel, insertStart  // scan start time
     );
     const notifyTime = Date.now() - notifyStart;
 
@@ -3977,6 +3989,224 @@ if (process.argv.includes('--test-notification')) {
     console.log('   🔄 Checking for failed notifications to retry...');
     console.log('   📋 Found 1 jewelry matches to retry');
 
+    process.exit(0);
+  })();
+} else if (process.argv.includes('--ebay-limits')) {
+  // Check rate limits directly from eBay API
+  console.log('🔍 Checking eBay API Rate Limits (from eBay)...');
+  console.log('');
+
+  (async () => {
+    // Get fresh token
+    console.log('Getting fresh token...');
+    const token = await getEbayToken();
+    if (!token) {
+      console.log('❌ Failed to get token');
+      process.exit(1);
+    }
+    console.log('✅ Got token');
+    console.log('');
+
+    // Try Analytics API first
+    console.log('Trying eBay Analytics API...');
+    const analyticsResponse = await fetch('https://api.ebay.com/developer/analytics/v1_beta/rate_limit/', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log(`Analytics API status: ${analyticsResponse.status}`);
+    const analyticsText = await analyticsResponse.text();
+    if (analyticsText) {
+      console.log('Analytics response:');
+      console.log(analyticsText);
+    } else {
+      console.log('Analytics API returned no data (204)');
+    }
+
+    // Also make a test Browse API call to see rate limit headers
+    console.log('');
+    console.log('Making test Browse API call to check rate limit headers...');
+    const browseResponse = await fetch('https://api.ebay.com/buy/browse/v1/item_summary/search?q=test&limit=1', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log(`Browse API status: ${browseResponse.status}`);
+    console.log('');
+    console.log('Rate Limit Headers:');
+    const rateLimitHeaders = [
+      'x-ebay-c-request-id',
+      'x-ratelimit-limit',
+      'x-ratelimit-remaining',
+      'x-ratelimit-reset',
+      'ratelimit-limit',
+      'ratelimit-remaining',
+      'ratelimit-reset'
+    ];
+
+    for (const [key, value] of browseResponse.headers.entries()) {
+      if (key.toLowerCase().includes('rate') || key.toLowerCase().includes('limit') || key.toLowerCase().includes('quota')) {
+        console.log(`  ${key}: ${value}`);
+      }
+    }
+
+    console.log('');
+    console.log('All response headers:');
+    for (const [key, value] of browseResponse.headers.entries()) {
+      console.log(`  ${key}: ${value}`);
+    }
+
+    process.exit(0);
+  })();
+} else if (process.argv.includes('--check-keys')) {
+  // Check status of all eBay API keys
+  console.log('🔑 Checking eBay API Keys Status...');
+  console.log('');
+
+  (async () => {
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('value_json')
+      .eq('key', 'ebay_keys')
+      .single();
+
+    if (!settings?.value_json?.keys) {
+      console.log('❌ No eBay keys found in settings');
+      process.exit(1);
+    }
+
+    const keys = settings.value_json.keys;
+    const DAILY_LIMIT = 5000;
+
+    console.log(`Found ${keys.length} API keys:\n`);
+    console.log('Label'.padEnd(20) + 'Status'.padEnd(15) + 'Calls Today'.padEnd(15) + 'Remaining'.padEnd(12) + 'Rate Limited At');
+    console.log('-'.repeat(80));
+
+    let totalCalls = 0;
+    let totalRemaining = 0;
+    let activeKeys = 0;
+    let rateLimitedKeys = 0;
+
+    for (const key of keys) {
+      const label = (key.label || 'Unknown').padEnd(20);
+      const status = (key.status || 'unknown').padEnd(15);
+      const calls = key.calls_today || 0;
+      const remaining = Math.max(0, DAILY_LIMIT - calls);
+      const callsStr = String(calls).padEnd(15);
+      const remainingStr = String(remaining).padEnd(12);
+      const rateLimitedAt = key.rate_limited_at ? new Date(key.rate_limited_at).toLocaleString() : '-';
+
+      console.log(`${label}${status}${callsStr}${remainingStr}${rateLimitedAt}`);
+
+      totalCalls += calls;
+      totalRemaining += remaining;
+      if (key.status === 'active') activeKeys++;
+      if (key.status === 'rate_limited') rateLimitedKeys++;
+    }
+
+    console.log('-'.repeat(80));
+    console.log(`${'TOTAL'.padEnd(20)}${' '.padEnd(15)}${String(totalCalls).padEnd(15)}${String(totalRemaining).padEnd(12)}`);
+    console.log('');
+    console.log(`📊 Summary:`);
+    console.log(`   Active keys:       ${activeKeys}`);
+    console.log(`   Rate limited keys: ${rateLimitedKeys}`);
+    console.log(`   Total calls today: ${totalCalls}`);
+    console.log(`   Total remaining:   ${totalRemaining}`);
+    console.log(`   Daily limit/key:   ${DAILY_LIMIT}`);
+
+    // Also show hourly breakdown from api_usage table
+    console.log('');
+    console.log('📈 Last 6 hours API usage (from api_usage table):');
+    console.log('');
+
+    const { data: hourlyUsage } = await supabase
+      .from('api_usage')
+      .select('api_key_label, call_type, called_at')
+      .gte('called_at', new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString());
+
+    if (hourlyUsage && hourlyUsage.length > 0) {
+      // Group by hour
+      const byHour: Record<string, { search: number; item_detail: number }> = {};
+      for (const row of hourlyUsage) {
+        const hour = new Date(row.called_at).toISOString().slice(0, 13) + ':00';
+        if (!byHour[hour]) byHour[hour] = { search: 0, item_detail: 0 };
+        if (row.call_type === 'search') byHour[hour].search++;
+        else if (row.call_type === 'item_detail') byHour[hour].item_detail++;
+      }
+
+      console.log('Hour (UTC)'.padEnd(20) + 'Searches'.padEnd(12) + 'Details'.padEnd(12) + 'Total');
+      console.log('-'.repeat(55));
+
+      const hours = Object.keys(byHour).sort().reverse();
+      for (const hour of hours) {
+        const data = byHour[hour];
+        const total = data.search + data.item_detail;
+        console.log(`${hour.padEnd(20)}${String(data.search).padEnd(12)}${String(data.item_detail).padEnd(12)}${total}`);
+      }
+    } else {
+      console.log('   No usage data in last 6 hours');
+    }
+
+    process.exit(0);
+  })();
+} else if (process.argv.includes('--reset-keys')) {
+  // Reset rate-limited keys back to active
+  console.log('🔄 Resetting rate-limited API keys...');
+  console.log('');
+
+  (async () => {
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('value_json')
+      .eq('key', 'ebay_keys')
+      .single();
+
+    if (!settings?.value_json?.keys) {
+      console.log('❌ No eBay keys found in settings');
+      process.exit(1);
+    }
+
+    const config = settings.value_json;
+    let resetCount = 0;
+
+    // Reset all keys except API7 (which has auth error - invalid credentials)
+    const updatedKeys = config.keys.map((key: any) => {
+      if (key.label === 'API7') {
+        console.log('⏭️  Skipping API7 (has auth error - needs credential fix)');
+        return key;
+      }
+
+      if (key.status === 'rate_limited' || key.status === 'RATE_LIMITED') {
+        console.log(`✅ Resetting ${key.label} from rate_limited to active`);
+        resetCount++;
+        return { ...key, status: 'active', rate_limited_at: null };
+      }
+
+      console.log(`⏭️  ${key.label} already ${key.status}`);
+      return key;
+    });
+
+    const { error: updateError } = await supabase
+      .from('settings')
+      .update({
+        value_json: { ...config, keys: updatedKeys },
+        updated_at: new Date().toISOString()
+      })
+      .eq('key', 'ebay_keys');
+
+    if (updateError) {
+      console.log('❌ Update error:', updateError.message);
+      process.exit(1);
+    }
+
+    console.log('');
+    console.log(`✅ Done! Reset ${resetCount} keys to active status.`);
+    console.log('You can now restart the worker with: pm2 restart ebay-worker');
     process.exit(0);
   })();
 } else {
