@@ -4209,6 +4209,117 @@ if (process.argv.includes('--test-notification')) {
     console.log('You can now restart the worker with: pm2 restart ebay-worker');
     process.exit(0);
   })();
+} else if (process.argv.includes('--test-keys')) {
+  // Test each API key by attempting OAuth and a simple API call
+  console.log('🧪 Testing all eBay API keys...');
+  console.log('');
+
+  (async () => {
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('value_json')
+      .eq('key', 'ebay_keys')
+      .single();
+
+    if (!settings?.value_json?.keys) {
+      console.log('❌ No eBay keys found in settings');
+      process.exit(1);
+    }
+
+    const keys = settings.value_json.keys;
+    const results: { label: string; oauth: string; api: string; error?: string }[] = [];
+
+    console.log(`Testing ${keys.length} API keys...\n`);
+
+    for (const key of keys) {
+      const label = key.label || 'Unknown';
+      process.stdout.write(`Testing ${label}... `);
+
+      // Step 1: Try to get OAuth token
+      let token: string | null = null;
+      let oauthStatus = '❌';
+      let apiStatus = '-';
+      let errorMsg = '';
+
+      try {
+        const credentials = Buffer.from(`${key.app_id}:${key.cert_id}`).toString('base64');
+        const tokenResponse = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Authorization': `Basic ${credentials}`
+          },
+          body: new URLSearchParams({
+            grant_type: 'client_credentials',
+            scope: 'https://api.ebay.com/oauth/api_scope'
+          })
+        });
+
+        if (tokenResponse.ok) {
+          const tokenData: any = await tokenResponse.json();
+          token = tokenData.access_token;
+          oauthStatus = '✅';
+        } else {
+          const errorText = await tokenResponse.text();
+          errorMsg = `OAuth ${tokenResponse.status}: ${errorText.substring(0, 100)}`;
+          oauthStatus = '❌';
+        }
+      } catch (e: any) {
+        errorMsg = `OAuth error: ${e.message}`;
+        oauthStatus = '❌';
+      }
+
+      // Step 2: If we got a token, try a simple API call
+      if (token) {
+        try {
+          const searchResponse = await fetch(
+            'https://api.ebay.com/buy/browse/v1/item_summary/search?q=test&limit=1',
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          if (searchResponse.ok) {
+            apiStatus = '✅';
+          } else if (searchResponse.status === 429) {
+            apiStatus = '⚠️ RATE LIMITED';
+          } else {
+            const errorText = await searchResponse.text();
+            apiStatus = '❌';
+            errorMsg = `API ${searchResponse.status}: ${errorText.substring(0, 100)}`;
+          }
+        } catch (e: any) {
+          apiStatus = '❌';
+          errorMsg = `API error: ${e.message}`;
+        }
+      }
+
+      results.push({ label, oauth: oauthStatus, api: apiStatus, error: errorMsg });
+      console.log(`OAuth: ${oauthStatus}  API: ${apiStatus}${errorMsg ? `  (${errorMsg})` : ''}`);
+
+      // Small delay between tests to avoid hammering the API
+      await new Promise(r => setTimeout(r, 500));
+    }
+
+    // Summary
+    console.log('\n' + '='.repeat(60));
+    console.log('Summary:');
+    const working = results.filter(r => r.oauth === '✅' && r.api === '✅').length;
+    const authFailed = results.filter(r => r.oauth === '❌').length;
+    const rateLimited = results.filter(r => r.api.includes('RATE LIMITED')).length;
+    const apiFailed = results.filter(r => r.oauth === '✅' && r.api === '❌').length;
+
+    console.log(`  ✅ Working:      ${working}`);
+    console.log(`  ❌ Auth failed:  ${authFailed}`);
+    console.log(`  ⚠️  Rate limited: ${rateLimited}`);
+    console.log(`  ❌ API failed:   ${apiFailed}`);
+
+    process.exit(0);
+  })();
 } else {
   // Start the worker
   main().catch(err => {
