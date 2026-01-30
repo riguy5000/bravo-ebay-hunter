@@ -38,6 +38,7 @@ export const EbayApiKeysList: React.FC<EbayApiKeysListProps> = ({ keys, onEdit, 
           keywords: 'test jewelry',
           maxPrice: 50,
           minFeedback: 0,
+          source: 'web-ui',
           testKey: {
             app_id: apiKey.app_id,
             dev_id: apiKey.dev_id,

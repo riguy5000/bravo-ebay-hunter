@@ -2642,6 +2642,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
       dateFrom: dateFrom,
       dateTo: task.date_to,
       itemType: task.item_type,
+      source: 'worker', // Track that this call came from the DO worker
       typeSpecificFilters: task.item_type === 'watch' ? task.watch_filters :
                           task.item_type === 'jewelry' ? task.jewelry_filters :
                           task.item_type === 'gemstone' ? task.gemstone_filters : null,

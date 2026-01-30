@@ -19,6 +19,7 @@ interface SearchRequest {
   typeSpecificFilters?: any;
   dateFrom?: string;
   offset?: number; // Pagination offset (0, 200, 400, etc.)
+  source?: string; // Source of the call: 'worker', 'web-ui', etc.
   testKey?: {
     app_id: string;
     dev_id: string;
@@ -220,13 +221,17 @@ const selectApiKey = (keys: EbayApiKey[], strategy: string = 'round_robin'): { k
 };
 
 // Log API call to api_usage table for historical tracking
+// source: 'worker' = DO worker, 'web-ui' = web app UI, 'test' = key testing
+let currentSource = 'unknown'; // Module-level variable to pass source through
+
 const logApiUsage = async (apiKeyLabel: string, callType: string, endpoint: string) => {
   try {
     const { error } = await supabase.from('api_usage').insert({
       api_key_label: apiKeyLabel || 'unknown',
       call_type: callType,
       endpoint: endpoint,
-      date_bucket: new Date().toISOString().split('T')[0]
+      date_bucket: new Date().toISOString().split('T')[0],
+      source: currentSource
     });
     if (error) {
       console.log(`⚠️ API usage log failed: ${error.message}`);
@@ -911,6 +916,10 @@ const handler = async (req: Request): Promise<Response> => {
   try {
     const searchParams: SearchRequest = await req.json();
     console.log('🔍 eBay search request params:', JSON.stringify(searchParams, null, 2));
+
+    // Set source for API usage logging
+    currentSource = searchParams.source || 'unknown';
+    console.log(`📍 Request source: ${currentSource}`);
 
     if (searchParams.testKey) {
       console.log('🧪 Testing specific API key set:', searchParams.testKey.app_id.substring(0, 10) + '...');
