@@ -4320,6 +4320,129 @@ if (process.argv.includes('--test-notification')) {
 
     process.exit(0);
   })();
+} else if (process.argv.includes('--diagnose')) {
+  // Diagnose rate limiting - show detailed call patterns
+  console.log('🔍 Diagnosing API rate limiting...\n');
+
+  (async () => {
+    // Get key status
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('value_json')
+      .eq('key', 'ebay_keys')
+      .single();
+
+    if (!settings?.value_json?.keys) {
+      console.log('❌ No eBay keys found');
+      process.exit(1);
+    }
+
+    const keys = settings.value_json.keys;
+
+    // Show when each key was rate limited
+    console.log('📊 Key Rate Limit Times:\n');
+    console.log('Key'.padEnd(15) + 'Status'.padEnd(15) + 'Rate Limited At'.padEnd(25) + 'Calls Today');
+    console.log('-'.repeat(70));
+
+    for (const key of keys) {
+      const label = (key.label || 'Unknown').padEnd(15);
+      const status = (key.status || 'unknown').padEnd(15);
+      const rateLimitedAt = key.rate_limited_at
+        ? new Date(key.rate_limited_at).toLocaleString()
+        : '-';
+      console.log(`${label}${status}${rateLimitedAt.padEnd(25)}${key.calls_today || 0}`);
+    }
+
+    // Get calls from the last 24 hours grouped by hour and key
+    console.log('\n\n📈 Calls per hour (last 24h) from api_usage table:\n');
+
+    const { data: usage } = await supabase
+      .from('api_usage')
+      .select('api_key_label, call_type, called_at')
+      .gte('called_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .order('called_at', { ascending: true });
+
+    if (!usage || usage.length === 0) {
+      console.log('No usage data in last 24 hours');
+    } else {
+      // Group by hour
+      const byHour: Record<string, number> = {};
+      const byKeyAndHour: Record<string, Record<string, number>> = {};
+
+      for (const row of usage) {
+        const hour = row.called_at.slice(0, 13); // YYYY-MM-DDTHH
+        byHour[hour] = (byHour[hour] || 0) + 1;
+
+        if (!byKeyAndHour[row.api_key_label]) byKeyAndHour[row.api_key_label] = {};
+        byKeyAndHour[row.api_key_label][hour] = (byKeyAndHour[row.api_key_label][hour] || 0) + 1;
+      }
+
+      console.log('Hour (UTC)'.padEnd(18) + 'Total Calls');
+      console.log('-'.repeat(35));
+
+      const hours = Object.keys(byHour).sort();
+      for (const hour of hours) {
+        const marker = byHour[hour] > 500 ? ' ⚠️ HIGH' : '';
+        console.log(`${hour.padEnd(18)}${byHour[hour]}${marker}`);
+      }
+
+      // Find burst patterns - calls per minute around rate limit times
+      console.log('\n\n🔥 Burst Analysis (calls per minute when rate limits hit):\n');
+
+      const rateLimitedKeys = keys.filter((k: any) => k.rate_limited_at);
+      if (rateLimitedKeys.length === 0) {
+        console.log('No keys currently rate limited');
+      } else {
+        for (const key of rateLimitedKeys.slice(0, 3)) { // Check first 3
+          const rateLimitTime = new Date(key.rate_limited_at).getTime();
+          const windowStart = new Date(rateLimitTime - 5 * 60 * 1000).toISOString();
+          const windowEnd = new Date(rateLimitTime + 5 * 60 * 1000).toISOString();
+
+          const { data: burstData } = await supabase
+            .from('api_usage')
+            .select('called_at')
+            .gte('called_at', windowStart)
+            .lte('called_at', windowEnd)
+            .order('called_at', { ascending: true });
+
+          if (burstData && burstData.length > 0) {
+            console.log(`${key.label} (rate limited at ${new Date(key.rate_limited_at).toLocaleTimeString()}):`);
+
+            const byMinute: Record<string, number> = {};
+            for (const row of burstData) {
+              const minute = row.called_at.slice(0, 16); // YYYY-MM-DDTHH:MM
+              byMinute[minute] = (byMinute[minute] || 0) + 1;
+            }
+
+            const minutes = Object.keys(byMinute).sort();
+            for (const m of minutes) {
+              const marker = byMinute[m] > 20 ? ' ⚠️' : '';
+              console.log(`  ${m.slice(11)}: ${byMinute[m]} calls${marker}`);
+            }
+            console.log('');
+          }
+        }
+      }
+
+      // Total calls today
+      console.log('\n📊 Summary:');
+      console.log(`Total API calls in last 24h: ${usage.length}`);
+      console.log(`Unique keys used: ${Object.keys(byKeyAndHour).length}`);
+
+      // Check for any minute with > 30 calls (potential burst)
+      const byMinute: Record<string, number> = {};
+      for (const row of usage) {
+        const minute = row.called_at.slice(0, 16);
+        byMinute[minute] = (byMinute[minute] || 0) + 1;
+      }
+      const highMinutes = Object.entries(byMinute).filter(([_, count]) => count > 30);
+      if (highMinutes.length > 0) {
+        console.log(`\n⚠️  Found ${highMinutes.length} minutes with >30 calls (possible burst triggers)`);
+      }
+    }
+
+    process.exit(0);
+  })();
 } else {
   // Start the worker
   main().catch(err => {
