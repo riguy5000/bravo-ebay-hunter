@@ -3007,11 +3007,16 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
             if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
 
-            await supabase
+            const { error: updateError } = await supabase
               .from(tableName)
               .update(updateData)
               .eq('id', insertedMatch.id);
-            console.log(`  ✅ Slack notification sent successfully (ts: ${slackResult.ts})`);
+
+            if (updateError) {
+              console.log(`  ⚠️ DB update failed: ${updateError.message} - notification_sent will stay false`);
+            } else {
+              console.log(`  ✅ Slack notification sent successfully (ts: ${slackResult.ts})`);
+            }
           } else {
             console.log(`  ❌ Slack notification FAILED for gemstone match ${insertedMatch?.id} - will retry later`);
           }
@@ -3272,13 +3277,18 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
 
             const updateStart = Date.now();
-            await supabase
+            const { error: updateError } = await supabase
               .from(tableName)
               .update(updateData)
               .eq('id', insertedMatch.id);
             const updateTime = Date.now() - updateStart;
-            console.log(`  ⏱️ [TIMING] DB update: ${updateTime}ms`);
-            console.log(`  ✅ Slack notification sent successfully (ts: ${slackResult.ts})`);
+
+            if (updateError) {
+              console.log(`  ⚠️ DB update failed: ${updateError.message} - notification_sent will stay false`);
+            } else {
+              console.log(`  ⏱️ [TIMING] DB update: ${updateTime}ms`);
+              console.log(`  ✅ Slack notification sent successfully (ts: ${slackResult.ts})`);
+            }
             console.log(`  ⏱️ [TIMING] TOTAL match flow: ${Date.now() - matchFlowStart}ms`);
           } else {
             console.log(`  ❌ Slack notification FAILED for match ${insertedMatch?.id} - will retry later`);
