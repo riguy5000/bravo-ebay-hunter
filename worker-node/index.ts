@@ -413,15 +413,6 @@ async function sendJewelrySlackNotification(
               }
             },
             {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: `⏱️ Scan→Notify: *${latency}*`
-                }
-              ]
-            },
-            {
               type: "actions",
               elements: [
                 {
@@ -500,15 +491,6 @@ async function sendGemstoneSlackNotification(
             type: "mrkdwn",
             text: match.ebay_title.substring(0, 150)
           }
-        },
-        {
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: `⏱️ Scan→Notify: *${latency}*`
-            }
-          ]
         },
         {
           type: "actions",
