@@ -48,6 +48,35 @@ function logTestListing(item: any, message: string): void {
 }
 
 // ============================================
+// Notification Error Logging
+// ============================================
+
+async function logNotificationError(
+  matchId: string | undefined,
+  matchType: string,
+  taskId: string | undefined,
+  channel: string | undefined,
+  errorMessage: string,
+  errorSource: 'initial' | 'retry',
+  attemptNumber: number = 1
+): Promise<void> {
+  try {
+    await supabase.from('notification_errors').insert({
+      match_id: matchId,
+      match_type: matchType,
+      task_id: taskId,
+      channel: channel,
+      error_message: errorMessage,
+      error_source: errorSource,
+      attempt_number: attemptNumber
+    });
+  } catch (e) {
+    // Don't let error logging failures break the main flow
+    console.log(`  ⚠️ Failed to log notification error: ${e}`);
+  }
+}
+
+// ============================================
 // Slack Notification Functions
 // ============================================
 
@@ -568,6 +597,14 @@ async function retryFailedNotifications(): Promise<void> {
         console.log(`  ✅ Retry successful for: ${match.ebay_title.substring(0, 40)}... (ts: ${slackResult.ts})`);
       } else {
         console.log(`  ❌ Retry FAILED for match ${match.id}: ${match.ebay_title.substring(0, 40)}...`);
+        await logNotificationError(
+          match.id,
+          'jewelry',
+          match.task_id,
+          slackChannel,
+          `retry failed, sent=${slackResult.sent}`,
+          'retry'
+        );
       }
 
       // Rate limit delay for Slack (they silently drop messages if sent too fast)
@@ -619,6 +656,14 @@ async function retryFailedNotifications(): Promise<void> {
         console.log(`  ✅ Retry successful for: ${match.ebay_title?.substring(0, 40) || 'gemstone'}... (ts: ${slackResult.ts})`);
       } else {
         console.log(`  ❌ Retry FAILED for gemstone match ${match.id}: ${match.ebay_title?.substring(0, 40) || 'gemstone'}...`);
+        await logNotificationError(
+          match.id,
+          'gemstone',
+          match.task_id,
+          slackChannel,
+          `retry failed, sent=${slackResult.sent}`,
+          'retry'
+        );
       }
 
       // Rate limit delay for Slack (they silently drop messages if sent too fast)
@@ -3001,6 +3046,14 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             }
           } else {
             console.log(`  ❌ Slack notification FAILED for gemstone match ${insertedMatch?.id} - will retry later`);
+            await logNotificationError(
+              insertedMatch?.id,
+              'gemstone',
+              task.id,
+              task.slack_channel,
+              `sent=${slackResult.sent}, token_set=${!!SLACK_BOT_TOKEN}, webhook_set=${!!SLACK_WEBHOOK_URL}`,
+              'initial'
+            );
           }
 
           // Rate limit delay for Slack (they silently drop messages if sent too fast)
@@ -3277,6 +3330,14 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             console.log(`  ❌ [DEBUG] slackResult.sent=${slackResult.sent}, channel=${task.slack_channel}, matchId=${insertedMatch?.id}`);
             console.log(`  ❌ [DEBUG] SLACK_BOT_TOKEN set: ${!!SLACK_BOT_TOKEN}, SLACK_WEBHOOK_URL set: ${!!SLACK_WEBHOOK_URL}`);
             console.log(`  ⏱️ [TIMING] Flow failed after: ${Date.now() - matchFlowStart}ms`);
+            await logNotificationError(
+              insertedMatch?.id,
+              'jewelry',
+              task.id,
+              task.slack_channel,
+              `sent=${slackResult.sent}, token_set=${!!SLACK_BOT_TOKEN}, webhook_set=${!!SLACK_WEBHOOK_URL}`,
+              'initial'
+            );
           }
 
           // Rate limit delay for Slack (they silently drop messages if sent too fast)
