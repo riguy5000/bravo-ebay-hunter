@@ -3746,25 +3746,38 @@ if (process.argv.includes('--test-notification')) {
     }
     console.log(`   ✅ Inserted in ${insertTime}ms (ID: ${insertedMatch.id})`);
 
-    // Step 2: Send notification
-    console.log('Step 2: Sending Slack notification...');
+    // Step 2: Send notification (with immediate retry, like processTask)
+    const forceFailFirst = process.argv.includes('--force-fail-first');
+    console.log(`Step 2: Sending Slack notification...${forceFailFirst ? ' (forcing first attempt to fail)' : ''}`);
     const notifyStart = Date.now();
-    const slackResult = await sendJewelrySlackNotification(
-      matchData,
-      14,
-      5.5,
-      8.99,
-      'fixed',
-      250.00,
-      channel,
-      insertStart  // scan start time (when we started processing)
-    );
-    const notifyTime = Date.now() - notifyStart;
 
+    let slackResult;
+    if (forceFailFirst) {
+      console.log(`   ❌ Simulating initial send failure (--force-fail-first)`);
+      slackResult = { sent: false, ts: undefined, channelId: undefined };
+    } else {
+      slackResult = await sendJewelrySlackNotification(
+        matchData, 14, 5.5, 8.99, 'fixed', 250.00, channel, insertStart
+      );
+    }
+
+    // Immediate retry if initial send fails (same logic as processTask)
+    if (!slackResult.sent) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        console.log(`   🔄 Retry attempt ${attempt}/2 after ${attempt * 2}s delay...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+        slackResult = await sendJewelrySlackNotification(
+          matchData, 14, 5.5, 8.99, 'fixed', 250.00, channel, insertStart
+        );
+        if (slackResult.sent) break;
+      }
+    }
+
+    const notifyTime = Date.now() - notifyStart;
     if (slackResult.sent) {
       console.log(`   ✅ Notification sent in ${notifyTime}ms (ts: ${slackResult.ts})`);
     } else {
-      console.log(`   ❌ Notification FAILED in ${notifyTime}ms`);
+      console.log(`   ❌ Notification FAILED after all retries in ${notifyTime}ms`);
     }
 
     // Step 3: Update notification_sent
