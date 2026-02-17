@@ -61,7 +61,16 @@ async function logNotificationError(
   attemptNumber: number = 1
 ): Promise<void> {
   try {
-    await supabase.from('notification_errors').insert({
+    // Always log to console so we can see errors in PM2 logs
+    console.log(`  🔴 NOTIFICATION ERROR [${errorSource}]: match=${matchId}, type=${matchType}, channel=${channel}, error=${errorMessage}`);
+
+    // Skip DB insert if matchId is missing (NOT NULL constraint would fail)
+    if (!matchId) {
+      console.log(`  ⚠️ Cannot log to notification_errors: matchId is undefined`);
+      return;
+    }
+
+    const { error } = await supabase.from('notification_errors').insert({
       match_id: matchId,
       match_type: matchType,
       task_id: taskId,
@@ -70,6 +79,10 @@ async function logNotificationError(
       error_source: errorSource,
       attempt_number: attemptNumber
     });
+
+    if (error) {
+      console.log(`  ⚠️ Failed to insert notification_error: ${error.message}`);
+    }
   } catch (e) {
     // Don't let error logging failures break the main flow
     console.log(`  ⚠️ Failed to log notification error: ${e}`);
@@ -285,11 +298,14 @@ async function inviteUsersToChannel(channelId: string, channelName: string): Pro
 async function ensureTaskSlackChannel(task: Task): Promise<string | undefined> {
   // If task already has a channel, use it
   if (task.slack_channel) {
+    console.log(`  📢 Using existing Slack channel: #${task.slack_channel}`);
     return task.slack_channel;
   }
 
   // If no bot token, can't create channels
   if (!SLACK_BOT_TOKEN) {
+    console.log(`  ⚠️ No SLACK_BOT_TOKEN configured - cannot auto-create channel for task "${task.name}"`);
+    console.log(`  ⚠️ Set slack_channel in task settings or configure SLACK_BOT_TOKEN env var`);
     return undefined;
   }
 
@@ -320,6 +336,7 @@ async function ensureTaskSlackChannel(task: Task): Promise<string | undefined> {
     return result.channel;
   }
 
+  console.log(`  ⚠️ Failed to create Slack channel for task "${task.name}": ${result.error || 'unknown error'}`);
   return undefined;
 }
 
@@ -388,11 +405,12 @@ async function sendJewelrySlackNotification(
   scanStartTime?: number | null
 ): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
   if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) {
-    console.log('  ⚠️ Slack not configured, skipping notification');
+    console.log('  ⚠️ Slack not configured (no BOT_TOKEN or WEBHOOK_URL), skipping notification');
     return { sent: false };
   }
 
   console.log(`  📤 Sending Slack notification for: ${match.ebay_title.substring(0, 50)}...`);
+  console.log(`  📤 [DEBUG] channel param: "${channel}", DEFAULT_SLACK_CHANNEL: "${DEFAULT_SLACK_CHANNEL}", BOT_TOKEN set: ${!!SLACK_BOT_TOKEN}`);
 
   try {
     // Calculate latency (time from scan start to notification sent)
@@ -556,12 +574,13 @@ async function retryFailedNotifications(): Promise<void> {
   console.log('🔄 Checking for failed notifications to retry...');
 
   // Retry jewelry notifications - join with tasks to get slack_channel
+  // Increased limit from 10 to 50 to clear backlogs faster
   const { data: jewelryMatches, error: jewelryError } = await supabase
     .from('matches_jewelry')
     .select('*, tasks!inner(slack_channel)')
     .eq('notification_sent', false)
     .order('found_at', { ascending: false })
-    .limit(10);
+    .limit(50);
 
   if (jewelryError) {
     console.log(`  ⚠️ Error fetching jewelry matches for retry: ${jewelryError.message}`);
@@ -613,12 +632,13 @@ async function retryFailedNotifications(): Promise<void> {
   }
 
   // Retry gemstone notifications - join with tasks to get slack_channel
+  // Increased limit from 10 to 50 to clear backlogs faster
   const { data: gemstoneMatches, error: gemstoneError } = await supabase
     .from('matches_gemstone')
     .select('*, tasks!inner(slack_channel)')
     .eq('notification_sent', false)
     .order('found_at', { ascending: false })
-    .limit(10);
+    .limit(50);
 
   if (gemstoneError) {
     console.log(`  ⚠️ Error fetching gemstone matches for retry: ${gemstoneError.message}`);
@@ -3491,6 +3511,10 @@ async function runOnce(): Promise<void> {
         console.error(`❌ Task ${task.name} failed:`, error);
       }
 
+      // Retry any failed notifications immediately after each task
+      // instead of waiting until end of cycle (which can be 8-9 mins)
+      await retryFailedNotifications();
+
       // Add delay between tasks to avoid rate limiting
       if (i < tasks.length - 1) {
         console.log(`⏳ Waiting 3s before next task...`);
@@ -3502,9 +3526,6 @@ async function runOnce(): Promise<void> {
 
     // Record health metrics
     await recordHealthMetrics(cycleStartTime, successCount, errorCount, totalItemsFound, totalMatches, totalExcluded);
-
-    // Retry any failed notifications every cycle (was 10%, now 100%)
-    await retryFailedNotifications();
 
   } catch (error: any) {
     console.error('💥 Error in poll cycle:', error);
@@ -3544,6 +3565,17 @@ async function main(): Promise<void> {
   console.log('🏃 eBay Hunter Worker Starting...');
   console.log(`⏱️  Poll interval: ${POLL_INTERVAL_MS}ms`);
   console.log(`🔗 Supabase URL: ${process.env.SUPABASE_URL}`);
+  console.log('='.repeat(50));
+
+  // Log Slack configuration status
+  console.log('📢 Slack Configuration:');
+  console.log(`   SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN ? '✅ Set (' + SLACK_BOT_TOKEN.substring(0, 10) + '...)' : '❌ Not set'}`);
+  console.log(`   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL ? '✅ Set' : '❌ Not set'}`);
+  console.log(`   DEFAULT_SLACK_CHANNEL: ${DEFAULT_SLACK_CHANNEL ? '✅ ' + DEFAULT_SLACK_CHANNEL : '❌ Not set'}`);
+  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) {
+    console.log('   ⚠️  WARNING: No Slack configuration found! Notifications will fail.');
+    console.log('   ⚠️  Set SLACK_BOT_TOKEN or SLACK_WEBHOOK_URL in .env file');
+  }
   console.log('='.repeat(50));
 
   // Verify Supabase connection
