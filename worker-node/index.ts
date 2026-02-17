@@ -2748,6 +2748,11 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             items.push(item);
           }
         }
+
+        // Delay between searches to conserve API quota
+        if (i < metals.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 10000));
+        }
       }
 
       console.log(`📦 Total unique items across all metals: ${items.length}`);
