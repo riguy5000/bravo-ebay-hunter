@@ -3025,7 +3025,43 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           .single();
 
         if (insertError) {
-          console.error('❌ Error inserting match:', insertError);
+          if (insertError.code === '23505') {
+            console.log(`  ℹ️ Duplicate match (already in DB): ${item.title.substring(0, 50)}...`);
+
+            const { data: existingMatch } = await supabase
+              .from(tableName)
+              .select('id, notification_sent')
+              .eq('ebay_listing_id', item.itemId)
+              .eq('task_id', task.id)
+              .single();
+
+            if (existingMatch && !existingMatch.notification_sent) {
+              console.log(`  📤 Existing match needs notification - sending now...`);
+              let slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, scanStartTime);
+
+              if (!slackResult.sent) {
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                  console.log(`  🔄 Retry attempt ${attempt}/2 after ${attempt * 2}s delay...`);
+                  await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+                  slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, scanStartTime);
+                  if (slackResult.sent) break;
+                }
+              }
+
+              if (slackResult.sent) {
+                const updateData: any = { notification_sent: true };
+                if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+                if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+                await supabase.from(tableName).update(updateData).eq('id', existingMatch.id);
+                console.log(`  ✅ Notification sent for existing match (ts: ${slackResult.ts})`);
+              } else {
+                console.log(`  ❌ Notification FAILED for existing gemstone match ${existingMatch.id}`);
+              }
+              await new Promise(resolve => setTimeout(resolve, 1100));
+            }
+          } else {
+            console.log(`❌ Error inserting gemstone match: ${insertError.message} (code: ${insertError.code})`);
+          }
         } else {
           console.log(`✅ Match: ${stone.carat || '?'}ct ${stone.stone_type || 'Stone'} - $${item.price} (Deal: ${dealScore}, Risk: ${riskScore})`);
           newMatches++;
@@ -3306,7 +3342,45 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         const insertTime = Date.now() - insertStart;
 
         if (insertError) {
-          console.error('❌ Error inserting match:', insertError);
+          // Duplicate key = item already in matches table from a previous cycle
+          if (insertError.code === '23505') {
+            console.log(`  ℹ️ Duplicate match (already in DB): ${item.title.substring(0, 50)}...`);
+
+            // Check if the existing match still needs a notification
+            const { data: existingMatch } = await supabase
+              .from(tableName)
+              .select('id, notification_sent')
+              .eq('ebay_listing_id', item.itemId)
+              .eq('task_id', task.id)
+              .single();
+
+            if (existingMatch && !existingMatch.notification_sent) {
+              console.log(`  📤 Existing match needs notification - sending now...`);
+              let slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
+
+              if (!slackResult.sent) {
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                  console.log(`  🔄 Retry attempt ${attempt}/2 after ${attempt * 2}s delay...`);
+                  await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+                  slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
+                  if (slackResult.sent) break;
+                }
+              }
+
+              if (slackResult.sent) {
+                const updateData: any = { notification_sent: true };
+                if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+                if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+                await supabase.from(tableName).update(updateData).eq('id', existingMatch.id);
+                console.log(`  ✅ Notification sent for existing match (ts: ${slackResult.ts})`);
+              } else {
+                console.log(`  ❌ Notification FAILED for existing match ${existingMatch.id}`);
+              }
+              await new Promise(resolve => setTimeout(resolve, 1100));
+            }
+          } else {
+            console.log(`❌ Error inserting match: ${insertError.message} (code: ${insertError.code})`);
+          }
         } else {
           const meltStr = meltValue ? `Melt: $${meltValue.toFixed(0)}` : '';
           const breakEvenStr = breakEven ? `BE: $${breakEven.toFixed(0)}` : '';
@@ -3422,7 +3496,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         const { error: insertError } = await supabase.from(tableName).insert(matchData);
 
         if (insertError) {
-          console.error('❌ Error inserting match:', insertError);
+          console.log(`❌ Error inserting match: ${insertError.message} (code: ${insertError.code})`);
         } else {
           console.log(`✅ Match: ${brand || '?'} ${model || ''} ${movement || '?'} - $${item.price}`);
           newMatches++;
@@ -3434,7 +3508,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         const { error: insertError } = await supabase.from(tableName).insert(matchData);
 
         if (insertError) {
-          console.error('❌ Error inserting match:', insertError);
+          console.log(`❌ Error inserting match: ${insertError.message} (code: ${insertError.code})`);
         } else {
           console.log(`✅ Match: ${item.title.substring(0, 50)}... - $${item.price}`);
           newMatches++;
