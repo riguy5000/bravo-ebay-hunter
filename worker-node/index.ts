@@ -2729,21 +2729,12 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
         console.log(`🎯 Search [${metal}]: ${metalSearchParams.keywords}`);
 
-        // Rate limit delay before each search to conserve API quota
-        console.log(`⏳ Waiting 30s before search to conserve quota...`);
-        await new Promise(resolve => setTimeout(resolve, 30000));
-
         const searchResponse = await supabase.functions.invoke('ebay-search', {
           body: metalSearchParams
         });
 
         if (searchResponse.error) {
           console.error(`❌ Error searching for ${metal}:`, searchResponse.error);
-          // Add delay even on error to avoid hammering rate-limited API
-          if (i < metals.length - 1) {
-            console.log(`⏳ Waiting 5s before next search (after error)...`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
-          }
           continue;
         }
 
@@ -2757,22 +2748,12 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             items.push(item);
           }
         }
-
-        // Add delay between searches to avoid eBay rate limits
-        if (i < metals.length - 1) {
-          console.log(`⏳ Waiting 5s before next search...`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        }
       }
 
       console.log(`📦 Total unique items across all metals: ${items.length}`);
     } else {
       // Single search (non-jewelry or single metal)
       console.log(`🎯 Search: ${searchParams.keywords}`);
-
-      // Rate limit delay before each search to conserve API quota
-      console.log(`⏳ Waiting 30s before search to conserve quota...`);
-      await new Promise(resolve => setTimeout(resolve, 30000));
 
       const searchResponse = await supabase.functions.invoke('ebay-search', {
         body: searchParams
