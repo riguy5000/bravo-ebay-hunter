@@ -403,10 +403,10 @@ async function sendJewelrySlackNotification(
   meltValue: number | null,
   channel?: string,
   scanStartTime?: number | null
-): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
+): Promise<{ sent: boolean; ts?: string; channelId?: string; error?: string }> {
   if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) {
     console.log('  ⚠️ Slack not configured (no BOT_TOKEN or WEBHOOK_URL), skipping notification');
-    return { sent: false };
+    return { sent: false, error: 'No SLACK_BOT_TOKEN or SLACK_WEBHOOK_URL configured' };
   }
 
   console.log(`  📤 Sending Slack notification for: ${match.ebay_title.substring(0, 50)}...`);
@@ -478,7 +478,7 @@ async function sendJewelrySlackNotification(
     const targetChannel = channel || DEFAULT_SLACK_CHANNEL;
     if (!targetChannel) {
       console.log(`  ⚠️ No Slack channel specified and no DEFAULT_SLACK_CHANNEL set`);
-      return { sent: false };
+      return { sent: false, error: 'No channel specified and no DEFAULT_SLACK_CHANNEL' };
     }
 
     const result = await postToSlack(message, targetChannel);
@@ -486,7 +486,7 @@ async function sendJewelrySlackNotification(
     if (!result.ok) {
       console.log(`  ⚠️ Slack notification failed: ${result.error}`);
       console.log(`  ⚠️ [DEBUG] Failed channel: ${targetChannel}, BOT_TOKEN set: ${!!SLACK_BOT_TOKEN}`);
-      return { sent: false };
+      return { sent: false, error: `Slack API error: ${result.error}` };
     } else {
       console.log(`  ✅ Slack notification sent successfully to ${targetChannel}`);
       return { sent: true, ts: result.ts, channelId: result.channelId };
@@ -494,7 +494,7 @@ async function sendJewelrySlackNotification(
   } catch (error: any) {
     console.log(`  ⚠️ Slack notification error: ${error.message}`);
     console.log(`  ⚠️ [DEBUG] Error stack: ${error.stack}`);
-    return { sent: false };
+    return { sent: false, error: `Exception: ${error.message}` };
   }
 }
 
@@ -505,8 +505,8 @@ async function sendGemstoneSlackNotification(
   riskScore: number,
   channel?: string,
   scanStartTime?: number | null
-): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
-  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return { sent: false };
+): Promise<{ sent: boolean; ts?: string; channelId?: string; error?: string }> {
+  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return { sent: false, error: 'No SLACK_BOT_TOKEN or SLACK_WEBHOOK_URL configured' };
 
   try {
     // Calculate latency (time from scan start to notification sent)
@@ -557,12 +557,12 @@ async function sendGemstoneSlackNotification(
 
     if (!result.ok) {
       console.log(`⚠️ Gemstone Slack notification failed: ${result.error}`);
-      return { sent: false };
+      return { sent: false, error: `Slack API error: ${result.error}` };
     }
     return { sent: true, ts: result.ts, channelId: result.channelId };
   } catch (error: any) {
     console.log(`⚠️ Gemstone Slack notification error: ${error.message}`);
-    return { sent: false };
+    return { sent: false, error: `Exception: ${error.message}` };
   }
 }
 
@@ -621,7 +621,7 @@ async function retryFailedNotifications(): Promise<void> {
           'jewelry',
           match.task_id,
           slackChannel,
-          `retry failed, sent=${slackResult.sent}`,
+          slackResult.error || `retry failed, unknown error`,
           'retry'
         );
       }
@@ -681,7 +681,7 @@ async function retryFailedNotifications(): Promise<void> {
           'gemstone',
           match.task_id,
           slackChannel,
-          `retry failed, sent=${slackResult.sent}`,
+          slackResult.error || `retry failed, unknown error`,
           'retry'
         );
       }
@@ -3067,7 +3067,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               'gemstone',
               task.id,
               task.slack_channel,
-              `sent=${slackResult.sent}, token_set=${!!SLACK_BOT_TOKEN}, webhook_set=${!!SLACK_WEBHOOK_URL}, retries_exhausted=true`,
+              slackResult.error || `sent=${slackResult.sent}, unknown error`,
               'initial'
             );
           }
@@ -3362,7 +3362,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               'jewelry',
               task.id,
               task.slack_channel,
-              `sent=${slackResult.sent}, token_set=${!!SLACK_BOT_TOKEN}, webhook_set=${!!SLACK_WEBHOOK_URL}, retries_exhausted=true`,
+              slackResult.error || `sent=${slackResult.sent}, unknown error`,
               'initial'
             );
           }
