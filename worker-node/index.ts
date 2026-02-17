@@ -3044,9 +3044,19 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           console.log(`✅ Match: ${stone.carat || '?'}ct ${stone.stone_type || 'Stone'} - $${item.price} (Deal: ${dealScore}, Risk: ${riskScore})`);
           newMatches++;
 
-          // Send Slack notification for gemstone match
+          // Send Slack notification for gemstone match (with immediate retry)
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
-          const slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, scanStartTime);
+          let slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, scanStartTime);
+
+          // Immediate retry if initial send fails (up to 2 retries with 2s delay)
+          if (!slackResult.sent) {
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              console.log(`  🔄 Retry attempt ${attempt}/2 after ${attempt * 2}s delay...`);
+              await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+              slackResult = await sendGemstoneSlackNotification(matchData, stone, dealScore, riskScore, task.slack_channel, scanStartTime);
+              if (slackResult.sent) break;
+            }
+          }
 
           // Update notification_sent flag and Slack message tracking
           if (slackResult.sent && insertedMatch?.id) {
@@ -3065,13 +3075,13 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               console.log(`  ✅ Slack notification sent successfully (ts: ${slackResult.ts})`);
             }
           } else {
-            console.log(`  ❌ Slack notification FAILED for gemstone match ${insertedMatch?.id} - will retry later`);
+            console.log(`  ❌ Slack notification FAILED after all retries for gemstone match ${insertedMatch?.id}`);
             await logNotificationError(
               insertedMatch?.id,
               'gemstone',
               task.id,
               task.slack_channel,
-              `sent=${slackResult.sent}, token_set=${!!SLACK_BOT_TOKEN}, webhook_set=${!!SLACK_WEBHOOK_URL}`,
+              `sent=${slackResult.sent}, token_set=${!!SLACK_BOT_TOKEN}, webhook_set=${!!SLACK_WEBHOOK_URL}, retries_exhausted=true`,
               'initial'
             );
           }
@@ -3318,10 +3328,21 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           console.log(`  ⏱️ [TIMING] DB insert: ${insertTime}ms`);
           newMatches++;
 
-          // Send Slack notification for jewelry match
+          // Send Slack notification for jewelry match (with immediate retry)
           console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
           const notifyStart = Date.now();
-          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
+          let slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
+
+          // Immediate retry if initial send fails (up to 2 retries with 2s delay)
+          if (!slackResult.sent) {
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              console.log(`  🔄 Retry attempt ${attempt}/2 after ${attempt * 2}s delay...`);
+              await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+              slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
+              if (slackResult.sent) break;
+            }
+          }
+
           const notifyTime = Date.now() - notifyStart;
           console.log(`  ⏱️ [TIMING] Slack API call: ${notifyTime}ms`);
 
@@ -3346,7 +3367,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
             }
             console.log(`  ⏱️ [TIMING] TOTAL match flow: ${Date.now() - matchFlowStart}ms`);
           } else {
-            console.log(`  ❌ Slack notification FAILED for match ${insertedMatch?.id} - will retry later`);
+            console.log(`  ❌ Slack notification FAILED after all retries for match ${insertedMatch?.id}`);
             console.log(`  ❌ [DEBUG] slackResult.sent=${slackResult.sent}, channel=${task.slack_channel}, matchId=${insertedMatch?.id}`);
             console.log(`  ❌ [DEBUG] SLACK_BOT_TOKEN set: ${!!SLACK_BOT_TOKEN}, SLACK_WEBHOOK_URL set: ${!!SLACK_WEBHOOK_URL}`);
             console.log(`  ⏱️ [TIMING] Flow failed after: ${Date.now() - matchFlowStart}ms`);
@@ -3355,7 +3376,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               'jewelry',
               task.id,
               task.slack_channel,
-              `sent=${slackResult.sent}, token_set=${!!SLACK_BOT_TOKEN}, webhook_set=${!!SLACK_WEBHOOK_URL}`,
+              `sent=${slackResult.sent}, token_set=${!!SLACK_BOT_TOKEN}, webhook_set=${!!SLACK_WEBHOOK_URL}, retries_exhausted=true`,
               'initial'
             );
           }
