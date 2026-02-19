@@ -3331,12 +3331,13 @@ const processTask = async (task: Task): Promise<TaskStats> => {
         });
 
         // Check if this item already exists in the DB
+        // Use maybeSingle() instead of single() - single() throws PGRST116 when 0 rows found
         const { data: existingMatch } = await supabase
           .from(tableName)
           .select('id, notification_sent')
           .eq('ebay_listing_id', item.itemId)
           .eq('task_id', task.id)
-          .single();
+          .maybeSingle();
 
         if (existingMatch) {
           if (!existingMatch.notification_sent) {
@@ -3352,6 +3353,8 @@ const processTask = async (task: Task): Promise<TaskStats> => {
               console.log(`  ❌ Notification failed for existing match ${existingMatch.id}: ${slackResult.error}`);
             }
             await new Promise(resolve => setTimeout(resolve, 1100));
+          } else {
+            console.log(`  ℹ️ Duplicate match (already notified): ${item.title.substring(0, 50)}...`);
           }
           continue;
         }
