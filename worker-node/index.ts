@@ -437,7 +437,8 @@ async function sendJewelrySlackNotification(
     const sidebarColor = profit && parseFloat(profit) > 0 ? '#36a64f' : '#dc3545';
 
     // Fallback text for push notifications
-    const notificationText = `💍 ${match.ebay_title.substring(0, 80)} | ${karat || '?'}K | ${weightG ? weightG.toFixed(2) + 'g' : '?'} | Offer: ${offerPrice ? '$' + offerPrice : '?'}`;
+    const leadEmoji = profit && parseFloat(profit) >= 0 ? '🟢' : '🔴';
+    const notificationText = `${leadEmoji} ${match.ebay_title.substring(0, 80)} | ${karat || '?'}K | ${weightG ? weightG.toFixed(2) + 'g' : '?'} | Offer: ${offerPrice ? '$' + offerPrice : '?'}`;
 
     const message = {
       attachments: [
@@ -3389,7 +3390,7 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           newMatches++;
 
           // Send Slack notification for jewelry match (with immediate retry)
-          console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
+          console.log(`  📤 Sending Slack initial notification to channel: ${task.slack_channel || 'default'}...`);
           const notifyStart = Date.now();
           let slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
 
@@ -3830,6 +3831,7 @@ if (process.argv.includes('--test-notification')) {
       console.log(`   ❌ Simulating initial send failure (--force-fail-first)`);
       slackResult = { sent: false, ts: undefined, channelId: undefined };
     } else {
+      console.log("line 3834")
       slackResult = await sendJewelrySlackNotification(
         matchData, 14, 5.5, 8.99, 'fixed', 250.00, channel, insertStart
       );
