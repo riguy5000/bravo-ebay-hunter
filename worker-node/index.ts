@@ -2752,7 +2752,8 @@ const processTask = async (task: Task): Promise<TaskStats> => {
 
         // Delay between searches to conserve API quota
         if (i < metals.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 10000));
+          console.log(`  ⏳ Waiting 30s before next search to conserve API quota...`);
+          await new Promise(resolve => setTimeout(resolve, 30000));
         }
       }
 
