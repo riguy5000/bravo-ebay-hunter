@@ -3330,91 +3330,102 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           suggestedOffer,
         });
 
-        // Item passed all filters - check DB and notify
-        console.log(`  🔍 Checking match: ${item.title.substring(0, 60)}... (itemId: ${item.itemId})`);
-        const { data: existingMatch } = await supabase
-          .from(tableName)
-          .select('id, notification_sent')
-          .eq('ebay_listing_id', item.itemId)
-          .eq('task_id', task.id)
-          .maybeSingle();
+        // === MATCH PROCESSING START ===
+        console.log(`  🔍 MATCH CANDIDATE: ${item.title.substring(0, 60)} | $${item.price} | itemId: ${item.itemId}`);
 
-        if (existingMatch) {
-          if (!existingMatch.notification_sent) {
-            console.log(`  ℹ️ Existing match needs notification: ${item.title.substring(0, 50)}...`);
-            let slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
-            if (slackResult.sent) {
-              const updateData: any = { notification_sent: true };
-              if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
-              if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
-              await supabase.from(tableName).update(updateData).eq('id', existingMatch.id);
-              console.log(`  ✅ Notification sent for existing match (ts: ${slackResult.ts})`);
+        try {
+          // Check if this item already exists in the DB
+          const { data: existingMatch, error: lookupError } = await supabase
+            .from(tableName)
+            .select('id, notification_sent')
+            .eq('ebay_listing_id', item.itemId)
+            .eq('task_id', task.id)
+            .maybeSingle();
+
+          console.log(`  🔍 DB lookup result: exists=${!!existingMatch}, error=${lookupError?.message || 'none'}`);
+
+          if (existingMatch) {
+            if (!existingMatch.notification_sent) {
+              console.log(`  ℹ️ Existing match needs notification: ${item.title.substring(0, 50)}...`);
+              let slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
+              if (slackResult.sent) {
+                const updateData: any = { notification_sent: true };
+                if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+                if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+                await supabase.from(tableName).update(updateData).eq('id', existingMatch.id);
+                console.log(`  ✅ Notification sent for existing match (ts: ${slackResult.ts})`);
+              } else {
+                console.log(`  ❌ Notification failed for existing match ${existingMatch.id}: ${slackResult.error}`);
+              }
+              await new Promise(resolve => setTimeout(resolve, 1100));
             } else {
-              console.log(`  ❌ Notification failed for existing match ${existingMatch.id}: ${slackResult.error}`);
+              console.log(`  ℹ️ Duplicate match (already notified): ${item.title.substring(0, 50)}...`);
             }
-            await new Promise(resolve => setTimeout(resolve, 1100));
+            continue;
+          }
+
+          // New item - insert and notify
+          console.log(`  📝 Inserting new match into ${tableName}...`);
+          const matchFlowStart = Date.now();
+          const insertStart = Date.now();
+          const { data: insertedMatch, error: insertError } = await supabase
+            .from(tableName)
+            .insert(matchData)
+            .select('id')
+            .single();
+          const insertTime = Date.now() - insertStart;
+
+          if (insertError) {
+            console.log(`  ❌ Insert error: ${insertError.message} (code: ${insertError.code})`);
+            continue;
+          }
+
+          const meltStr = meltValue ? `Melt: $${meltValue.toFixed(0)}` : '';
+          const breakEvenStr = breakEven ? `BE: $${breakEven.toFixed(0)}` : '';
+          console.log(`  ✅ Match inserted: ${karat || '?'}K ${weight || '?'}g - $${item.price} ${meltStr} ${breakEvenStr} | ${item.title.substring(0, 60)}`);
+          console.log(`  ⏱️ [TIMING] DB insert: ${insertTime}ms`);
+          newMatches++;
+
+          // Send Slack notification
+          console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
+          const notifyStart = Date.now();
+          let slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
+
+          if (!slackResult.sent) {
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              console.log(`  🔄 Retry attempt ${attempt}/2 after ${attempt * 2}s delay...`);
+              await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+              slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
+              if (slackResult.sent) break;
+            }
+          }
+
+          const notifyTime = Date.now() - notifyStart;
+          console.log(`  ⏱️ [TIMING] Slack notify: ${notifyTime}ms`);
+
+          if (slackResult.sent && insertedMatch?.id) {
+            const updateData: any = { notification_sent: true };
+            if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+            if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+            await supabase.from(tableName).update(updateData).eq('id', insertedMatch.id);
+            console.log(`  ✅ Slack notification sent (ts: ${slackResult.ts})`);
           } else {
-            console.log(`  ℹ️ Duplicate match (already notified): ${item.title.substring(0, 50)}...`);
+            console.log(`  ❌ Slack notification FAILED for match ${insertedMatch?.id}: ${slackResult.error}`);
+            await logNotificationError(
+              insertedMatch?.id,
+              'jewelry',
+              task.id,
+              task.slack_channel,
+              slackResult.error || `sent=${slackResult.sent}, unknown error`,
+              'initial'
+            );
           }
-          continue;
+          console.log(`  ⏱️ [TIMING] TOTAL match flow: ${Date.now() - matchFlowStart}ms`);
+        } catch (matchError: any) {
+          console.log(`  ❌ MATCH PROCESSING ERROR: ${matchError.message}`);
+          console.log(`  ❌ Stack: ${matchError.stack?.substring(0, 200)}`);
         }
-
-        // New item - insert and notify
-        const matchFlowStart = Date.now();
-        const insertStart = Date.now();
-        const { data: insertedMatch, error: insertError } = await supabase
-          .from(tableName)
-          .insert(matchData)
-          .select('id')
-          .single();
-        const insertTime = Date.now() - insertStart;
-
-        if (insertError) {
-          console.log(`❌ Error inserting match: ${insertError.message} (code: ${insertError.code})`);
-          continue;
-        }
-
-        const meltStr = meltValue ? `Melt: $${meltValue.toFixed(0)}` : '';
-        const breakEvenStr = breakEven ? `BE: $${breakEven.toFixed(0)}` : '';
-        console.log(`✅ Match: ${karat || '?'}K ${weight || '?'}g - $${item.price} ${meltStr} ${breakEvenStr} | ${item.title.substring(0, 60)}`);
-        console.log(`  ⏱️ [TIMING] DB insert: ${insertTime}ms`);
-        newMatches++;
-
-        // Send Slack notification
-        console.log(`  📤 Sending Slack notification to channel: ${task.slack_channel || 'default'}...`);
-        const notifyStart = Date.now();
-        let slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
-
-        if (!slackResult.sent) {
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            console.log(`  🔄 Retry attempt ${attempt}/2 after ${attempt * 2}s delay...`);
-            await new Promise(resolve => setTimeout(resolve, attempt * 2000));
-            slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost, item.shippingType, meltValue, task.slack_channel, scanStartTime);
-            if (slackResult.sent) break;
-          }
-        }
-
-        const notifyTime = Date.now() - notifyStart;
-        console.log(`  ⏱️ [TIMING] Slack notify: ${notifyTime}ms`);
-
-        if (slackResult.sent && insertedMatch?.id) {
-          const updateData: any = { notification_sent: true };
-          if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
-          if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
-          await supabase.from(tableName).update(updateData).eq('id', insertedMatch.id);
-          console.log(`  ✅ Slack notification sent (ts: ${slackResult.ts})`);
-        } else {
-          console.log(`  ❌ Slack notification FAILED for match ${insertedMatch?.id}: ${slackResult.error}`);
-          await logNotificationError(
-            insertedMatch?.id,
-            'jewelry',
-            task.id,
-            task.slack_channel,
-            slackResult.error || `sent=${slackResult.sent}, unknown error`,
-            'initial'
-          );
-        }
-        console.log(`  ⏱️ [TIMING] TOTAL match flow: ${Date.now() - matchFlowStart}ms`);
+        // === MATCH PROCESSING END ===
 
         // Rate limit delay for Slack
         await new Promise(resolve => setTimeout(resolve, 1100));
