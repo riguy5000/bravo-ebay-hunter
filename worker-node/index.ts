@@ -3330,8 +3330,8 @@ const processTask = async (task: Task): Promise<TaskStats> => {
           suggestedOffer,
         });
 
-        // Check if this item already exists in the DB
-        // Use maybeSingle() instead of single() - single() throws PGRST116 when 0 rows found
+        // Item passed all filters - check DB and notify
+        console.log(`  🔍 Checking match: ${item.title.substring(0, 60)}... (itemId: ${item.itemId})`);
         const { data: existingMatch } = await supabase
           .from(tableName)
           .select('id, notification_sent')
