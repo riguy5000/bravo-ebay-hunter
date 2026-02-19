@@ -11,8 +11,10 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
-// Slack webhook URL (optional - set in Supabase secrets)
+// Slack config (set in Supabase secrets)
 const SLACK_WEBHOOK_URL = Deno.env.get('SLACK_WEBHOOK_URL') || '';
+const SLACK_BOT_TOKEN = Deno.env.get('SLACK_BOT_TOKEN') || '';
+const DEFAULT_SLACK_CHANNEL = Deno.env.get('DEFAULT_SLACK_CHANNEL') || '';
 
 // ============================================
 // Slack Notification Functions
@@ -23,57 +25,101 @@ async function sendJewelrySlackNotification(
   karat: number | null,
   weightG: number | null,
   shippingCost: number,
-  meltValue: number | null
-): Promise<void> {
-  if (!SLACK_WEBHOOK_URL) return;
+  meltValue: number | null,
+  channel?: string
+): Promise<{ sent: boolean; ts?: string; channelId?: string }> {
+  if (!SLACK_BOT_TOKEN && !SLACK_WEBHOOK_URL) return { sent: false };
 
   try {
     const totalCost = match.listed_price + shippingCost;
-    const offerPrice = (totalCost * 0.87).toFixed(0);
+    const shippingKnown = shippingCost !== undefined && shippingCost !== null;
+    const priceDisplay = shippingKnown && shippingCost > 0
+      ? `$${match.listed_price} + $${shippingCost} ship = *$${totalCost.toFixed(2)}*`
+      : shippingKnown
+        ? `*$${match.listed_price}* (free ship)`
+        : `*$${match.listed_price}* (ship unknown)`;
+    const offerPrice = meltValue ? (meltValue * 0.87).toFixed(0) : null;
     const breakEven = meltValue ? meltValue * 0.97 : null;
     const profit = breakEven ? (breakEven - totalCost).toFixed(0) : null;
+    const profitMarginPct = breakEven && totalCost > 0 ? ((breakEven - totalCost) / totalCost * 100).toFixed(0) : null;
+    const profitEmoji = profit && parseFloat(profit) >= 0 ? '🟢 ' : '';
+    const profitDisplay = shippingKnown && profitMarginPct ? `${profitEmoji}${profitMarginPct}%` : '?';
+    const sidebarColor = profit && parseFloat(profit) > 0 ? '#36a64f' : '#dc3545';
+    const leadEmoji = profit && parseFloat(profit) >= 0 ? '🟢' : '🔴';
+    const notificationText = `${leadEmoji} ${match.ebay_title.substring(0, 80)} | ${karat || '?'}K | ${weightG ? weightG.toFixed(2) + 'g' : '?'} | Offer: ${offerPrice ? '$' + offerPrice : '?'}`;
 
     const message = {
-      blocks: [
+      attachments: [
         {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `💍 *$${totalCost}* total | *${karat || '?'}K* | *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | Offer: *$${offerPrice}* | Profit: *$${profit || '?'}*`
-          }
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: match.ebay_title.substring(0, 150)
-          }
-        },
-        {
-          type: "actions",
-          elements: [
+          color: sidebarColor,
+          fallback: notificationText,
+          blocks: [
             {
-              type: "button",
-              text: { type: "plain_text", text: "View on eBay", emoji: true },
-              url: match.ebay_url,
-              style: "primary"
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `*${match.ebay_title.substring(0, 150)}*`
+              }
+            },
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `💍 ${priceDisplay} | *${karat || '?'}K* | *${weightG ? weightG.toFixed(2) + 'g' : '?'}* | Offer: *${offerPrice ? '$' + offerPrice : '?'}* | Profit: *${profitDisplay}*`
+              }
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "View on eBay", emoji: true },
+                  url: match.ebay_url,
+                  style: "primary"
+                }
+              ]
             }
           ]
         }
       ]
     };
 
-    const response = await fetch(SLACK_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message)
-    });
+    const targetChannel = channel || DEFAULT_SLACK_CHANNEL;
 
-    if (!response.ok) {
-      console.log(`⚠️ Slack notification failed: ${response.status}`);
+    // Prefer Bot Token for channel-specific posting
+    if (SLACK_BOT_TOKEN && targetChannel) {
+      const response = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SLACK_BOT_TOKEN}`
+        },
+        body: JSON.stringify({ channel: targetChannel, ...message })
+      });
+      const result = await response.json();
+      if (result.ok) {
+        return { sent: true, ts: result.ts, channelId: result.channel };
+      }
+      console.log(`⚠️ Slack Bot API failed: ${result.error}`);
     }
+
+    // Fallback to webhook
+    if (SLACK_WEBHOOK_URL) {
+      const response = await fetch(SLACK_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(message)
+      });
+      if (response.ok) {
+        return { sent: true };
+      }
+      console.log(`⚠️ Slack webhook failed: ${response.status}`);
+    }
+
+    return { sent: false };
   } catch (error: any) {
     console.log(`⚠️ Slack notification error: ${error.message}`);
+    return { sent: false };
   }
 }
 
@@ -2335,10 +2381,16 @@ const processTask = async (task: Task) => {
           suggestedOffer,
         });
 
-        const { error: insertError } = await supabase.from(tableName).insert(matchData);
+        const { data: insertedMatch, error: insertError } = await supabase
+          .from(tableName)
+          .insert(matchData)
+          .select('id')
+          .maybeSingle();
 
         if (insertError) {
-          console.error('❌ Error inserting match:', insertError);
+          if (insertError.code !== '23505') {
+            console.error('❌ Error inserting match:', insertError);
+          }
         } else {
           const meltStr = meltValue ? `Melt: $${meltValue.toFixed(0)}` : '';
           const breakEvenStr = breakEven ? `BE: $${breakEven.toFixed(0)}` : '';
@@ -2346,7 +2398,15 @@ const processTask = async (task: Task) => {
           newMatches++;
 
           // Send Slack notification for jewelry match
-          await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost || 0, meltValue);
+          const slackResult = await sendJewelrySlackNotification(matchData, karat, weight, item.shippingCost || 0, meltValue, task.slack_channel);
+
+          // Update notification_sent so PM2 worker doesn't re-notify
+          if (slackResult.sent && insertedMatch?.id) {
+            const updateData: any = { notification_sent: true };
+            if (slackResult.ts) updateData.slack_message_ts = slackResult.ts;
+            if (slackResult.channelId) updateData.slack_channel_id = slackResult.channelId;
+            await supabase.from(tableName).update(updateData).eq('id', insertedMatch.id);
+          }
         }
       }
       // Watch processing
